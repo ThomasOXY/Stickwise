@@ -1,0 +1,11 @@
+[package]
+name = "rbx"
+description = "RB-EXPORT command line"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+pioneer-formats.workspace = true
+anyhow.workspace = true
+clap.workspace = true

@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/pioneer-formats", "cli"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+pioneer-formats = { path = "crates/pioneer-formats" }
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }

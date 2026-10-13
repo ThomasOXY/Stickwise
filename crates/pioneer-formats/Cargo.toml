@@ -1,0 +1,9 @@
+[package]
+name = "pioneer-formats"
+description = "Read and write Pioneer/AlphaTheta device export formats (export.pdb, ANLZ)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
