@@ -6,11 +6,13 @@
 //! both parts as bytes so any file can be rewritten unchanged; the typed
 //! modules decode and build the sections we care about.
 
+mod cue_points;
 mod cues;
 mod grid;
 mod path;
 mod waveform;
 
+pub use cue_points::{CuePoint, HOT_CUE_PALETTE, hot_cue_color, read_cue_points, write_cue_points};
 pub use cues::{Cue, CueList, CueListKind, CueType, ExtCue, ExtCueList};
 pub use grid::{Beat, BeatGrid};
 pub use path::{build_path, parse_path};
