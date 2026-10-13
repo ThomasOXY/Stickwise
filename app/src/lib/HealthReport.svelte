@@ -54,7 +54,7 @@
       <p class="none">Žádná skladba nemá chybu.</p>
     {/if}
     <div class="issues">
-      {#each errors as i (i.trackId + i.kind)}
+      {#each errors as i, n (`${n}:${i.trackId}:${i.kind}`)}
         {@const t = app.trackById.get(i.trackId)}
         <div class="issue">
           <span class="dot fault"></span>
@@ -83,7 +83,7 @@
         </p>
         {#if showWarnings}
           <ul>
-            {#each warnings as w (w.trackId)}
+            {#each warnings as w, n (`${n}:${w.trackId}`)}
               <li><span>{w.title}</span><span class="sub">{w.message}</span></li>
             {/each}
           </ul>

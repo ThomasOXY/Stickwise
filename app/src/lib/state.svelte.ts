@@ -54,6 +54,10 @@ class AppState {
   /** Smart Cue suggestions for the selected track, shown on the waveform. */
   smart = $state<SmartCue[] | null>(null);
   smartOpen = $state(false);
+  /** CUE-DETR sidecar installed, and which tracks it has analysed. */
+  aiInstalled = $state(false);
+  aiAnalyzed = $state<Set<number>>(new Set());
+  aiJob = $state<number | null>(null);
   notice = $state<string | null>(null);
   private undoStack: { trackId: number; cues: Cue[] }[] = [];
 
@@ -110,6 +114,7 @@ class AppState {
       const i = this.jobs.findIndex((j) => j.id === e.payload.id);
       if (i >= 0) this.jobs[i] = e.payload;
       else this.jobs.push(e.payload);
+      if (e.payload.id === this.aiJob && e.payload.state !== "running") this.aiFinished(e.payload);
     });
     this.palette = await api.cuePalette();
     await this.refreshSticks();
@@ -271,6 +276,38 @@ class AppState {
     this.view = "tracks";
     this.trackFilter = "";
     this.loadCues(this.currentTrackIds);
+    this.loadAiStatus(this.currentTrackIds);
+  }
+
+  async loadAiStatus(ids: number[]) {
+    if (!this.stickPath) return;
+    try {
+      const st = await api.aiStatus(this.stickPath, ids);
+      this.aiInstalled = st.installed;
+      this.aiAnalyzed = new Set([...this.aiAnalyzed, ...st.analyzed]);
+    } catch {
+      /* AI is optional */
+    }
+  }
+
+  /** Run CUE-DETR on tracks without results (background job). */
+  async aiAnalyze(ids: number[]) {
+    if (!this.stickPath || this.aiJob != null) return;
+    const todo = ids.filter((id) => !this.aiAnalyzed.has(id));
+    if (todo.length === 0) return;
+    try {
+      this.aiJob = await api.aiAnalyze(this.stickPath, todo);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  private async aiFinished(job: JobEvent) {
+    this.aiJob = null;
+    await this.loadAiStatus(this.currentTrackIds.concat(this.selectedTrack != null ? [this.selectedTrack] : []));
+    if (job.state === "error") this.error = job.message;
+    else if (job.state === "done") this.notice = `${job.message}. Smart Cue teď používá cue body z AI.`;
+    if (this.smartOpen) await this.loadSmart();
   }
 
   async loadCues(ids: number[]) {

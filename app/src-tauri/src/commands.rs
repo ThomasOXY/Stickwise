@@ -17,6 +17,7 @@ use usb_tools::verify::{self, Problem, filesystem_type};
 use crate::dto;
 use crate::edits::{self, Edits, StoredCue};
 use crate::jobs::Jobs;
+use crate::sidecar::Sidecar;
 
 type CmdResult<T> = Result<T, String>;
 
@@ -825,15 +826,24 @@ fn smart_kind(k: analysis::smart_cue::Kind) -> &'static str {
         Down => "down",
         Outro => "outro",
         MixOut => "mix-out",
+        Cue => "cue",
     }
 }
 
 /// Smart Cue suggestions for a track, from its beat grid and scroll waveform.
+fn ai_key(stick: &Stick, t: &pioneer_formats::pdb::Track) -> String {
+    let size = std::fs::metadata(stick.audio_path(t)).map(|m| m.len()).unwrap_or(t.file_size as u64);
+    Sidecar::key(&stick_name(stick), &t.file_path, size)
+}
+
+/// Smart Cue for a track: the energy analysis, merged with CUE-DETR's
+/// points when the track has been through the AI analysis.
 fn suggestions(
+    app: &AppHandle,
     stick: &Stick,
     t: &pioneer_formats::pdb::Track,
 ) -> Option<Vec<analysis::smart_cue::Suggestion>> {
-    use analysis::smart_cue::{Input, analyze, bands_from_color, bands_from_three_band};
+    use analysis::smart_cue::{AI_THRESHOLD, AiCandidate, Input, analyze, bands_from_color, bands_from_three_band, with_ai};
     let dat_path = stick.resolve(&t.analyze_path);
     let dat = read_anlz(&dat_path)?;
     let columns = if let Some(s) = read_anlz(&sibling(&dat_path, "2EX"))
@@ -849,20 +859,32 @@ fn suggestions(
         .and_then(|g| g.ok())
         .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
         .unwrap_or_default();
-    Some(analyze(&Input {
+    let input = Input {
         beats: &beats,
         columns: &columns,
         rate: 150.0,
         bpm: t.bpm() as f32,
-    }))
+    };
+    let structure = analyze(&input);
+    match app.state::<Sidecar>().cached(&ai_key(stick, t)) {
+        Some(ai) => {
+            let cands: Vec<AiCandidate> = ai
+                .candidates
+                .iter()
+                .map(|c| AiCandidate { time_ms: (c.time * 1000.0) as u32, score: c.score as f32 })
+                .collect();
+            Some(with_ai(&input, &structure, &cands, AI_THRESHOLD))
+        }
+        None => Some(structure),
+    }
 }
 
 #[tauri::command]
-pub async fn smart_cue(path: String, track_id: u32) -> CmdResult<Vec<dto::SmartCue>> {
+pub async fn smart_cue(app: AppHandle, path: String, track_id: u32) -> CmdResult<Vec<dto::SmartCue>> {
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let t = find_track(&stick, track_id)?;
-        let s = suggestions(&stick, t)
+        let s = suggestions(&app, &stick, t)
             .ok_or("Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.")?;
         let plan = analysis::smart_cue::hot_cue_plan(&s);
         Ok(s.iter()
@@ -877,6 +899,7 @@ pub async fn smart_cue(path: String, track_id: u32) -> CmdResult<Vec<dto::SmartC
                     .map(|c| c.0)
                     .unwrap_or([255, 255, 255]),
                 in_plan: plan.iter().any(|p| p.time_ms == x.time_ms),
+                ai: x.ai,
             })
             .collect())
     })
@@ -909,7 +932,7 @@ pub async fn smart_cue_apply(
                 r.skipped += 1;
                 continue;
             }
-            let Some(s) = suggestions(&stick, t) else {
+            let Some(s) = suggestions(&app, &stick, t) else {
                 r.failed += 1;
                 continue;
             };
@@ -930,4 +953,90 @@ pub async fn smart_cue_apply(
         Ok(r)
     })
     .await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiStatus {
+    pub installed: bool,
+    /// Tracks of the request that already have AI results.
+    pub analyzed: Vec<u32>,
+}
+
+#[tauri::command]
+pub async fn ai_status(app: AppHandle, path: String, track_ids: Vec<u32>) -> CmdResult<AiStatus> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let sc = app.state::<Sidecar>();
+        let analyzed = track_ids
+            .into_iter()
+            .filter(|&id| stick.db.track(id).is_some_and(|t| sc.cached(&ai_key(&stick, t)).is_some()))
+            .collect();
+        Ok(AiStatus { installed: sc.installed(), analyzed })
+    })
+    .await
+}
+
+/// Run CUE-DETR on the tracks that have no AI results yet, as a background job.
+#[tauri::command]
+pub fn ai_analyze(app: AppHandle, jobs: State<'_, Jobs>, path: String, track_ids: Vec<u32>) -> CmdResult<u32> {
+    let stick = Stick::open(&path).map_err(err)?;
+    let todo: Vec<(String, PathBuf)> = {
+        let sc = app.state::<Sidecar>();
+        track_ids
+            .iter()
+            .filter_map(|&id| stick.db.track(id))
+            .map(|t| (ai_key(&stick, t), stick.audio_path(t)))
+            .filter(|(k, p)| sc.cached(k).is_none() && p.is_file())
+            .collect()
+    };
+    let (id, cancel) = jobs.start();
+    let total = todo.len();
+    std::thread::spawn(move || {
+        let mut ev = dto::JobEvent {
+            id,
+            label: "AI analýza cue".into(),
+            state: "running",
+            files_done: 0,
+            files_total: total,
+            bytes_done: 0,
+            bytes_total: total as u64,
+            current: String::new(),
+            message: String::new(),
+            dest: String::new(),
+        };
+        let _ = app.emit("job", ev.clone());
+        let result = app.state::<Sidecar>().run(&todo, &cancel, |done, name| {
+            let mut e = ev.clone();
+            e.files_done = done;
+            e.bytes_done = done as u64;
+            e.current = name.to_string();
+            let _ = app.emit("job", e);
+        });
+        ev.files_done = total;
+        ev.bytes_done = total as u64;
+        match result {
+            Ok((done, errors)) => {
+                ev.state = if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    "cancelled"
+                } else if errors.is_empty() {
+                    "done"
+                } else {
+                    "error"
+                };
+                ev.message = if errors.is_empty() {
+                    format!("AI analýza hotová u {done} skladeb")
+                } else {
+                    format!("{} skladeb nešlo analyzovat: {}", errors.len(), errors.join("; "))
+                };
+            }
+            Err(e) => {
+                ev.state = "error";
+                ev.message = e;
+            }
+        }
+        let _ = app.emit("job", ev);
+        app.state::<Jobs>().finish(id);
+    });
+    Ok(id)
 }

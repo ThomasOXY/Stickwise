@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Sparkles, X } from "@lucide/svelte";
+  import { BrainCircuit, LoaderCircle, Sparkles, X } from "@lucide/svelte";
   import type { Cue, SmartCue } from "./api";
   import { SLOT_LETTERS, blankCue, firstFreeSlot } from "./cues";
   import { cueTime } from "./format";
@@ -19,6 +19,9 @@
   const cues = $derived(app.detail?.cues ?? []);
   const hotCount = $derived(cues.filter((c) => c.slot > 0).length);
   const chosen = $derived(list.filter((s) => picked.has(s.timeMs)));
+  const trackId = $derived(app.detail?.trackId);
+  const hasAi = $derived(list.some((s) => s.ai));
+  const running = $derived(app.aiJob != null);
 
   function toggle(s: SmartCue) {
     const next = new Set(picked);
@@ -69,13 +72,26 @@
     <span class="sub">{list.length} míst, {chosen.length} vybráno</span>
     <button class="x" onclick={() => (app.smartOpen = false)} aria-label="Zavřít"><X size={14} /></button>
   </div>
+  {#if !hasAi && trackId != null}
+    <div class="ai">
+      {#if running}
+        <LoaderCircle size={14} class="spin" /> AI analýza běží…
+      {:else if app.aiInstalled}
+        <span>Přesnější body z modelu natrénovaného na cue profi DJů.</span>
+        <button class="btn small" onclick={() => app.aiAnalyze([trackId])}><BrainCircuit size={13} /> AI analýza</button>
+      {:else}
+        <span class="sub">AI analýza (CUE-DETR) není nainstalovaná. V terminálu: cd sidecar && uv sync</span>
+      {/if}
+    </div>
+  {/if}
   <div class="list">
-    {#each list as s (s.timeMs)}
+    {#each list as s, i (`${i}:${s.timeMs}`)}
       <div class="row" class:off={!picked.has(s.timeMs)}>
         <input type="checkbox" checked={picked.has(s.timeMs)} onchange={() => toggle(s)} aria-label="Vybrat {s.label}" />
         <span class="chip" style:background="rgb({s.color[0]} {s.color[1]} {s.color[2]})"></span>
         <button class="time readout" onclick={() => setTime(s.timeMs / 1000)} title="Skočit sem">{cueTime(s.timeMs)}</button>
         <span class="label">{s.label}</span>
+        {#if s.ai}<span class="badge" title="Bod navrhl CUE-DETR">AI</span>{/if}
         <span class="bar">takt {s.bar}</span>
         <span class="conf" style:width="{Math.round(s.confidence * 28)}px" title="Jak výrazná je změna"></span>
       </div>
@@ -174,6 +190,28 @@
   .label {
     flex: 1;
     font-weight: 500;
+  }
+  .ai {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 14px 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--booth);
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .ai span {
+    flex: 1;
+  }
+  .badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid var(--cue);
+    color: var(--cue);
   }
   .bar {
     font-size: 11px;

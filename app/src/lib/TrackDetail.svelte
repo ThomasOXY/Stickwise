@@ -110,7 +110,7 @@
     {/if}
 
     <div class="sect"><span>Memory cue a smyčky</span></div>
-    {#each memory as c (c.timeMs + "-" + (c.loopEndMs ?? 0))}
+    {#each memory as c, i (`${i}:${c.timeMs}`)}
       <div class="cue-row">
         {#if c.loopEndMs}
           <button

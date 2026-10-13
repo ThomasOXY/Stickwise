@@ -224,6 +224,8 @@ pub struct SmartCue {
     pub color: [u8; 3],
     /// Part of the hot cue plan (at most 8 per track).
     pub in_plan: bool,
+    /// Placed by CUE-DETR.
+    pub ai: bool,
 }
 
 #[derive(Serialize)]

@@ -4,6 +4,7 @@
   import { app } from "./state.svelte";
 
   let smartMenu = $state(false);
+  const aiTodo = $derived(app.currentTrackIds.filter((id) => !app.aiAnalyzed.has(id)).length);
   const total = $derived(app.currentTracks.reduce((s, t) => s + t.duration, 0));
   const bad = $derived(app.currentTracks.filter((t) => app.errorTracks.has(t.id)).length);
 
@@ -19,9 +20,9 @@
     const i = list.findIndex((t) => t.id === app.selectedTrack);
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      const next = list[Math.min(list.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))];
-      app.selectTrack(next.id);
-      document.getElementById(`row-${next.id}`)?.scrollIntoView({ block: "nearest" });
+      const j = Math.min(list.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)));
+      app.selectTrack(list[j].id);
+      document.getElementById(`row-${j}-${list[j].id}`)?.scrollIntoView({ block: "nearest" });
     } else if (e.key === "Enter" && app.selectedTrack != null) {
       app.detailOpen = true;
     }
@@ -42,6 +43,12 @@
       </button>
       {#if smartMenu}
         <div class="smart-menu" role="menu">
+          {#if app.aiInstalled && aiTodo > 0}
+            <button role="menuitem" disabled={app.aiJob != null} onclick={() => ((smartMenu = false), app.aiAnalyze(app.currentTrackIds))}>
+              <span>{app.aiJob != null ? "AI analýza běží…" : `Nejdřív AI analýza (${aiTodo} skladeb)`}</span>
+              <span class="sub">CUE-DETR, asi 5 s na skladbu. Pak Smart Cue trefuje přesněji.</span>
+            </button>
+          {/if}
           <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(false))}>
             <span>Jen skladby bez hot cue</span>
             <span class="sub">Tvoje cue zůstanou, jak jsou.</span>
@@ -73,12 +80,12 @@
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div class="rows" tabindex="0" role="listbox" aria-label="Skladby" onkeydown={onKey}>
-    {#each app.currentTracks as t, i (t.id)}
+    {#each app.currentTracks as t, i (`${i}:${t.id}`)}
       {@const st = statusClass(t.id)}
       {@const fmt = app.formatOverride.get(t.id) ?? t.format}
       {@const sev = app.status.get(t.id)}
       <div
-        id="row-{t.id}"
+        id="row-{i}-{t.id}"
         class="row"
         class:selected={t.id === app.selectedTrack}
         role="option"

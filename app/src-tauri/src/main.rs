@@ -4,6 +4,7 @@ mod commands;
 mod dto;
 mod edits;
 mod jobs;
+mod sidecar;
 
 fn main() {
     tauri::Builder::default()
@@ -13,6 +14,7 @@ fn main() {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
             app.manage(edits::Edits::load(dir.join("cue-edits.json")));
+            app.manage(sidecar::Sidecar::new(dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +35,8 @@ fn main() {
             commands::cue_palette,
             commands::smart_cue,
             commands::smart_cue_apply,
+            commands::ai_status,
+            commands::ai_analyze,
         ])
         .run(tauri::generate_context!())
         .expect("error while running RB-EXPORT");

@@ -76,7 +76,7 @@ export interface PaletteColor {
 }
 
 export interface SmartCue {
-  kind: "mix-in" | "drop" | "break" | "build" | "up" | "down" | "outro" | "mix-out";
+  kind: "mix-in" | "drop" | "break" | "build" | "up" | "down" | "outro" | "mix-out" | "cue";
   timeMs: number;
   bar: number;
   label: string;
@@ -84,6 +84,13 @@ export interface SmartCue {
   colorCode: number;
   color: Rgb;
   inPlan: boolean;
+  /** Placed by CUE-DETR. */
+  ai: boolean;
+}
+
+export interface AiStatus {
+  installed: boolean;
+  analyzed: number[];
 }
 
 export interface SmartCueBatch {
@@ -189,6 +196,8 @@ export const api = {
   writeCues: (path: string) => invoke<CueWriteResult>("write_cues", { path }),
   cuePalette: () => invoke<PaletteColor[]>("cue_palette"),
   smartCue: (path: string, trackId: number) => invoke<SmartCue[]>("smart_cue", { path, trackId }),
+  aiStatus: (path: string, trackIds: number[]) => invoke<AiStatus>("ai_status", { path, trackIds }),
+  aiAnalyze: (path: string, trackIds: number[]) => invoke<number>("ai_analyze", { path, trackIds }),
   smartCueApply: (path: string, trackIds: number[], replace: boolean) =>
     invoke<SmartCueBatch>("smart_cue_apply", { path, trackIds, replace }),
 };
