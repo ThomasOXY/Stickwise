@@ -8,13 +8,14 @@
     wave: Waveform | null;
     isDetail: boolean;
     cues: Cue[];
+    ghosts: { timeMs: number; label: string; color: string }[];
     duration: number;
     position: number;
     span: number;
     onSeek: (t: number) => void;
   }
 
-  let { wave, isDetail, cues, duration, position, span, onSeek }: Props = $props();
+  let { wave, isDetail, cues, ghosts, duration, position, span, onSeek }: Props = $props();
 
   let canvas = $state<HTMLCanvasElement>();
   let hover = $state<number | null>(null);
@@ -77,6 +78,9 @@
   >
     <canvas bind:this={canvas}></canvas>
     <span class="played" style:width={pct(position)}></span>
+    {#each ghosts as g}
+      <span class="ghost" style:left={pct(g.timeMs / 1000)} style:border-color={g.color} title={g.label}></span>
+    {/each}
     <span class="window" style:left={pct(position - span / 2)} style:width={pct(span)}></span>
     <span class="head" style:left={pct(position)}></span>
     {#if hover != null}
@@ -128,6 +132,13 @@
     top: 0;
     bottom: 0;
     background: rgb(20 22 27 / 0.5);
+    pointer-events: none;
+  }
+  .ghost {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed;
     pointer-events: none;
   }
   .window {

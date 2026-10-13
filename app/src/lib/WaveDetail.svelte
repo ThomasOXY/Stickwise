@@ -6,6 +6,8 @@
     wave: Waveform | null;
     beats: [number, number][];
     cues: Cue[];
+    /** Smart Cue suggestions drawn as dashed markers. */
+    ghosts: { timeMs: number; label: string; color: string }[];
     duration: number;
     /** Seconds visible across the whole width. */
     span: number;
@@ -17,7 +19,7 @@
     onScrubEnd: () => void;
   }
 
-  let { wave, beats, cues, duration, span, playing, getTime, setTime, onZoom, onScrubStart, onScrubEnd }: Props =
+  let { wave, beats, cues, ghosts, duration, span, playing, getTime, setTime, onZoom, onScrubStart, onScrubEnd }: Props =
     $props();
 
   let canvas = $state<HTMLCanvasElement>();
@@ -35,7 +37,7 @@
 
   $effect(() => {
     // Any input change forces a repaint on the next frame.
-    void [wave, beats, cues, span, duration];
+    void [wave, beats, cues, ghosts, span, duration];
     dirty = true;
   });
 
@@ -108,6 +110,20 @@
         ctx.lineTo(x, H - 8 * dpr);
         ctx.fill();
       }
+    }
+
+    // Smart Cue suggestions: dashed line with a label on top.
+    ctx.textAlign = "left";
+    ctx.font = `600 ${10 * dpr}px Inter, sans-serif`;
+    for (const g of ghosts) {
+      const x = Math.round(X(g.timeMs / 1000));
+      if (x < -80 || x > W) continue;
+      ctx.fillStyle = g.color;
+      for (let y = 0; y < H; y += 6 * dpr) ctx.fillRect(x, y, Math.max(1, dpr), 3 * dpr);
+      const w = ctx.measureText(g.label).width + 8 * dpr;
+      ctx.fillRect(x, 0, w, 14 * dpr);
+      ctx.fillStyle = "#14161b";
+      ctx.fillText(g.label, x + 4 * dpr, 7 * dpr);
     }
 
     // Fixed playhead in the centre, like rekordbox.

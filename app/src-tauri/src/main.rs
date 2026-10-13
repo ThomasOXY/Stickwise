@@ -2,12 +2,19 @@
 
 mod commands;
 mod dto;
+mod edits;
 mod jobs;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(jobs::Jobs::default())
+        .setup(|app| {
+            use tauri::Manager;
+            let dir = app.path().app_data_dir()?;
+            app.manage(edits::Edits::load(dir.join("cue-edits.json")));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_sticks,
             commands::open_stick,
@@ -19,6 +26,13 @@ fn main() {
             commands::reveal,
             commands::eject,
             commands::home_dir,
+            commands::save_cues,
+            commands::revert_cues,
+            commands::pending_cues,
+            commands::write_cues,
+            commands::cue_palette,
+            commands::smart_cue,
+            commands::smart_cue_apply,
         ])
         .run(tauri::generate_context!())
         .expect("error while running RB-EXPORT");

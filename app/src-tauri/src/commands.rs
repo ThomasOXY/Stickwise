@@ -3,16 +3,19 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
-use pioneer_formats::anlz::{AnlzFile, CueListKind, CueType, tag};
+use pioneer_formats::anlz::{
+    AnlzFile, CuePoint, HOT_CUE_PALETTE, hot_cue_color, read_cue_points, tag,
+};
 use pioneer_formats::pdb::file_type;
 use tauri::{AppHandle, Emitter, Manager, State};
+use usb_tools::Stick;
 use usb_tools::compat::{self, Player};
 use usb_tools::extract::{self, Duplicates, ExtractOptions, Naming};
 use usb_tools::probe::{self, Codec};
 use usb_tools::verify::{self, Problem, filesystem_type};
-use usb_tools::Stick;
 
 use crate::dto;
+use crate::edits::{self, Edits, StoredCue};
 use crate::jobs::Jobs;
 
 type CmdResult<T> = Result<T, String>;
@@ -21,14 +24,18 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> CmdResult<T> + Send + 'static) -> CmdResult<T> {
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> CmdResult<T> + Send + 'static,
+) -> CmdResult<T> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(err)?
 }
 
 fn disk_space(path: &Path) -> (u64, u64) {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
-    let Ok(c) = CString::new(path.as_os_str().as_bytes()) else { return (0, 0) };
+    let Ok(c) = CString::new(path.as_os_str().as_bytes()) else {
+        return (0, 0);
+    };
     // SAFETY: statfs fills the zeroed struct for a valid path.
     unsafe {
         let mut s: libc::statfs = std::mem::zeroed();
@@ -44,7 +51,10 @@ fn stick_info(path: &Path) -> dto::StickInfo {
     let (total, free) = disk_space(path);
     dto::StickInfo {
         path: path.display().to_string(),
-        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        name: path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         total_bytes: total,
         free_bytes: free,
         filesystem: filesystem_type(path).unwrap_or_default(),
@@ -54,7 +64,9 @@ fn stick_info(path: &Path) -> dto::StickInfo {
 /// Mounted volumes that carry a rekordbox device library.
 #[tauri::command]
 pub fn list_sticks() -> Vec<dto::StickInfo> {
-    let Ok(rd) = std::fs::read_dir("/Volumes") else { return Vec::new() };
+    let Ok(rd) = std::fs::read_dir("/Volumes") else {
+        return Vec::new();
+    };
     let mut out: Vec<_> = rd
         .flatten()
         .map(|e| e.path())
@@ -66,7 +78,11 @@ pub fn list_sticks() -> Vec<dto::StickInfo> {
 }
 
 fn format_label(t: &pioneer_formats::pdb::Track) -> String {
-    let depth = if t.sample_depth > 0 { format!(" {}", t.sample_depth) } else { String::new() };
+    let depth = if t.sample_depth > 0 {
+        format!(" {}", t.sample_depth)
+    } else {
+        String::new()
+    };
     match t.file_type {
         file_type::MP3 => format!("MP3 {}", t.bitrate),
         file_type::M4A => "M4A".into(),
@@ -116,14 +132,22 @@ pub async fn open_stick(path: String) -> CmdResult<dto::StickData> {
                 name: p.name.clone(),
                 is_folder: p.is_folder,
                 sort_order: p.sort_order,
-                track_ids: if p.is_folder { Vec::new() } else { db.playlist_tracks(p.id) },
+                track_ids: if p.is_folder {
+                    Vec::new()
+                } else {
+                    db.playlist_tracks(p.id)
+                },
             })
             .collect();
         let history = db
             .history_playlists
             .iter()
             .map(|h| {
-                let mut e: Vec<_> = db.history_entries.iter().filter(|e| e.playlist_id == h.id).collect();
+                let mut e: Vec<_> = db
+                    .history_entries
+                    .iter()
+                    .filter(|e| e.playlist_id == h.id)
+                    .collect();
                 e.sort_by_key(|e| e.entry_index);
                 dto::Playlist {
                     id: h.id,
@@ -155,7 +179,96 @@ fn artwork_path(stick: &Stick, id: u32) -> Option<String> {
     let small = stick.resolve(&art.path);
     let stem = small.file_stem()?.to_string_lossy().into_owned();
     let large = small.with_file_name(format!("{stem}_m.jpg"));
-    [large, small].into_iter().find(|p| p.is_file()).map(|p| p.display().to_string())
+    [large, small]
+        .into_iter()
+        .find(|p| p.is_file())
+        .map(|p| p.display().to_string())
+}
+
+/// rekordbox's memory cue colours (rows of the `colors` table).
+const MEMORY_COLORS: [[u8; 3]; 8] = [
+    [0xff, 0x00, 0x7f],
+    [0xff, 0x00, 0x00],
+    [0xff, 0xa5, 0x00],
+    [0xff, 0xff, 0x00],
+    [0x00, 0xff, 0x00],
+    [0x25, 0xfd, 0xe9],
+    [0x00, 0x00, 0xff],
+    [0x66, 0x00, 0x99],
+];
+
+fn display_color(c: &CuePoint) -> [u8; 3] {
+    if c.slot > 0 {
+        match hot_cue_color(c.hot_color) {
+            Some((display, _)) => display,
+            None if c.loop_end_ms.is_some() => [0xff, 0x8c, 0x00],
+            None => [0x28, 0xe2, 0x14],
+        }
+    } else if (1..=8).contains(&c.memory_color) {
+        MEMORY_COLORS[c.memory_color as usize - 1]
+    } else {
+        [0xe5, 0x48, 0x4d]
+    }
+}
+
+fn cue_dto(c: &CuePoint) -> dto::Cue {
+    dto::Cue {
+        slot: c.slot,
+        time_ms: c.time_ms,
+        loop_end_ms: c.loop_end_ms,
+        loop_beats: c.loop_beats,
+        comment: c.comment.clone(),
+        hot_color: c.hot_color,
+        hot_led: c.hot_led,
+        memory_color: c.memory_color,
+        active_loop: c.active_loop,
+        color: Some(display_color(c)),
+    }
+}
+
+fn cue_point(c: &dto::Cue) -> CuePoint {
+    CuePoint {
+        slot: c.slot.min(8),
+        time_ms: c.time_ms,
+        loop_end_ms: c.loop_end_ms.filter(|&e| e > c.time_ms),
+        loop_beats: c.loop_beats,
+        comment: c.comment.clone(),
+        hot_color: c.hot_color,
+        hot_led: c.hot_led,
+        memory_color: c.memory_color,
+        active_loop: c.active_loop && c.slot == 0 && c.loop_end_ms.is_some(),
+    }
+}
+
+fn stick_name(stick: &Stick) -> String {
+    stick
+        .root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Cue points of a track: unsaved edits if any, otherwise from the stick.
+fn track_cues(
+    app: &AppHandle,
+    stick: &Stick,
+    t: &pioneer_formats::pdb::Track,
+) -> (Vec<CuePoint>, bool) {
+    if let Some(e) = app
+        .state::<Edits>()
+        .get(&edits::key(&stick_name(stick), &t.file_path))
+    {
+        return (e.iter().map(CuePoint::from).collect(), true);
+    }
+    let dat_path = stick.resolve(&t.analyze_path);
+    let Some(dat) = read_anlz(&dat_path) else {
+        return (Vec::new(), false);
+    };
+    let ext = read_anlz(&sibling(&dat_path, "EXT"));
+    (
+        read_cue_points(&dat, ext.as_ref()).unwrap_or_default(),
+        false,
+    )
 }
 
 /// `ANLZ0000.DAT` path → sibling with another extension.
@@ -164,33 +277,36 @@ fn sibling(dat: &Path, ext: &str) -> PathBuf {
 }
 
 fn read_anlz(path: &Path) -> Option<AnlzFile> {
-    std::fs::read(path).ok().and_then(|b| AnlzFile::parse(&b).ok())
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| AnlzFile::parse(&b).ok())
 }
 
 fn find_track(stick: &Stick, id: u32) -> CmdResult<&pioneer_formats::pdb::Track> {
-    stick.db.track(id).ok_or_else(|| format!("track {id} not on the stick"))
+    stick
+        .db
+        .track(id)
+        .ok_or_else(|| format!("track {id} not on the stick"))
 }
 
 /// Hot cue colours for the table.
 #[tauri::command]
-pub async fn cue_summary(path: String, track_ids: Vec<u32>) -> CmdResult<Vec<dto::CueSummary>> {
+pub async fn cue_summary(
+    app: AppHandle,
+    path: String,
+    track_ids: Vec<u32>,
+) -> CmdResult<Vec<dto::CueSummary>> {
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let mut out = Vec::with_capacity(track_ids.len());
         for id in track_ids {
-            let Ok(t) = find_track(&stick, id) else { continue };
+            let Ok(t) = find_track(&stick, id) else {
+                continue;
+            };
             let mut hot = vec![None; 8];
-            let dat = stick.resolve(&t.analyze_path);
-            if let Some(ext) = read_anlz(&sibling(&dat, "EXT")) {
-                for list in ext.ext_cue_lists().unwrap_or_default() {
-                    if list.kind != CueListKind::Hot {
-                        continue;
-                    }
-                    for c in list.cues {
-                        if (1..=8).contains(&c.hot_cue) {
-                            hot[c.hot_cue as usize - 1] = Some(c.color.map(|(_, rgb)| rgb).unwrap_or([0, 0, 0]));
-                        }
-                    }
+            for c in track_cues(&app, &stick, t).0 {
+                if (1..=8).contains(&c.slot) {
+                    hot[c.slot as usize - 1] = Some(display_color(&c));
                 }
             }
             out.push(dto::CueSummary { track_id: id, hot });
@@ -220,7 +336,11 @@ fn audio_dto(i: &probe::AudioInfo) -> dto::AudioInfo {
 }
 
 #[tauri::command]
-pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDetail> {
+pub async fn track_detail(
+    app: AppHandle,
+    path: String,
+    track_id: u32,
+) -> CmdResult<dto::TrackDetail> {
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let t = find_track(&stick, track_id)?;
@@ -232,7 +352,11 @@ pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDe
         let pick = |file: &Option<AnlzFile>, t: [u8; 4], kind: &'static str, entry_len: usize| {
             file.as_ref()
                 .and_then(|f| f.section(t))
-                .map(|s| dto::Waveform { kind, entry_len, data: s.body.clone() })
+                .map(|s| dto::Waveform {
+                    kind,
+                    entry_len,
+                    data: s.body.clone(),
+                })
         };
         let previews: Vec<_> = [
             pick(&two, tag::WAVE_3BAND_PREVIEW, "three-band", 3),
@@ -250,34 +374,8 @@ pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDe
         .flatten()
         .collect();
 
-        let mut cues = Vec::new();
-        let loop_end = |kind: CueType, end: u32| (kind == CueType::Loop && end != u32::MAX).then_some(end);
-        let ext_lists = ext.as_ref().and_then(|f| f.ext_cue_lists().ok()).unwrap_or_default();
-        if !ext_lists.is_empty() {
-            for list in ext_lists {
-                for c in list.cues {
-                    cues.push(dto::Cue {
-                        slot: c.hot_cue,
-                        time_ms: c.time_ms,
-                        loop_end_ms: loop_end(c.cue_type, c.loop_time_ms),
-                        color: c.color.map(|(_, rgb)| rgb),
-                        comment: c.comment.unwrap_or_default(),
-                    });
-                }
-            }
-        } else if let Some(d) = &dat {
-            for list in d.cue_lists().unwrap_or_default() {
-                for c in list.cues {
-                    cues.push(dto::Cue {
-                        slot: c.hot_cue,
-                        time_ms: c.time_ms,
-                        loop_end_ms: loop_end(c.cue_type, c.loop_time_ms),
-                        color: None,
-                        comment: String::new(),
-                    });
-                }
-            }
-        }
+        let (points, edited) = track_cues(&app, &stick, t);
+        let mut cues: Vec<dto::Cue> = points.iter().map(cue_dto).collect();
         cues.sort_by_key(|c| (c.slot == 0, c.slot, c.time_ms));
 
         let beats = dat
@@ -292,6 +390,7 @@ pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDe
             previews,
             details,
             cues,
+            edited,
             beats,
             audio: probe::probe_file(&audio_path).ok().map(|i| audio_dto(&i)),
             file_size: std::fs::metadata(&audio_path).map(|m| m.len()).unwrap_or(0),
@@ -300,7 +399,10 @@ pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDe
     .await
 }
 
-fn issue_text(p: &Problem, audio: Option<&probe::AudioInfo>) -> (&'static str, &'static str, String) {
+fn issue_text(
+    p: &Problem,
+    audio: Option<&probe::AudioInfo>,
+) -> (&'static str, &'static str, String) {
     match p {
         Problem::MissingAudio => ("error", "missing", "Soubor chybí na flashce.".into()),
         Problem::MissingAnalysis(m) => ("error", "analysis", format!("Chybí analýza: {m}")),
@@ -312,17 +414,24 @@ fn issue_text(p: &Problem, audio: Option<&probe::AudioInfo>) -> (&'static str, &
         Problem::BrokenTag { junk } => (
             "error",
             "broken-tag",
-            format!("Poškozený tag MP3 ({junk} B smetí před zvukem). Přehrávač skladbu může odmítnout."),
+            format!(
+                "Poškozený tag MP3 ({junk} B smetí před zvukem). Přehrávač skladbu může odmítnout."
+            ),
         ),
-        Problem::WrongExtension { extension, actual } => {
-            ("error", "extension", format!("Soubor .{extension} je ve skutečnosti {actual}."))
-        }
+        Problem::WrongExtension { extension, actual } => (
+            "error",
+            "extension",
+            format!("Soubor .{extension} je ve skutečnosti {actual}."),
+        ),
         Problem::Unsupported { reason, .. } => {
             if audio.is_some_and(|a| a.codec == Codec::Float) {
                 (
                     "error",
                     "float",
-                    format!("{}-bit float WAV. CDJ přehraje jen 16 a 24 bitů.", audio.and_then(|a| a.bits).unwrap_or(32)),
+                    format!(
+                        "{}-bit float WAV. CDJ přehraje jen 16 a 24 bitů.",
+                        audio.and_then(|a| a.bits).unwrap_or(32)
+                    ),
                 )
             } else {
                 ("error", "unsupported", reason.clone())
@@ -358,11 +467,18 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
                 Problem::Unsupported { players, .. } => {
                     for p in players {
                         per_player.entry(*p).or_default().push(i.track_id);
-                        let label = if kind == "float" { "WAV 32f".to_string() } else { "nepodporovaný formát".into() };
+                        let label = if kind == "float" {
+                            "WAV 32f".to_string()
+                        } else {
+                            "nepodporovaný formát".into()
+                        };
                         *notes.entry(*p).or_default().entry(label).or_default() += 1;
                     }
                 }
-                Problem::BrokenTag { .. } | Problem::MissingAudio | Problem::WrongExtension { .. } | Problem::Unreadable(_) => {
+                Problem::BrokenTag { .. }
+                | Problem::MissingAudio
+                | Problem::WrongExtension { .. }
+                | Problem::Unreadable(_) => {
                     unplayable_everywhere.push(i.track_id);
                     let label = match kind {
                         "broken-tag" => "poškozený tag",
@@ -370,7 +486,11 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
                         _ => "nečitelný soubor",
                     };
                     for p in Player::ALL {
-                        *notes.entry(p).or_default().entry(label.to_string()).or_default() += 1;
+                        *notes
+                            .entry(p)
+                            .or_default()
+                            .entry(label.to_string())
+                            .or_default() += 1;
                     }
                 }
                 _ => {}
@@ -396,7 +516,12 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
                 unplayable.dedup();
                 let format_note = notes
                     .get(&p)
-                    .map(|m| m.iter().map(|(k, n)| format!("{n} × {k}")).collect::<Vec<_>>().join(", "))
+                    .map(|m| {
+                        m.iter()
+                            .map(|(k, n)| format!("{n} × {k}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
                     .unwrap_or_default();
                 dto::PlayerResult {
                     player: p.name().into(),
@@ -435,13 +560,21 @@ fn fs_name(fs: &str) -> &str {
 }
 
 #[tauri::command]
-pub fn start_extract(app: AppHandle, jobs: State<'_, Jobs>, req: dto::ExtractRequest) -> CmdResult<u32> {
+pub fn start_extract(
+    app: AppHandle,
+    jobs: State<'_, Jobs>,
+    req: dto::ExtractRequest,
+) -> CmdResult<u32> {
     let stick = Stick::open(&req.stick).map_err(err)?;
     let opts = ExtractOptions {
         playlists: req.playlists.clone(),
         history: req.history,
         numbered: req.numbered,
-        naming: if req.artist_title { Naming::ArtistTitle } else { Naming::Original },
+        naming: if req.artist_title {
+            Naming::ArtistTitle
+        } else {
+            Naming::Original
+        },
         duplicates: match req.duplicates.as_str() {
             "copy" => Duplicates::Copy,
             "symlink" => Duplicates::Symlink,
@@ -451,7 +584,10 @@ pub fn start_extract(app: AppHandle, jobs: State<'_, Jobs>, req: dto::ExtractReq
     };
     let plan = extract::plan(&stick, &opts);
     let (id, cancel) = jobs.start();
-    let label = format!("Export {}", stick.root.file_name().unwrap_or_default().to_string_lossy());
+    let label = format!(
+        "Export {}",
+        stick.root.file_name().unwrap_or_default().to_string_lossy()
+    );
     let dest = PathBuf::from(&req.dest);
     std::thread::spawn(move || {
         let mut ev = dto::JobEvent {
@@ -516,14 +652,22 @@ pub fn cancel_job(jobs: State<'_, Jobs>, id: u32) {
 
 #[tauri::command]
 pub fn reveal(path: String) -> CmdResult<()> {
-    std::process::Command::new("open").arg("-R").arg(&path).status().map_err(err)?;
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .status()
+        .map_err(err)?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn eject(path: String) -> CmdResult<()> {
     blocking(move || {
-        let out = std::process::Command::new("diskutil").arg("eject").arg(&path).output().map_err(err)?;
+        let out = std::process::Command::new("diskutil")
+            .arg("eject")
+            .arg(&path)
+            .output()
+            .map_err(err)?;
         if out.status.success() {
             Ok(())
         } else {
@@ -536,4 +680,233 @@ pub async fn eject(path: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_default()
+}
+
+/// Keep edited cues in the app until they are written to the stick.
+#[tauri::command]
+pub async fn save_cues(
+    app: AppHandle,
+    path: String,
+    track_id: u32,
+    cues: Vec<dto::Cue>,
+) -> CmdResult<Vec<dto::Cue>> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let t = find_track(&stick, track_id)?;
+        let points: Vec<CuePoint> = cues.iter().map(cue_point).collect();
+        app.state::<Edits>().set(
+            edits::key(&stick_name(&stick), &t.file_path),
+            points.iter().map(StoredCue::from).collect(),
+        )?;
+        let mut out: Vec<dto::Cue> = points.iter().map(cue_dto).collect();
+        out.sort_by_key(|c| (c.slot == 0, c.slot, c.time_ms));
+        Ok(out)
+    })
+    .await
+}
+
+/// Drop unsaved edits of a track, going back to what is on the stick.
+#[tauri::command]
+pub async fn revert_cues(app: AppHandle, path: String, track_id: u32) -> CmdResult<()> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let t = find_track(&stick, track_id)?;
+        app.state::<Edits>()
+            .remove(&edits::key(&stick_name(&stick), &t.file_path))
+    })
+    .await
+}
+
+/// Track ids on this stick with unsaved cue edits.
+#[tauri::command]
+pub async fn pending_cues(app: AppHandle, path: String) -> CmdResult<Vec<u32>> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let paths = app.state::<Edits>().pending(&stick_name(&stick));
+        Ok(stick
+            .db
+            .tracks
+            .iter()
+            .filter(|t| paths.contains(&t.file_path))
+            .map(|t| t.id)
+            .collect())
+    })
+    .await
+}
+
+fn timestamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as libc::time_t)
+        .unwrap_or(0);
+    // SAFETY: localtime_r fills the zeroed struct for a valid time.
+    let tm = unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&secs, &mut tm);
+        tm
+    };
+    format!(
+        "{:04}-{:02}-{:02}_{:02}{:02}{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec
+    )
+}
+
+/// Write every pending cue edit of this stick into its analysis files.
+#[tauri::command]
+pub async fn write_cues(app: AppHandle, path: String) -> CmdResult<dto::CueWriteResult> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let name = stick_name(&stick);
+        let store = app.state::<Edits>();
+        let pending = store.pending(&name);
+        let edits: Vec<(u32, Vec<CuePoint>)> = stick
+            .db
+            .tracks
+            .iter()
+            .filter(|t| pending.contains(&t.file_path))
+            .filter_map(|t| {
+                store
+                    .get(&edits::key(&name, &t.file_path))
+                    .map(|c| (t.id, c.iter().map(CuePoint::from).collect()))
+            })
+            .collect();
+        let home = std::env::var("HOME").unwrap_or_default();
+        let backup = PathBuf::from(home)
+            .join("RB-EXPORT/backups")
+            .join(&name)
+            .join(format!("cues-{}", timestamp()));
+        let report = usb_tools::cue_write::write_cues(&stick, &edits, &backup);
+        for id in &report.written {
+            if let Ok(t) = find_track(&stick, *id) {
+                store.remove(&edits::key(&name, &t.file_path))?;
+            }
+        }
+        Ok(dto::CueWriteResult {
+            written: report.written.len(),
+            failed: report
+                .failed
+                .iter()
+                .map(|(id, e)| {
+                    let title = stick
+                        .db
+                        .track(*id)
+                        .map(|t| t.title.clone())
+                        .unwrap_or_default();
+                    format!("{title}: {e}")
+                })
+                .collect(),
+            backup_dir: backup.display().to_string(),
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn cue_palette() -> Vec<dto::PaletteColor> {
+    HOT_CUE_PALETTE
+        .iter()
+        .filter_map(|&code| hot_cue_color(code).map(|(color, _)| dto::PaletteColor { code, color }))
+        .collect()
+}
+
+fn smart_kind(k: analysis::smart_cue::Kind) -> &'static str {
+    use analysis::smart_cue::Kind::*;
+    match k {
+        MixIn => "mix-in",
+        Drop => "drop",
+        Break => "break",
+        Build => "build",
+        Up => "up",
+        Down => "down",
+        Outro => "outro",
+        MixOut => "mix-out",
+    }
+}
+
+/// Smart Cue suggestions for a track, from its beat grid and scroll waveform.
+fn suggestions(stick: &Stick, t: &pioneer_formats::pdb::Track) -> Option<Vec<analysis::smart_cue::Suggestion>> {
+    use analysis::smart_cue::{Input, analyze, bands_from_color, bands_from_three_band};
+    let dat_path = stick.resolve(&t.analyze_path);
+    let dat = read_anlz(&dat_path)?;
+    let columns = if let Some(s) = read_anlz(&sibling(&dat_path, "2EX")).and_then(|f| f.section(tag::WAVE_3BAND_SCROLL).cloned()) {
+        bands_from_three_band(&s.body)
+    } else {
+        let ext = read_anlz(&sibling(&dat_path, "EXT"))?;
+        bands_from_color(&ext.section(tag::WAVE_COLOR_SCROLL)?.body)
+    };
+    let beats: Vec<(u32, u16)> = dat
+        .beat_grid()
+        .and_then(|g| g.ok())
+        .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
+        .unwrap_or_default();
+    Some(analyze(&Input { beats: &beats, columns: &columns, rate: 150.0, bpm: t.bpm() as f32 }))
+}
+
+#[tauri::command]
+pub async fn smart_cue(path: String, track_id: u32) -> CmdResult<Vec<dto::SmartCue>> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let t = find_track(&stick, track_id)?;
+        let s = suggestions(&stick, t).ok_or("Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.")?;
+        let plan = analysis::smart_cue::hot_cue_plan(&s);
+        Ok(s.iter()
+            .map(|x| dto::SmartCue {
+                kind: smart_kind(x.kind),
+                time_ms: x.time_ms,
+                bar: x.bar,
+                label: x.label.clone(),
+                confidence: x.confidence,
+                color_code: x.kind.color_code(),
+                color: hot_cue_color(x.kind.color_code()).map(|c| c.0).unwrap_or([255, 255, 255]),
+                in_plan: plan.iter().any(|p| p.time_ms == x.time_ms),
+            })
+            .collect())
+    })
+    .await
+}
+
+/// Put the Smart Cue plan on hot cues A–H of many tracks at once. Tracks
+/// that already have hot cues are skipped unless `replace` is set.
+#[tauri::command]
+pub async fn smart_cue_apply(
+    app: AppHandle,
+    path: String,
+    track_ids: Vec<u32>,
+    replace: bool,
+) -> CmdResult<dto::SmartCueBatch> {
+    blocking(move || {
+        let stick = Stick::open(&path).map_err(err)?;
+        let name = stick_name(&stick);
+        let mut r = dto::SmartCueBatch { applied: 0, skipped: 0, failed: 0 };
+        for id in track_ids {
+            let Ok(t) = find_track(&stick, id) else { continue };
+            let (mut cues, _) = track_cues(&app, &stick, t);
+            if cues.iter().any(|c| c.slot > 0) && !replace {
+                r.skipped += 1;
+                continue;
+            }
+            let Some(s) = suggestions(&stick, t) else {
+                r.failed += 1;
+                continue;
+            };
+            cues.retain(|c| c.slot == 0);
+            for (i, x) in analysis::smart_cue::hot_cue_plan(&s).iter().enumerate() {
+                cues.push(CuePoint {
+                    hot_color: x.kind.color_code(),
+                    comment: x.label.clone(),
+                    ..CuePoint::hot(i as u8 + 1, x.time_ms)
+                });
+            }
+            app.state::<Edits>()
+                .set(edits::key(&name, &t.file_path), cues.iter().map(StoredCue::from).collect())?;
+            r.applied += 1;
+        }
+        Ok(r)
+    })
+    .await
 }

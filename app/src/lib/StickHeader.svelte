@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Copy, Eject, HardDriveDownload, LoaderCircle, RefreshCw, ShieldCheck } from "@lucide/svelte";
+  import { Copy, Eject, HardDriveDownload, LoaderCircle, RefreshCw, Save, ShieldCheck } from "@lucide/svelte";
   import { api } from "./api";
   import { fsName, gb, plural } from "./format";
   import { app } from "./state.svelte";
@@ -60,6 +60,11 @@
     {/if}
 
     <div class="actions">
+      {#if app.pending.size > 0}
+        <button class="btn write" onclick={() => (app.writeOpen = true)}>
+          <Save size={14} /> Zapsat cue na flashku <span class="readout">{app.pending.size}</span>
+        </button>
+      {/if}
       {#if app.view === "health"}
         <button class="btn primary" onclick={() => app.runVerify()} disabled={app.verifying}>
           <RefreshCw size={14} /> Zkontrolovat znovu
@@ -157,6 +162,13 @@
     margin-left: auto;
     display: flex;
     gap: 8px;
+  }
+  .btn.write {
+    border-color: var(--cue);
+    color: var(--cue);
+  }
+  .btn.write .readout {
+    font-size: 14px;
   }
   .players {
     display: flex;

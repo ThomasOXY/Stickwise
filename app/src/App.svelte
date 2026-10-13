@@ -9,6 +9,7 @@
   import StickHeader from "./lib/StickHeader.svelte";
   import TrackDetail from "./lib/TrackDetail.svelte";
   import TrackTable from "./lib/TrackTable.svelte";
+  import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
 
   let deck = $state<ReturnType<typeof Deck>>();
@@ -19,7 +20,7 @@
 
   function onKey(e: KeyboardEvent) {
     const typing = (e.target as HTMLElement)?.tagName === "INPUT";
-    if (typing || app.exportOpen) return;
+    if (typing || app.exportOpen || app.writeOpen) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -50,6 +51,8 @@
       <Deck bind:this={deck} />
       {#if app.error}
         <button class="toast" onclick={() => (app.error = null)}>{app.error}</button>
+      {:else if app.notice}
+        <button class="toast ok" onclick={() => (app.notice = null)}>{app.notice}</button>
       {/if}
     {:else if app.loading}
       <div class="loading" data-tauri-drag-region>Načítám knihovnu z flashky…</div>
@@ -61,6 +64,9 @@
 
 {#if app.exportOpen && app.data}
   <ExportSheet />
+{/if}
+{#if app.writeOpen && app.data}
+  <WriteCuesSheet />
 {/if}
 
 <style>
@@ -88,7 +94,7 @@
   .toast {
     position: absolute;
     left: 50%;
-    bottom: 136px;
+    bottom: 292px;
     transform: translateX(-50%);
     max-width: 640px;
     padding: 8px 14px;
@@ -98,5 +104,11 @@
     color: #f2c4c5;
     font-size: 12px;
     text-align: left;
+    z-index: 15;
+  }
+  .toast.ok {
+    border-color: rgb(89 201 138 / 0.45);
+    background: #17251d;
+    color: #bfe8cf;
   }
 </style>

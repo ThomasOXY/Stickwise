@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { Minus, Pause, Play, Plus } from "@lucide/svelte";
+  import { Minus, Pause, Play, Plus, Sparkles } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { keyColor, time } from "./format";
   import { app } from "./state.svelte";
+  import CuePads from "./CuePads.svelte";
+  import SmartCuePanel from "./SmartCuePanel.svelte";
   import WaveDetail from "./WaveDetail.svelte";
   import WaveOverview from "./WaveOverview.svelte";
   import { STYLE_LABELS, type Style } from "./waveform";
@@ -25,6 +27,11 @@
     track ? app.verify?.issues.find((i) => i.trackId === track.id && i.severity === "error") : undefined,
   );
   const cues = $derived(detail?.cues ?? []);
+  const ghosts = $derived(
+    app.smartOpen && app.smart
+      ? app.smart.map((s) => ({ timeMs: s.timeMs, label: s.label, color: `rgb(${s.color[0]} ${s.color[1]} ${s.color[2]})` }))
+      : [],
+  );
 
   const styles = $derived((["three-band", "color", "mono"] as Style[]).filter((s) => detail?.details.some((w) => w.kind === s)));
   const activeStyle = $derived(styles.includes(style) ? style : (styles[0] ?? style));
@@ -110,8 +117,19 @@
       {#if issue}
         <span class="pill"><span class="dot fault"></span>{app.formatOverride.get(track.id) ?? track.format}, na CDJ nepůjde</span>
       {/if}
+      {#if detail?.edited}
+        <span class="edited">Cue upravené, zatím jen v aplikaci <button onclick={() => app.revertCues()}>Vrátit</button></span>
+      {/if}
 
       <div class="tools">
+        <button
+          class="btn small smart"
+          class:on={app.smartOpen}
+          onclick={() => (app.smartOpen ? (app.smartOpen = false) : app.loadSmart())}
+          title="Smart Cue: najde dropy, breaky a další místa pro cue"
+        >
+          <Sparkles size={13} /> Smart Cue
+        </button>
         {#if styles.length > 1}
           <div class="seg" role="radiogroup" aria-label="Styl waveformu">
             {#each styles as s}
@@ -142,6 +160,7 @@
         wave={detailWave}
         beats={detail?.beats ?? []}
         {cues}
+        {ghosts}
         {duration}
         {span}
         {playing}
@@ -153,7 +172,14 @@
       />
     </div>
 
-    <WaveOverview wave={overview.wave} isDetail={overview.isDetail} {cues} {duration} {position} {span} onSeek={setTime} />
+    <WaveOverview wave={overview.wave} isDetail={overview.isDetail} {cues} {ghosts} {duration} {position} {span} onSeek={setTime} />
+
+    {#if detail}
+      <CuePads {getTime} {setTime} beats={detail.beats} bpm={track.bpm} />
+    {/if}
+    {#if app.smartOpen && app.smart}
+      <SmartCuePanel {setTime} />
+    {/if}
   {:else}
     <p class="idle">Vyber skladbu v tabulce. Mezerníkem ji pustíš, kolečkem myši nad waveformem přiblížíš.</p>
   {/if}
@@ -161,8 +187,9 @@
 
 <style>
   .deck {
+    position: relative;
     flex: none;
-    height: 236px;
+    height: 278px;
     padding: 12px 24px 6px;
     border-top: 1px solid var(--line);
     background: var(--panel);
@@ -227,6 +254,15 @@
     align-items: center;
     gap: 10px;
     margin-left: auto;
+  }
+  .btn.small {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .btn.smart.on {
+    border-color: var(--cue);
+    color: var(--cue);
   }
   .seg {
     display: flex;
@@ -296,6 +332,22 @@
     background: var(--line);
     align-self: center;
     margin: 0 6px;
+  }
+  .edited {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--cue);
+    white-space: nowrap;
+  }
+  .edited button {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text-2);
+    text-decoration: underline;
+    font-size: 12px;
   }
   .detail {
     flex: 1;

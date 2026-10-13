@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { Search } from "@lucide/svelte";
+  import { Search, Sparkles } from "@lucide/svelte";
   import { keyColor, plural, rgb, time } from "./format";
   import { app } from "./state.svelte";
 
+  let smartMenu = $state(false);
   const total = $derived(app.currentTracks.reduce((s, t) => s + t.duration, 0));
   const bad = $derived(app.currentTracks.filter((t) => app.errorTracks.has(t.id)).length);
 
@@ -35,6 +36,23 @@
     {#if bad > 0}
       <span><span class="readout big fault">{bad}</span> {plural(bad, "nepůjde", "nepůjdou", "nepůjde")}</span>
     {/if}
+    <div class="smart-wrap">
+      <button class="btn small" onclick={() => (smartMenu = !smartMenu)} disabled={app.currentTracks.length === 0}>
+        <Sparkles size={13} /> Smart Cue pro playlist
+      </button>
+      {#if smartMenu}
+        <div class="smart-menu" role="menu">
+          <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(false))}>
+            <span>Jen skladby bez hot cue</span>
+            <span class="sub">Tvoje cue zůstanou, jak jsou.</span>
+          </button>
+          <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(true))}>
+            <span>Všechny skladby, přepsat hot cue</span>
+            <span class="sub">Memory cue zůstanou. Jde vrátit u každé skladby.</span>
+          </button>
+        </div>
+      {/if}
+    </div>
     <label class="search">
       <Search size={14} />
       <input type="search" placeholder="Hledat v playlistu" bind:value={app.trackFilter} />
@@ -75,7 +93,7 @@
       >
         <span class="c-no readout" class:cur={t.id === app.selectedTrack}>{i + 1}</span>
         <span class="c-st"><span class="dot {st}"></span></span>
-        <span class="c-title">{t.title}</span>
+        <span class="c-title">{t.title}{#if app.pending.has(t.id)}<i class="edited" title="Cue upravené, zatím jen v aplikaci"></i>{/if}</span>
         <span class="c-artist">{t.artist}</span>
         <span class="c-bpm r readout num">{t.bpm.toFixed(2)}</span>
         <span class="c-key"><i style:background={keyColor(t.key)}></i><span class="readout num">{t.key}</span></span>
@@ -126,8 +144,50 @@
   .big.fault {
     color: var(--fault);
   }
-  .search {
+  .smart-wrap {
+    position: relative;
     margin-left: auto;
+    align-self: center;
+  }
+  .btn.small {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .smart-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    width: 280px;
+    padding: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+    z-index: 25;
+  }
+  .smart-menu button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    text-align: left;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .smart-menu button:hover {
+    background: var(--panel-2);
+  }
+  .smart-menu .sub {
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .search {
     align-self: center;
     display: flex;
     align-items: center;
@@ -207,6 +267,15 @@
   }
   .c-artist {
     color: var(--text-2);
+  }
+  .edited {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 7px;
+    border-radius: 50%;
+    background: var(--cue);
+    vertical-align: middle;
   }
   .num {
     font-size: 15px;

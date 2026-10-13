@@ -2641,6 +2641,7 @@ dependencies = [
 name = "rbx-app"
 version = "0.1.0"
 dependencies = [
+ "analysis",
  "libc",
  "pioneer-formats",
  "serde",

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { FolderOpen, Music, X } from "@lucide/svelte";
+  import { FolderOpen, Music, Trash, X } from "@lucide/svelte";
+  import type { Cue } from "./api";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { api } from "./api";
   import { cueTime, keyColor, rgb, size, time } from "./format";
@@ -34,6 +35,20 @@
   );
   const pos = (ms: number) => `${((ms - windowMs[0]) / (windowMs[1] - windowMs[0])) * 100}%`;
   const letter = (n: number) => String.fromCharCode(64 + n);
+
+  function edit(c: Cue, change: Partial<Cue>) {
+    const all = d?.cues ?? [];
+    app.setCues(all.map((x) => (x === c ? { ...x, ...change } : x)));
+  }
+
+  function remove(c: Cue) {
+    app.setCues((d?.cues ?? []).filter((x) => x !== c));
+  }
+
+  function setActive(c: Cue) {
+    const all = d?.cues ?? [];
+    app.setCues(all.map((x) => (x.slot === 0 ? { ...x, activeLoop: x === c ? !x.activeLoop : false } : x)));
+  }
 </script>
 
 {#if track}
@@ -82,26 +97,36 @@
     </div>
 
     <div class="sect"><span>Hot cue</span></div>
-    {#each hot as c}
+    {#each hot as c (c.slot)}
       <div class="cue-row">
         <span class="badge" style:background={rgb(c.color, c.slot)}>{letter(c.slot)}</span>
         <span class="readout t">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
-        <span class="sub">{c.comment}</span>
+        <input class="cm" type="text" value={c.comment} placeholder="Název" onchange={(e) => edit(c, { comment: e.currentTarget.value })} />
+        <button class="del" onclick={() => remove(c)} aria-label="Smazat hot cue {letter(c.slot)}"><Trash size={12} /></button>
       </div>
     {/each}
     {#if d && missingSlots.length > 0}
-      <p class="sub small">{missingSlots.length === 8 ? "Žádné hot cue" : `${missingSlots.join(", ")} nenastaveno`}</p>
+      <p class="sub small">{missingSlots.length === 8 ? "Žádné hot cue. Nastavíš je pady pod waveformem nebo klávesami 1–8." : `${missingSlots.join(", ")} nenastaveno`}</p>
     {/if}
 
     <div class="sect"><span>Memory cue a smyčky</span></div>
-    {#each memory as c}
+    {#each memory as c (c.timeMs + "-" + (c.loopEndMs ?? 0))}
       <div class="cue-row">
-        {#if c.loopEndMs}<span class="loop"></span>{:else}<span class="tri"></span>{/if}
+        {#if c.loopEndMs}
+          <button
+            class="loop"
+            class:active={c.activeLoop}
+            style:background={rgb(c.color)}
+            onclick={() => setActive(c)}
+            title={c.activeLoop ? "Aktivní smyčka: zapne se po načtení skladby" : "Nastavit jako aktivní smyčku"}
+          ></button>
+        {:else}<span class="tri" style:border-top-color={rgb(c.color)}></span>{/if}
         <span class="readout t">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
-        <span class="sub">{c.comment}</span>
+        <input class="cm" type="text" value={c.comment} placeholder="Název" onchange={(e) => edit(c, { comment: e.currentTarget.value })} />
+        <button class="del" onclick={() => remove(c)} aria-label="Smazat memory cue"><Trash size={12} /></button>
       </div>
     {/each}
-    {#if d && memory.length === 0}<p class="sub small">Žádné</p>{/if}
+    {#if d && memory.length === 0}<p class="sub small">Žádné. Přidáš je tlačítkem Memory nebo klávesou M.</p>{/if}
 
     <div class="path sub">{track.filePath}</div>
     <button class="btn" onclick={() => api.reveal(track.absPath)}><FolderOpen size={14} /> Ukázat ve Finderu</button>
@@ -296,7 +321,44 @@
     width: 14px;
     height: 8px;
     border-radius: 1px;
-    background: var(--hc-e);
+    border: 0;
+    padding: 0;
+    opacity: 0.55;
+  }
+  .loop.active {
+    opacity: 1;
+    outline: 1px solid var(--text);
+    outline-offset: 1px;
+  }
+  .cm {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    border-color: transparent;
+    background: transparent;
+    padding: 0 6px;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .cm:hover {
+    border-color: var(--line);
+  }
+  .cm:focus {
+    color: var(--text);
+  }
+  .del {
+    border: 0;
+    background: none;
+    color: var(--text-3);
+    padding: 2px;
+    opacity: 0;
+  }
+  .cue-row:hover .del,
+  .del:focus-visible {
+    opacity: 1;
+  }
+  .del:hover {
+    color: var(--fault);
   }
   .path {
     margin: 16px 0 10px;

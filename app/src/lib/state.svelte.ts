@@ -1,7 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 import {
   api,
+  type Cue,
   type CueSummary,
+  type PaletteColor,
+  type SmartCue,
   type JobEvent,
   type Playlist,
   type StickData,
@@ -42,6 +45,17 @@ class AppState {
   playing = $state<number | null>(null);
   jobs = $state<JobEvent[]>([]);
   exportOpen = $state(false);
+
+  /** Tracks with cue edits not yet written to the stick. */
+  pending = $state<Set<number>>(new Set());
+  palette = $state<PaletteColor[]>([]);
+  quantize = $state(localStorage.getItem("quantize") !== "off");
+  writeOpen = $state(false);
+  /** Smart Cue suggestions for the selected track, shown on the waveform. */
+  smart = $state<SmartCue[] | null>(null);
+  smartOpen = $state(false);
+  notice = $state<string | null>(null);
+  private undoStack: { trackId: number; cues: Cue[] }[] = [];
 
   trackById = $derived(new Map((this.data?.tracks ?? []).map((t) => [t.id, t])));
 
@@ -97,6 +111,7 @@ class AppState {
       if (i >= 0) this.jobs[i] = e.payload;
       else this.jobs.push(e.payload);
     });
+    this.palette = await api.cuePalette();
     await this.refreshSticks();
     setInterval(() => this.refreshSticks(), 2500);
   }
@@ -135,12 +150,116 @@ class AppState {
       this.data = await api.openStick(path);
       const first = this.sortedChildren(0).find((p) => !p.isFolder) ?? this.data.playlists.find((p) => !p.isFolder);
       if (first) this.select({ kind: "playlist", id: first.id });
+      this.loadPending();
       this.runVerify();
     } catch (e) {
       this.error = String(e);
     } finally {
       this.loading = false;
     }
+  }
+
+  async loadPending() {
+    if (!this.stickPath) return;
+    this.pending = new Set(await api.pendingCues(this.stickPath));
+  }
+
+  /** Replace the cues of the selected track (kept in the app until written to the stick). */
+  async setCues(cues: Cue[], undoable = true) {
+    const d = this.detail;
+    const path = this.stickPath;
+    if (!d || !path) return;
+    if (undoable) {
+      this.undoStack.push({ trackId: d.trackId, cues: d.cues });
+      if (this.undoStack.length > 100) this.undoStack.shift();
+    }
+    try {
+      const saved = await api.saveCues(path, d.trackId, cues);
+      if (this.detail?.trackId === d.trackId) this.detail = { ...this.detail, cues: saved, edited: true };
+      const hot: (CueSummary["hot"][number])[] = Array(8).fill(null);
+      for (const c of saved) if (c.slot >= 1 && c.slot <= 8) hot[c.slot - 1] = c.color;
+      this.cues[d.trackId] = hot;
+      this.pending = new Set([...this.pending, d.trackId]);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  async undo() {
+    const last = this.undoStack.pop();
+    if (!last || last.trackId !== this.detail?.trackId) {
+      if (last) this.undoStack.push(last);
+      return;
+    }
+    await this.setCues(last.cues, false);
+  }
+
+  /** Throw away the edits of the selected track. */
+  async revertCues() {
+    const d = this.detail;
+    if (!d || !this.stickPath) return;
+    await api.revertCues(this.stickPath, d.trackId);
+    this.detail = null;
+    delete this.cues[d.trackId];
+    this.pending.delete(d.trackId);
+    this.pending = new Set(this.pending);
+    await this.selectTrack(d.trackId, true);
+    this.loadCues([d.trackId]);
+  }
+
+  async writeCuesToStick() {
+    if (!this.stickPath) return;
+    try {
+      const r = await api.writeCues(this.stickPath);
+      this.notice =
+        r.failed.length === 0
+          ? `Cue zapsány u ${r.written} skladeb. Záloha původních souborů: ${r.backupDir.replace(/^\/Users\/[^/]+/, "~")}`
+          : `Zapsáno ${r.written}, nepovedlo se ${r.failed.length}: ${r.failed.join("; ")}`;
+      await this.loadPending();
+      if (this.selectedTrack != null) await this.selectTrack(this.selectedTrack, true);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  async loadSmart() {
+    const id = this.selectedTrack;
+    if (id == null || !this.stickPath) return;
+    try {
+      const s = await api.smartCue(this.stickPath, id);
+      if (this.selectedTrack === id) {
+        this.smart = s;
+        this.smartOpen = true;
+      }
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  /** Smart Cue onto hot cues of every track in the current list. */
+  async smartCuePlaylist(replace: boolean) {
+    const path = this.stickPath;
+    const ids = this.currentTrackIds;
+    if (!path || ids.length === 0) return;
+    try {
+      const r = await api.smartCueApply(path, ids, replace);
+      for (const id of ids) delete this.cues[id];
+      await this.loadCues(ids);
+      await this.loadPending();
+      if (this.selectedTrack != null) await this.selectTrack(this.selectedTrack, true);
+      this.notice =
+        `Smart Cue nastavil hot cue u ${r.applied} skladeb` +
+        (r.skipped ? `, ${r.skipped} už hot cue měly a zůstaly beze změny` : "") +
+        (r.failed ? `, ${r.failed} nejde rozebrat (chybí beatgrid nebo waveform)` : "") +
+        ". Na flashku se zapíšou tlačítkem Zapsat cue.";
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  setQuantize(on: boolean) {
+    this.quantize = on;
+    localStorage.setItem("quantize", on ? "on" : "off");
   }
 
   sortedChildren(parent: number): Playlist[] {
@@ -180,11 +299,15 @@ class AppState {
     }
   }
 
-  async selectTrack(id: number) {
+  async selectTrack(id: number, reload = false) {
+    if (id !== this.selectedTrack) {
+      this.smart = null;
+      this.smartOpen = false;
+    }
     this.selectedTrack = id;
     const path = this.stickPath;
     if (!path) return;
-    if (this.detail?.trackId === id) return;
+    if (this.detail?.trackId === id && !reload) return;
     try {
       const d = await api.trackDetail(path, id);
       if (this.selectedTrack === id) this.detail = d;

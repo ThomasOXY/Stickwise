@@ -248,7 +248,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
             score(x).partial_cmp(&score(y)).unwrap()
         })
         .unwrap_or(0);
-    let on_phrase = |b: usize| b >= offset && (b - offset) % PHRASE == 0;
+    let on_phrase = |b: usize| b >= offset && (b - offset).is_multiple_of(PHRASE);
 
     // Candidates every 4 bars on that grid; phrase starts count a bit more.
     let first = offset % BLOCK;

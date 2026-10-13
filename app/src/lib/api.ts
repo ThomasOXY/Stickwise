@@ -56,11 +56,46 @@ export interface Waveform {
 }
 
 export interface Cue {
+  /** 0 = memory cue / loop, 1..8 = hot cue A..H. */
   slot: number;
   timeMs: number;
   loopEndMs: number | null;
-  color: Rgb | null;
+  loopBeats: [number, number] | null;
   comment: string;
+  hotColor: number;
+  hotLed: Rgb | null;
+  memoryColor: number;
+  activeLoop: boolean;
+  /** Display colour from the backend. */
+  color: Rgb | null;
+}
+
+export interface PaletteColor {
+  code: number;
+  color: Rgb;
+}
+
+export interface SmartCue {
+  kind: "mix-in" | "drop" | "break" | "build" | "up" | "down" | "outro" | "mix-out";
+  timeMs: number;
+  bar: number;
+  label: string;
+  confidence: number;
+  colorCode: number;
+  color: Rgb;
+  inPlan: boolean;
+}
+
+export interface SmartCueBatch {
+  applied: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface CueWriteResult {
+  written: number;
+  failed: string[];
+  backupDir: string;
 }
 
 export interface AudioInfo {
@@ -77,6 +112,7 @@ export interface TrackDetail {
   previews: Waveform[];
   details: Waveform[];
   cues: Cue[];
+  edited: boolean;
   beats: [number, number][];
   audio: AudioInfo | null;
   fileSize: number;
@@ -147,4 +183,12 @@ export const api = {
   reveal: (path: string) => invoke<void>("reveal", { path }),
   eject: (path: string) => invoke<void>("eject", { path }),
   homeDir: () => invoke<string>("home_dir"),
+  saveCues: (path: string, trackId: number, cues: Cue[]) => invoke<Cue[]>("save_cues", { path, trackId, cues }),
+  revertCues: (path: string, trackId: number) => invoke<void>("revert_cues", { path, trackId }),
+  pendingCues: (path: string) => invoke<number[]>("pending_cues", { path }),
+  writeCues: (path: string) => invoke<CueWriteResult>("write_cues", { path }),
+  cuePalette: () => invoke<PaletteColor[]>("cue_palette"),
+  smartCue: (path: string, trackId: number) => invoke<SmartCue[]>("smart_cue", { path, trackId }),
+  smartCueApply: (path: string, trackIds: number[], replace: boolean) =>
+    invoke<SmartCueBatch>("smart_cue_apply", { path, trackIds, replace }),
 };

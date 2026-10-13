@@ -76,15 +76,40 @@ pub struct Waveform {
     pub data: Vec<u8>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Cue {
-    /// 0 = memory cue, 1..=8 = hot cue A..H.
-    pub slot: u32,
+    /// 0 = memory cue / loop, 1..=8 = hot cue A..H.
+    pub slot: u8,
     pub time_ms: u32,
     pub loop_end_ms: Option<u32>,
-    pub color: Option<[u8; 3]>,
+    pub loop_beats: Option<(u16, u16)>,
     pub comment: String,
+    /// Hot cue colour code (rekordbox's 64-colour table), 0 = default.
+    pub hot_color: u8,
+    /// Stored pad LED colour; dropped by the UI when the colour changes.
+    pub hot_led: Option<[u8; 3]>,
+    /// Memory cue colour row 1..=8, 0 = none.
+    pub memory_color: u8,
+    pub active_loop: bool,
+    /// Display colour, filled in by the backend (ignored on input).
+    #[serde(default)]
+    pub color: Option<[u8; 3]>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaletteColor {
+    pub code: u8,
+    pub color: [u8; 3],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CueWriteResult {
+    pub written: usize,
+    pub failed: Vec<String>,
+    pub backup_dir: String,
 }
 
 #[derive(Serialize)]
@@ -107,6 +132,8 @@ pub struct TrackDetail {
     /// Scrolling waveforms at 150 columns per second, one per available style.
     pub details: Vec<Waveform>,
     pub cues: Vec<Cue>,
+    /// The cues come from unsaved edits in the app, not from the stick.
+    pub edited: bool,
     /// Beat times in ms with their bar position (1 = downbeat).
     pub beats: Vec<(u32, u16)>,
     pub audio: Option<AudioInfo>,
@@ -181,4 +208,29 @@ pub struct JobEvent {
     pub current: String,
     pub message: String,
     pub dest: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartCue {
+    /// `mix-in`, `drop`, `break`, `build`, `up`, `down`, `outro`, `mix-out`.
+    pub kind: &'static str,
+    pub time_ms: u32,
+    pub bar: usize,
+    pub label: String,
+    pub confidence: f32,
+    /// rekordbox hot cue colour code and its display colour.
+    pub color_code: u8,
+    pub color: [u8; 3],
+    /// Part of the hot cue plan (at most 8 per track).
+    pub in_plan: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartCueBatch {
+    pub applied: usize,
+    /// Tracks that already had hot cues and were left alone.
+    pub skipped: usize,
+    pub failed: usize,
 }
