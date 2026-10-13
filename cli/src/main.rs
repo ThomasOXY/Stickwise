@@ -39,6 +39,15 @@ enum Cmd {
         /// Score suggestions against the hot cues already on the stick.
         #[arg(long)]
         eval: bool,
+        /// Only print the audio paths of tracks that have hot cues.
+        #[arg(long)]
+        list_cued: bool,
+        /// Also score CUE-DETR results (JSON lines from sidecar/cue_detr.py).
+        #[arg(long)]
+        detr: Option<PathBuf>,
+        /// CUE-DETR score threshold.
+        #[arg(long, default_value_t = 0.9)]
+        detr_threshold: f32,
     },
     /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
     Extract {
@@ -103,7 +112,21 @@ fn main() -> Result<()> {
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
         Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
-        Cmd::SmartCue { usb, track, eval } => smart_cue_cmd(&usb, track, eval),
+        Cmd::SmartCue {
+            usb,
+            track,
+            eval,
+            list_cued,
+            detr,
+            detr_threshold,
+        } => smart_cue_cmd(
+            &usb,
+            track,
+            eval,
+            list_cued,
+            detr.as_deref(),
+            detr_threshold,
+        ),
         Cmd::Extract {
             usb,
             dest,
@@ -478,7 +501,37 @@ fn print_issue(i: &verify::TrackIssue) {
     }
 }
 
-fn smart_cue_cmd(usb: &Path, only: Option<u32>, eval: bool) -> Result<()> {
+fn smart_cue_cmd(
+    usb: &Path,
+    only: Option<u32>,
+    eval: bool,
+    list_cued: bool,
+    detr: Option<&Path>,
+    detr_threshold: f32,
+) -> Result<()> {
+    // CUE-DETR results by audio path: candidate (time ms, score).
+    let mut detr_cues: std::collections::HashMap<String, Vec<(u32, f32)>> = Default::default();
+    if let Some(p) = detr {
+        for line in std::fs::read_to_string(p)?.lines() {
+            let v: serde_json::Value = serde_json::from_str(line)?;
+            let (Some(path), Some(c)) = (v["path"].as_str(), v["candidates"].as_array()) else {
+                continue;
+            };
+            detr_cues.insert(
+                path.to_string(),
+                c.iter()
+                    .map(|x| {
+                        (
+                            (x["time"].as_f64().unwrap_or(0.0) * 1000.0) as u32,
+                            x["score"].as_f64().unwrap_or(0.0) as f32,
+                        )
+                    })
+                    .collect(),
+            );
+        }
+    }
+    let (mut d_user_hit, mut d_total, mut d_hit, mut d_tracks) = (0, 0, 0, 0);
+    let (mut m_plan_total, mut m_plan_hit) = (0, 0);
     use analysis::smart_cue::{
         Input, analyze, bands_from_color, bands_from_three_band, hot_cue_plan,
     };
@@ -517,24 +570,82 @@ fn smart_cue_cmd(usb: &Path, only: Option<u32>, eval: bool) -> Result<()> {
             .and_then(|g| g.ok())
             .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
             .unwrap_or_default();
-        let s = analyze(&Input {
+        let input = Input {
             beats: &beats,
             columns: &columns,
             rate: 150.0,
             bpm: t.bpm() as f32,
-        });
+        };
+        let s = analyze(&input);
         let user: Vec<u32> = read_cue_points(&dat, ext.as_ref())
             .unwrap_or_default()
             .iter()
             .filter(|c| c.slot > 0)
             .map(|c| c.time_ms)
             .collect();
-        if eval && user.is_empty() {
+        if (eval || list_cued) && user.is_empty() {
+            continue;
+        }
+        if list_cued {
+            println!("{}", stick.audio_path(t).display());
             continue;
         }
         tracks += 1;
         let bar_ms = (4.0 * 60000.0 / t.bpm().max(1.0)) as u32;
         let near = |a: u32, b: u32| a.abs_diff(b) <= bar_ms;
+        if let Some(c) = detr_cues.get(&stick.audio_path(t).display().to_string()) {
+            // Keep the strongest candidate within a bar, above the threshold.
+            let mut picked: Vec<(u32, f32)> = Vec::new();
+            let mut sorted: Vec<(u32, f32)> = c
+                .iter()
+                .copied()
+                .filter(|x| x.1 >= detr_threshold)
+                .collect();
+            sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            for x in sorted {
+                if !picked.iter().any(|p| near(p.0, x.0)) {
+                    picked.push(x);
+                }
+            }
+            d_tracks += 1;
+            d_total += picked.len();
+            d_hit += picked
+                .iter()
+                .filter(|p| user.iter().any(|&u| near(p.0, u)))
+                .count();
+            d_user_hit += user
+                .iter()
+                .filter(|&&u| picked.iter().any(|p| near(p.0, u)))
+                .count();
+            let cands: Vec<analysis::smart_cue::AiCandidate> = c
+                .iter()
+                .map(|&(time_ms, score)| analysis::smart_cue::AiCandidate { time_ms, score })
+                .collect();
+            let merged = analysis::smart_cue::with_ai(&input, &s, &cands, detr_threshold);
+            let plan = hot_cue_plan(&merged);
+            m_plan_total += plan.len();
+            m_plan_hit += user
+                .iter()
+                .filter(|&&u| plan.iter().any(|x| near(x.time_ms, u)))
+                .count();
+            if only.is_some() {
+                for x in &merged {
+                    let mark = if user.iter().any(|&u| near(x.time_ms, u)) {
+                        "✓"
+                    } else {
+                        " "
+                    };
+                    let ai = if x.ai { "AI" } else { "  " };
+                    println!(
+                        "  {mark} {ai} {:>8}  bar {:>3}  {:<12} {:.2}",
+                        fmt_ms(x.time_ms),
+                        x.bar,
+                        x.label,
+                        x.confidence
+                    );
+                }
+            }
+        }
         if eval {
             user_total += user.len();
             user_hit += user
@@ -595,6 +706,17 @@ fn smart_cue_cmd(usb: &Path, only: Option<u32>, eval: bool) -> Result<()> {
             "hot cue plan (max 8 per track, {plan_total} cues): covers {plan_hit}/{user_total} of your cues ({:.0} %)",
             100.0 * plan_hit as f64 / user_total.max(1) as f64
         );
+        if d_tracks > 0 {
+            println!(
+                "CUE-DETR (score ≥ {detr_threshold}, {d_tracks} tracks): found {d_user_hit} of your cues; \
+                 {d_hit}/{d_total} of its cues sit on one of yours ({:.0} %)",
+                100.0 * d_hit as f64 / d_total.max(1) as f64
+            );
+            println!(
+                "Smart Cue + CUE-DETR hot cue plan ({m_plan_total} cues): covers {m_plan_hit}/{user_total} of your cues ({:.0} %)",
+                100.0 * m_plan_hit as f64 / user_total.max(1) as f64
+            );
+        }
     }
     Ok(())
 }

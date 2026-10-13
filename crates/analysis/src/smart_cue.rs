@@ -23,6 +23,8 @@ pub enum Kind {
     Up,
     /// A new section with less energy.
     Down,
+    /// A DJ cue point with no clear energy change (often a vocal entry).
+    Cue,
     /// Last section winds down.
     Outro,
     /// Last full phrase point before the music ends.
@@ -38,6 +40,7 @@ impl Kind {
             Kind::Build => "Build",
             Kind::Up => "Up",
             Kind::Down => "Down",
+            Kind::Cue => "Cue",
             Kind::Outro => "Outro",
             Kind::MixOut => "Mix out",
         }
@@ -52,6 +55,7 @@ impl Kind {
             Kind::Build => 0x22,  // orange
             Kind::Up => 0x1a,     // yellow-green
             Kind::Down => 0x09,   // cyan
+            Kind::Cue => 0x31,    // magenta
             Kind::Outro => 0x3c,  // purple
             Kind::MixOut => 0x2d, // pink
         }
@@ -61,6 +65,9 @@ impl Kind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Suggestion {
     pub kind: Kind,
+    /// Placed by the CUE-DETR model (trained on professional DJs' cues)
+    /// rather than by the energy analysis alone.
+    pub ai: bool,
     pub time_ms: u32,
     /// Bar number from the first downbeat, starting at 1.
     pub bar: usize,
@@ -189,6 +196,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
             .first()
             .map(|b| {
                 vec![Suggestion {
+                    ai: false,
                     kind: Kind::MixIn,
                     time_ms: b.start_ms,
                     bar: 1,
@@ -291,6 +299,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
     let bass_on = |a: usize, b: usize| mean(&low, a, b) > 0.55;
 
     let mut out = vec![Suggestion {
+        ai: false,
         kind: Kind::MixIn,
         time_ms: bars[0].start_ms,
         bar: 1,
@@ -322,6 +331,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
             _ => (Kind::Down, "Down".into()),
         };
         out.push(Suggestion {
+            ai: false,
             kind,
             time_ms: bars[b].start_ms,
             bar: b + 1,
@@ -344,6 +354,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
         let rise = mean(&total, b + BLOCK, d) - mean(&total, b, b + BLOCK);
         if rise > 0.05 && !bass_on(b, d) && !out.iter().any(|s| s.bar.abs_diff(b + 1) < BLOCK) {
             out.push(Suggestion {
+                ai: false,
                 kind: Kind::Build,
                 time_ms: bars[b].start_ms,
                 bar: b + 1,
@@ -378,6 +389,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
     if let Some(m) = mix_out.filter(|&m| m > 0) {
         out.retain(|s| !(s.bar.abs_diff(m + 1) < BLOCK && matches!(s.kind, Kind::Up | Kind::Down)));
         out.push(Suggestion {
+            ai: false,
             kind: Kind::MixOut,
             time_ms: bars[m].start_ms,
             bar: m + 1,
@@ -389,11 +401,197 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
     out
 }
 
+/// A cue candidate from CUE-DETR.
+#[derive(Debug, Clone, Copy)]
+pub struct AiCandidate {
+    pub time_ms: u32,
+    /// 0..1.
+    pub score: f32,
+}
+
+/// Default CUE-DETR score threshold. On a DJ's own 213 hot cues 0.75 gave
+/// the best balance of covered cues and extra points (`rbx smart-cue
+/// --eval --detr`); the reference script uses 0.9.
+pub const AI_THRESHOLD: f32 = 0.75;
+
+/// Combine CUE-DETR's positions with the energy analysis: the model decides
+/// *where* a DJ would put cues, the energy analysis says *what* they are.
+/// Points are snapped to the nearest downbeat and named after a structural
+/// change within a bar (Drop, Breakdown, Mix out …) or the energy direction.
+pub fn with_ai(
+    input: &Input,
+    structure: &[Suggestion],
+    ai: &[AiCandidate],
+    threshold: f32,
+) -> Vec<Suggestion> {
+    let bar_ms = (4.0 * 60000.0 / input.bpm.max(1.0)) as u32;
+    let downbeats: Vec<u32> = input
+        .beats
+        .iter()
+        .filter(|b| b.1 == 1)
+        .map(|b| b.0)
+        .collect();
+    let snap = |t: u32| -> u32 {
+        downbeats
+            .iter()
+            .copied()
+            .min_by_key(|d| d.abs_diff(t))
+            .filter(|d| d.abs_diff(t) <= bar_ms / 2)
+            .unwrap_or(t)
+    };
+    let bar_of = |t: u32| downbeats.iter().take_while(|&&d| d <= t + 5).count().max(1);
+    // Mean of all bands over [a, b) ms.
+    let energy = |a: u32, b: u32| -> f32 {
+        let col = |ms: u32| ((ms as f32 / 1000.0) * input.rate) as usize;
+        let (a, b) = (
+            col(a).min(input.columns.len()),
+            col(b).min(input.columns.len()),
+        );
+        if b <= a {
+            return 0.0;
+        }
+        input.columns[a..b]
+            .iter()
+            .map(|c| c.low + c.mid + c.high)
+            .sum::<f32>()
+            / (b - a) as f32
+    };
+    let low = |a: u32, b: u32| -> f32 {
+        let col = |ms: u32| ((ms as f32 / 1000.0) * input.rate) as usize;
+        let (a, b) = (
+            col(a).min(input.columns.len()),
+            col(b).min(input.columns.len()),
+        );
+        if b <= a {
+            return 0.0;
+        }
+        input.columns[a..b].iter().map(|c| c.low).sum::<f32>() / (b - a) as f32
+    };
+
+    let mut strong: Vec<AiCandidate> = ai
+        .iter()
+        .copied()
+        .filter(|c| c.score >= threshold)
+        .collect();
+    strong.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    let mut picked: Vec<AiCandidate> = Vec::new();
+    for c in strong {
+        let t = snap(c.time_ms);
+        if !picked.iter().any(|p| p.time_ms.abs_diff(t) < bar_ms) {
+            picked.push(AiCandidate {
+                time_ms: t,
+                score: c.score,
+            });
+        }
+    }
+    if picked.is_empty() {
+        return structure.to_vec();
+    }
+    picked.sort_by_key(|c| c.time_ms);
+
+    let window = 4 * bar_ms;
+    let mut out: Vec<Suggestion> = Vec::new();
+    let first = downbeats.first().copied().unwrap_or(0);
+    for (i, c) in picked.iter().enumerate() {
+        let near = structure
+            .iter()
+            .filter(|s| s.time_ms.abs_diff(c.time_ms) <= bar_ms)
+            .min_by_key(|s| s.time_ms.abs_diff(c.time_ms));
+        let (kind, label) = match near {
+            Some(s) => (s.kind, s.label.clone()),
+            None if i == 0 && c.time_ms <= first + 2 * bar_ms => {
+                (Kind::MixIn, "Mix in".to_string())
+            }
+            None => {
+                let before = energy(c.time_ms.saturating_sub(window), c.time_ms);
+                let after = energy(c.time_ms, c.time_ms + window);
+                let (lb, la) = (
+                    low(c.time_ms.saturating_sub(window), c.time_ms),
+                    low(c.time_ms, c.time_ms + window),
+                );
+                if la > lb * 1.6 && la > 30.0 {
+                    (Kind::Drop, "Drop".into())
+                } else if lb > la * 1.6 && lb > 30.0 {
+                    (Kind::Break, "Breakdown".into())
+                } else if after > before * 1.12 {
+                    (Kind::Up, "Up".into())
+                } else if before > after * 1.12 {
+                    (Kind::Down, "Down".into())
+                } else {
+                    (Kind::Cue, "Cue".into())
+                }
+            }
+        };
+        out.push(Suggestion {
+            ai: true,
+            kind,
+            time_ms: c.time_ms,
+            bar: bar_of(c.time_ms),
+            label,
+            confidence: c.score,
+        });
+    }
+    // Keep the start and the mix-out point even if the model skipped them.
+    for s in structure
+        .iter()
+        .filter(|s| matches!(s.kind, Kind::MixIn | Kind::MixOut))
+    {
+        if !out
+            .iter()
+            .any(|o| o.time_ms.abs_diff(s.time_ms) < 2 * bar_ms)
+        {
+            out.push(s.clone());
+        }
+    }
+    // Structural points the model did not pick stay available, unticked.
+    for s in structure {
+        if !out.iter().any(|o| o.time_ms.abs_diff(s.time_ms) < bar_ms) {
+            out.push(s.clone());
+        }
+    }
+    out.sort_by_key(|s| s.time_ms);
+    // Number drops and breakdowns in time order.
+    let (mut d, mut b) = (0, 0);
+    for s in &mut out {
+        match s.kind {
+            Kind::Drop => {
+                d += 1;
+                s.label = format!("Drop {d}");
+            }
+            Kind::Break => {
+                b += 1;
+                s.label = format!("Breakdown {b}");
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The hot cue layout DJs expect on pads A–H, in time order:
 /// Mix in, then each Breakdown → Drop pair, then Mix out. Build, Up, Down
 /// and Outro stay as suggestions the DJ can add by hand. At most three
 /// drops (with their breakdowns) are kept, the clearest first.
 pub fn hot_cue_plan(s: &[Suggestion]) -> Vec<Suggestion> {
+    if s.iter().any(|x| x.ai) {
+        // The model's points are where DJs put cues: take them (plus the
+        // start and the mix-out point), strongest first if more than 8.
+        let mut picked: Vec<Suggestion> = s
+            .iter()
+            .filter(|x| x.ai || matches!(x.kind, Kind::MixIn | Kind::MixOut))
+            .cloned()
+            .collect();
+        while picked.len() > 8 {
+            let (i, _) = picked
+                .iter()
+                .enumerate()
+                .filter(|(_, x)| !matches!(x.kind, Kind::MixIn | Kind::MixOut))
+                .min_by(|a, b| a.1.confidence.partial_cmp(&b.1.confidence).unwrap())
+                .unwrap();
+            picked.remove(i);
+        }
+        return picked;
+    }
     let mut drops: Vec<&Suggestion> = s.iter().filter(|x| x.kind == Kind::Drop).collect();
     drops.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
     drops.truncate(3);

@@ -2634,6 +2634,7 @@ dependencies = [
  "anyhow",
  "clap",
  "pioneer-formats",
+ "serde_json",
  "usb-tools",
 ]
 
