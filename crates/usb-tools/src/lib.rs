@@ -4,6 +4,7 @@
 //! Everything here only **reads** from the stick.
 
 pub mod compat;
+pub mod cue_write;
 pub mod extract;
 pub mod names;
 pub mod probe;

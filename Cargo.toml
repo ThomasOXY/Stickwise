@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pioneer-formats", "crates/usb-tools", "cli", "app/src-tauri"]
+members = ["crates/pioneer-formats", "crates/usb-tools", "crates/analysis", "cli", "app/src-tauri"]
 
 [workspace.package]
 edition = "2024"
@@ -10,6 +10,7 @@ license = "MIT"
 [workspace.dependencies]
 pioneer-formats = { path = "crates/pioneer-formats" }
 usb-tools = { path = "crates/usb-tools" }
+analysis = { path = "crates/analysis" }
 thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

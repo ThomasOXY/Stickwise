@@ -8,5 +8,6 @@ license.workspace = true
 [dependencies]
 pioneer-formats.workspace = true
 usb-tools.workspace = true
+analysis.workspace = true
 anyhow.workspace = true
 clap.workspace = true

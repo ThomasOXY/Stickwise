@@ -30,6 +30,16 @@ enum Cmd {
         #[arg(long, value_enum)]
         player: Vec<PlayerArg>,
     },
+    /// Smart Cue: suggest structure cues; with --eval compare with existing hot cues.
+    SmartCue {
+        usb: PathBuf,
+        /// Only this track id.
+        #[arg(long)]
+        track: Option<u32>,
+        /// Score suggestions against the hot cues already on the stick.
+        #[arg(long)]
+        eval: bool,
+    },
     /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
     Extract {
         /// Root of the mounted stick, e.g. /Volumes/DJ.
@@ -93,6 +103,7 @@ fn main() -> Result<()> {
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
         Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
+        Cmd::SmartCue { usb, track, eval } => smart_cue_cmd(&usb, track, eval),
         Cmd::Extract {
             usb,
             dest,
@@ -465,4 +476,125 @@ fn print_issue(i: &verify::TrackIssue) {
     if !i.playlists.is_empty() {
         println!("    playlists: {}", i.playlists.join(", "));
     }
+}
+
+fn smart_cue_cmd(usb: &Path, only: Option<u32>, eval: bool) -> Result<()> {
+    use analysis::smart_cue::{
+        Input, analyze, bands_from_color, bands_from_three_band, hot_cue_plan,
+    };
+    use pioneer_formats::anlz::{read_cue_points, tag};
+    let stick = Stick::open(usb)?;
+    let (mut user_total, mut user_hit, mut sugg_total, mut sugg_hit, mut tracks) = (0, 0, 0, 0, 0);
+    let (mut plan_hit, mut plan_total) = (0, 0);
+    for t in &stick.db.tracks {
+        if only.is_some_and(|id| id != t.id) {
+            continue;
+        }
+        let dat_path = stick.resolve(&t.analyze_path);
+        let Ok(dat) = std::fs::read(&dat_path)
+            .map_err(anyhow::Error::from)
+            .and_then(|b| Ok(AnlzFile::parse(&b)?))
+        else {
+            continue;
+        };
+        let ext = std::fs::read(dat_path.with_extension("EXT"))
+            .ok()
+            .and_then(|b| AnlzFile::parse(&b).ok());
+        let two = std::fs::read(dat_path.with_extension("2EX"))
+            .ok()
+            .and_then(|b| AnlzFile::parse(&b).ok());
+        let columns = match (&two, &ext) {
+            (Some(f), _) if f.section(tag::WAVE_3BAND_SCROLL).is_some() => {
+                bands_from_three_band(&f.section(tag::WAVE_3BAND_SCROLL).unwrap().body)
+            }
+            (_, Some(f)) if f.section(tag::WAVE_COLOR_SCROLL).is_some() => {
+                bands_from_color(&f.section(tag::WAVE_COLOR_SCROLL).unwrap().body)
+            }
+            _ => continue,
+        };
+        let beats: Vec<(u32, u16)> = dat
+            .beat_grid()
+            .and_then(|g| g.ok())
+            .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
+            .unwrap_or_default();
+        let s = analyze(&Input {
+            beats: &beats,
+            columns: &columns,
+            rate: 150.0,
+            bpm: t.bpm() as f32,
+        });
+        let user: Vec<u32> = read_cue_points(&dat, ext.as_ref())
+            .unwrap_or_default()
+            .iter()
+            .filter(|c| c.slot > 0)
+            .map(|c| c.time_ms)
+            .collect();
+        if eval && user.is_empty() {
+            continue;
+        }
+        tracks += 1;
+        let bar_ms = (4.0 * 60000.0 / t.bpm().max(1.0)) as u32;
+        let near = |a: u32, b: u32| a.abs_diff(b) <= bar_ms;
+        if eval {
+            user_total += user.len();
+            user_hit += user
+                .iter()
+                .filter(|&&u| s.iter().any(|x| near(x.time_ms, u)))
+                .count();
+            sugg_total += s.len();
+            sugg_hit += s
+                .iter()
+                .filter(|x| user.iter().any(|&u| near(x.time_ms, u)))
+                .count();
+            let plan = hot_cue_plan(&s);
+            plan_total += plan.len();
+            plan_hit += user
+                .iter()
+                .filter(|&&u| plan.iter().any(|x| near(x.time_ms, u)))
+                .count();
+        }
+        if !eval || only.is_some() {
+            println!(
+                "#{} {} – {}",
+                t.id,
+                stick.db.artist_name(t.artist_id).unwrap_or(""),
+                t.title
+            );
+            for x in &s {
+                let mark = if user.iter().any(|&u| near(x.time_ms, u)) {
+                    "✓"
+                } else {
+                    " "
+                };
+                println!(
+                    "  {mark} {:>8}  bar {:>3}  {:<8} {:.2}",
+                    fmt_ms(x.time_ms),
+                    x.bar,
+                    x.label,
+                    x.confidence
+                );
+            }
+            if !user.is_empty() {
+                let mut u = user.clone();
+                u.sort();
+                println!(
+                    "    your hot cues: {}",
+                    u.iter().map(|&m| fmt_ms(m)).collect::<Vec<_>>().join(", ")
+                );
+            }
+        }
+    }
+    if eval {
+        println!(
+            "\n{tracks} tracks with your hot cues: Smart Cue found {user_hit}/{user_total} of your cues ({:.0} %); \
+             {sugg_hit}/{sugg_total} suggestions sit on one of your cues ({:.0} %)",
+            100.0 * user_hit as f64 / user_total.max(1) as f64,
+            100.0 * sugg_hit as f64 / sugg_total.max(1) as f64
+        );
+        println!(
+            "hot cue plan (max 8 per track, {plan_total} cues): covers {plan_hit}/{user_total} of your cues ({:.0} %)",
+            100.0 * plan_hit as f64 / user_total.max(1) as f64
+        );
+    }
+    Ok(())
 }
