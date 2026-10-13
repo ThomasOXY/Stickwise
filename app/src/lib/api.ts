@@ -74,8 +74,8 @@ export interface AudioInfo {
 
 export interface TrackDetail {
   trackId: number;
-  preview: Waveform | null;
-  detail: Waveform | null;
+  previews: Waveform[];
+  details: Waveform[];
   cues: Cue[];
   beats: [number, number][];
   audio: AudioInfo | null;

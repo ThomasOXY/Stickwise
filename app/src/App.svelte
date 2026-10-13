@@ -19,9 +19,14 @@
 
   function onKey(e: KeyboardEvent) {
     const typing = (e.target as HTMLElement)?.tagName === "INPUT";
-    if (e.code === "Space" && !typing && !app.exportOpen) {
+    if (typing || app.exportOpen) return;
+    if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
+    } else if (e.key === "+" || e.key === "=") {
+      deck?.zoom(1 / 1.5);
+    } else if (e.key === "-") {
+      deck?.zoom(1.5);
     }
   }
 </script>

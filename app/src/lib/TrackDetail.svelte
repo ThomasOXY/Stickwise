@@ -4,7 +4,7 @@
   import { api } from "./api";
   import { cueTime, keyColor, rgb, size, time } from "./format";
   import { app } from "./state.svelte";
-  import { DETAIL_RATE, columnCount, draw } from "./waveform";
+  import { DETAIL_RATE, paint } from "./waveform";
 
   let canvas = $state<HTMLCanvasElement>();
   const track = $derived(app.selectedTrack != null ? app.trackById.get(app.selectedTrack) : undefined);
@@ -22,12 +22,11 @@
     return [start, start + 8000] as const;
   });
 
+  const wave = $derived(d?.details.find((w) => w.kind === localStorage.getItem("wave-style")) ?? d?.details[0] ?? null);
+
   $effect(() => {
-    if (!canvas || !d?.detail) return;
-    const per = d.detail.kind === "three-band" || d.detail.kind === "color" ? DETAIL_RATE : DETAIL_RATE;
-    const from = Math.floor((windowMs[0] / 1000) * per);
-    const to = Math.min(columnCount(d.detail), Math.floor((windowMs[1] / 1000) * per));
-    draw(canvas, d.detail, from, to);
+    if (!canvas || !wave) return;
+    paint(canvas, wave, DETAIL_RATE, windowMs[0] / 1000, windowMs[1] / 1000);
   });
 
   const beatsInWindow = $derived(
@@ -79,7 +78,7 @@
       {#each hot.filter((c) => c.timeMs >= windowMs[0] && c.timeMs <= windowMs[1]) as c}
         <span class="cue" style:left={pos(c.timeMs)} style:background={rgb(c.color, c.slot)}>{letter(c.slot)}</span>
       {/each}
-      {#if d && !d.detail}<span class="none">Bez waveformu</span>{/if}
+      {#if d && !wave}<span class="none">Bez waveformu</span>{/if}
     </div>
 
     <div class="sect"><span>Hot cue</span></div>

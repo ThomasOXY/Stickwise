@@ -1,16 +1,22 @@
 <script lang="ts">
-  import { Pause, Play } from "@lucide/svelte";
+  import { Minus, Pause, Play, Plus } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { keyColor, rgb, time } from "./format";
+  import { keyColor, time } from "./format";
   import { app } from "./state.svelte";
-  import { draw } from "./waveform";
+  import WaveDetail from "./WaveDetail.svelte";
+  import WaveOverview from "./WaveOverview.svelte";
+  import { STYLE_LABELS, type Style } from "./waveform";
+
+  const MIN_SPAN = 2;
+  const MAX_SPAN = 64;
 
   let audio = $state<HTMLAudioElement>();
-  let canvas = $state<HTMLCanvasElement>();
   let position = $state(0);
   let playing = $state(false);
   let audioDuration = $state(0);
-  let hover = $state<number | null>(null);
+  let style = $state<Style>((localStorage.getItem("wave-style") as Style) || "three-band");
+  let span = $state(Number(localStorage.getItem("wave-span")) || 8);
+  let resumeAfterScrub = false;
 
   const track = $derived(app.selectedTrack != null ? app.trackById.get(app.selectedTrack) : undefined);
   const detail = $derived(app.detail?.trackId === track?.id ? app.detail : null);
@@ -18,8 +24,19 @@
   const issue = $derived(
     track ? app.verify?.issues.find((i) => i.trackId === track.id && i.severity === "error") : undefined,
   );
-  const hotCues = $derived((detail?.cues ?? []).filter((c) => c.slot > 0));
-  const memory = $derived((detail?.cues ?? []).filter((c) => c.slot === 0));
+  const cues = $derived(detail?.cues ?? []);
+
+  const styles = $derived((["three-band", "color", "mono"] as Style[]).filter((s) => detail?.details.some((w) => w.kind === s)));
+  const activeStyle = $derived(styles.includes(style) ? style : (styles[0] ?? style));
+  const detailWave = $derived(detail?.details.find((w) => w.kind === activeStyle) ?? null);
+  const overview = $derived.by(() => {
+    const p = detail?.previews.find((w) => w.kind === activeStyle);
+    if (p) return { wave: p, isDetail: false };
+    return { wave: detailWave, isDetail: true };
+  });
+
+  $effect(() => localStorage.setItem("wave-style", style));
+  $effect(() => localStorage.setItem("wave-span", String(span)));
 
   // A newly selected track is loaded paused, like loading a deck.
   $effect(() => {
@@ -29,46 +46,44 @@
     audioDuration = 0;
   });
 
-  function redraw() {
-    if (canvas && detail?.preview) draw(canvas, detail.preview);
-    else if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-  }
-
+  // Follow the audio clock smoothly while playing.
   $effect(() => {
-    void detail;
-    redraw();
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      if (audio) position = audio.currentTime;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   });
 
-  $effect(() => {
-    if (!canvas) return;
-    const ro = new ResizeObserver(() => redraw());
-    ro.observe(canvas);
-    return () => ro.disconnect();
-  });
+  const getTime = () => (playing && audio ? audio.currentTime : position);
 
-  export function toggle() {
-    if (!audio || !track) return;
-    if (audio.paused) {
-      audio.play().catch((e) => (app.error = `Skladbu nejde přehrát: ${e.message ?? e}`));
-    } else {
-      audio.pause();
-    }
-  }
-
-  function seekFromEvent(e: MouseEvent) {
-    const el = e.currentTarget as HTMLElement;
-    const r = el.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * duration;
-  }
-
-  function seek(e: MouseEvent) {
-    const t = seekFromEvent(e);
+  function setTime(t: number) {
     position = t;
     if (audio) audio.currentTime = t;
   }
 
-  const pct = (s: number) => `${(s / Math.max(1, duration)) * 100}%`;
-  const slotLetter = (n: number) => String.fromCharCode(64 + n);
+  export function toggle() {
+    if (!audio || !track) return;
+    if (audio.paused) audio.play().catch((e) => (app.error = `Skladbu nejde přehrát: ${e.message ?? e}`));
+    else audio.pause();
+  }
+
+  export function zoom(factor: number) {
+    span = Math.min(MAX_SPAN, Math.max(MIN_SPAN, span * factor));
+  }
+
+  function scrubStart() {
+    resumeAfterScrub = playing;
+    if (playing) audio?.pause();
+  }
+
+  function scrubEnd() {
+    if (resumeAfterScrub) audio?.play();
+    resumeAfterScrub = false;
+  }
 </script>
 
 <footer class="deck">
@@ -76,12 +91,12 @@
     <audio
       bind:this={audio}
       src={convertFileSrc(track.absPath)}
-      preload="metadata"
-      ontimeupdate={() => (position = audio!.currentTime)}
+      preload="auto"
+      ontimeupdate={() => !playing && (position = audio!.currentTime)}
       onplay={() => (playing = true)}
       onpause={() => (playing = false)}
+      onended={() => (playing = false)}
       onloadedmetadata={() => (audioDuration = audio!.duration || 0)}
-      onerror={() => (playing = false)}
     ></audio>
 
     <div class="info">
@@ -95,6 +110,24 @@
       {#if issue}
         <span class="pill"><span class="dot fault"></span>{app.formatOverride.get(track.id) ?? track.format}, na CDJ nepůjde</span>
       {/if}
+
+      <div class="tools">
+        {#if styles.length > 1}
+          <div class="seg" role="radiogroup" aria-label="Styl waveformu">
+            {#each styles as s}
+              <button role="radio" aria-checked={activeStyle === s} class:on={activeStyle === s} onclick={() => (style = s)}>
+                {STYLE_LABELS[s]}
+              </button>
+            {/each}
+          </div>
+        {/if}
+        <div class="zoom">
+          <button class="btn icon" onclick={() => zoom(1.5)} aria-label="Oddálit" disabled={span >= MAX_SPAN}><Minus size={13} /></button>
+          <span class="readout zv">{span < 10 ? span.toFixed(1) : Math.round(span)} s</span>
+          <button class="btn icon" onclick={() => zoom(1 / 1.5)} aria-label="Přiblížit" disabled={span <= MIN_SPAN}><Plus size={13} /></button>
+        </div>
+      </div>
+
       <div class="readouts">
         <span class="readout big">{track.bpm.toFixed(2)}</span><span class="unit">BPM</span>
         <i style:background={keyColor(track.key)}></i><span class="readout big">{track.key}</span><span class="unit">Tónina</span>
@@ -104,53 +137,38 @@
       </div>
     </div>
 
-    <div class="wave">
-      <div class="flags">
-        {#each hotCues as c}
-          <span class="flag" style:left={pct(c.timeMs / 1000)} style:background={rgb(c.color, c.slot)}>{slotLetter(c.slot)}</span>
-        {/each}
-      </div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="canvas-wrap"
-        onclick={seek}
-        onmousemove={(e) => (hover = seekFromEvent(e))}
-        onmouseleave={() => (hover = null)}
-      >
-        <canvas bind:this={canvas}></canvas>
-        {#each hotCues as c}
-          <span class="cue-line" style:left={pct(c.timeMs / 1000)} style:background={rgb(c.color, c.slot)}></span>
-        {/each}
-        <span class="played" style:width={pct(position)}></span>
-        <span class="playhead" style:left={pct(position)}></span>
-        {#if hover != null}
-          <span class="tip readout" style:left={pct(hover)}>{time(hover)}</span>
-        {/if}
-        {#if !detail?.preview}
-          <span class="nowave">{detail ? "Skladba nemá analýzu waveformu" : ""}</span>
-        {/if}
-      </div>
-      <div class="memory">
-        {#each memory as c}
-          <span class="mem" style:left={pct(c.timeMs / 1000)}></span>
-        {/each}
-      </div>
+    <div class="detail">
+      <WaveDetail
+        wave={detailWave}
+        beats={detail?.beats ?? []}
+        {cues}
+        {duration}
+        {span}
+        {playing}
+        {getTime}
+        {setTime}
+        onZoom={zoom}
+        onScrubStart={scrubStart}
+        onScrubEnd={scrubEnd}
+      />
     </div>
+
+    <WaveOverview wave={overview.wave} isDetail={overview.isDetail} {cues} {duration} {position} {span} onSeek={setTime} />
   {:else}
-    <p class="idle">Vyber skladbu v tabulce. Mezerníkem ji pustíš.</p>
+    <p class="idle">Vyber skladbu v tabulce. Mezerníkem ji pustíš, kolečkem myši nad waveformem přiblížíš.</p>
   {/if}
 </footer>
 
 <style>
   .deck {
     flex: none;
-    height: 122px;
-    padding: 12px 24px 8px;
+    height: 236px;
+    padding: 12px 24px 6px;
     border-top: 1px solid var(--line);
     background: var(--panel);
     display: flex;
     flex-direction: column;
+    gap: 8px;
   }
   .info {
     display: flex;
@@ -176,6 +194,7 @@
   }
   .names {
     min-width: 0;
+    max-width: 360px;
   }
   .t {
     font-weight: 600;
@@ -186,6 +205,9 @@
   .a {
     font-size: 12px;
     color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .pill {
     display: inline-flex;
@@ -200,11 +222,51 @@
     font-size: 12px;
     white-space: nowrap;
   }
-  .readouts {
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin-left: auto;
+  }
+  .seg {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px;
+    background: var(--booth);
+  }
+  .seg button {
+    border: 0;
+    background: none;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 4px;
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .seg button.on {
+    background: var(--panel-2);
+    color: var(--text);
+  }
+  .zoom {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .zoom .btn.icon {
+    width: 24px;
+    height: 24px;
+  }
+  .zv {
+    min-width: 38px;
+    text-align: center;
+    font-size: 15px;
+  }
+  .readouts {
     display: flex;
     align-items: baseline;
     gap: 6px;
+    margin-left: 14px;
   }
   .big {
     font-size: 28px;
@@ -235,98 +297,9 @@
     align-self: center;
     margin: 0 6px;
   }
-  .wave {
-    position: relative;
-    flex: 1;
-    margin-top: 8px;
-    display: flex;
-    flex-direction: column;
-  }
-  .flags {
-    position: relative;
-    height: 14px;
-  }
-  .flag {
-    position: absolute;
-    top: 0;
-    transform: translateX(0);
-    width: 12px;
-    height: 13px;
-    border-radius: 2px;
-    font-size: 9px;
-    font-weight: 700;
-    line-height: 13px;
-    text-align: center;
-    color: var(--booth);
-  }
-  .canvas-wrap {
-    position: relative;
+  .detail {
     flex: 1;
     min-height: 0;
-    cursor: pointer;
-  }
-  canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-  .cue-line {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    opacity: 0.9;
-  }
-  .played {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    background: rgb(20 22 27 / 0.45);
-    pointer-events: none;
-  }
-  .playhead {
-    position: absolute;
-    top: -2px;
-    bottom: -2px;
-    width: 2px;
-    margin-left: -1px;
-    background: var(--cue);
-    pointer-events: none;
-  }
-  .tip {
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: var(--booth);
-    border: 1px solid var(--line);
-    font-size: 13px;
-    pointer-events: none;
-  }
-  .nowave {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-3);
-  }
-  .memory {
-    position: relative;
-    height: 8px;
-  }
-  .mem {
-    position: absolute;
-    top: 2px;
-    margin-left: -4px;
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 6px solid var(--text-2);
   }
   .idle {
     margin: auto;

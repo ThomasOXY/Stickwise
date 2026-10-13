@@ -200,12 +200,6 @@ pub async fn cue_summary(path: String, track_ids: Vec<u32>) -> CmdResult<Vec<dto
     .await
 }
 
-fn waveform(file: &AnlzFile, preferences: &[([u8; 4], &'static str, usize)]) -> Option<dto::Waveform> {
-    preferences.iter().find_map(|(t, kind, entry_len)| {
-        file.section(*t).map(|s| dto::Waveform { kind, entry_len: *entry_len, data: s.body.clone() })
-    })
-}
-
 fn audio_dto(i: &probe::AudioInfo) -> dto::AudioInfo {
     dto::AudioInfo {
         container: format!("{:?}", i.container),
@@ -235,16 +229,26 @@ pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDe
         let ext = read_anlz(&sibling(&dat_path, "EXT"));
         let two = read_anlz(&sibling(&dat_path, "2EX"));
 
-        let preview = two
-            .as_ref()
-            .and_then(|f| waveform(f, &[(tag::WAVE_3BAND_PREVIEW, "three-band", 3)]))
-            .or_else(|| ext.as_ref().and_then(|f| waveform(f, &[(tag::WAVE_COLOR_SCROLL, "color", 2)])))
-            .or_else(|| dat.as_ref().and_then(|f| waveform(f, &[(tag::WAVE_PREVIEW, "mono", 1)])));
-        let detail = two
-            .as_ref()
-            .and_then(|f| waveform(f, &[(tag::WAVE_3BAND_SCROLL, "three-band", 3)]))
-            .or_else(|| ext.as_ref().and_then(|f| waveform(f, &[(tag::WAVE_COLOR_SCROLL, "color", 2)])))
-            .or_else(|| ext.as_ref().and_then(|f| waveform(f, &[(tag::WAVE_SCROLL, "mono", 1)])));
+        let pick = |file: &Option<AnlzFile>, t: [u8; 4], kind: &'static str, entry_len: usize| {
+            file.as_ref()
+                .and_then(|f| f.section(t))
+                .map(|s| dto::Waveform { kind, entry_len, data: s.body.clone() })
+        };
+        let previews: Vec<_> = [
+            pick(&two, tag::WAVE_3BAND_PREVIEW, "three-band", 3),
+            pick(&dat, tag::WAVE_PREVIEW, "mono", 1),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let details: Vec<_> = [
+            pick(&two, tag::WAVE_3BAND_SCROLL, "three-band", 3),
+            pick(&ext, tag::WAVE_COLOR_SCROLL, "color", 2),
+            pick(&ext, tag::WAVE_SCROLL, "mono", 1),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
 
         let mut cues = Vec::new();
         let loop_end = |kind: CueType, end: u32| (kind == CueType::Loop && end != u32::MAX).then_some(end);
@@ -285,8 +289,8 @@ pub async fn track_detail(path: String, track_id: u32) -> CmdResult<dto::TrackDe
         let audio_path = stick.audio_path(t);
         Ok(dto::TrackDetail {
             track_id,
-            preview,
-            detail,
+            previews,
+            details,
             cues,
             beats,
             audio: probe::probe_file(&audio_path).ok().map(|i| audio_dto(&i)),

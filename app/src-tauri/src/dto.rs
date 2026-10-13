@@ -102,8 +102,10 @@ pub struct AudioInfo {
 #[serde(rename_all = "camelCase")]
 pub struct TrackDetail {
     pub track_id: u32,
-    pub preview: Option<Waveform>,
-    pub detail: Option<Waveform>,
+    /// Whole-track waveforms, one per available style.
+    pub previews: Vec<Waveform>,
+    /// Scrolling waveforms at 150 columns per second, one per available style.
+    pub details: Vec<Waveform>,
     pub cues: Vec<Cue>,
     /// Beat times in ms with their bar position (1 = downbeat).
     pub beats: Vec<(u32, u16)>,
