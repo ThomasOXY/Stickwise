@@ -34,7 +34,7 @@ impl Kind {
         match self {
             Kind::MixIn => "Mix in",
             Kind::Drop => "Drop",
-            Kind::Break => "Break",
+            Kind::Break => "Breakdown",
             Kind::Build => "Build",
             Kind::Up => "Up",
             Kind::Down => "Down",
@@ -316,7 +316,7 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
             // A real breakdown keeps the low end out for a whole phrase.
             (true, false) if mean(&low, b, b + PHRASE) <= 0.45 => {
                 breaks += 1;
-                (Kind::Break, format!("Break {breaks}"))
+                (Kind::Break, format!("Breakdown {breaks}"))
             }
             _ if dt > 0.0 => (Kind::Up, "Up".into()),
             _ => (Kind::Down, "Down".into()),
@@ -353,46 +353,87 @@ pub fn analyze(input: &Input) -> Vec<Suggestion> {
         }
     }
 
-    // Mix out: 32 bars before the music ends, on the phrase grid.
-    if end_bar > 48 && !out.iter().any(|s| s.kind == Kind::Outro) {
-        let mut m = end_bar - 32;
-        while m > 0 && !on_phrase(m) {
-            m -= 1;
+    // Mix out: where the outro starts, otherwise 32 bars before the music
+    // ends on the phrase grid; never before the last drop has had a phrase.
+    let last_drop = out
+        .iter()
+        .filter(|s| s.kind == Kind::Drop)
+        .map(|s| s.bar - 1)
+        .max()
+        .unwrap_or(0);
+    let mix_out = match out.iter().find(|s| s.kind == Kind::Outro) {
+        Some(o) => Some(o.bar - 1),
+        None if end_bar > 24 => {
+            let mut m = end_bar
+                .saturating_sub(32)
+                .max(last_drop + PHRASE)
+                .min(end_bar - PHRASE);
+            while m > 0 && !on_phrase(m) {
+                m -= 1;
+            }
+            Some(m)
         }
-        if m > 0 && !out.iter().any(|s| s.bar.abs_diff(m + 1) < PHRASE) {
-            out.push(Suggestion {
-                kind: Kind::MixOut,
-                time_ms: bars[m].start_ms,
-                bar: m + 1,
-                label: "Mix out".into(),
-                confidence: 0.5,
-            });
-        }
+        None => None,
+    };
+    if let Some(m) = mix_out.filter(|&m| m > 0) {
+        out.retain(|s| !(s.bar.abs_diff(m + 1) < BLOCK && matches!(s.kind, Kind::Up | Kind::Down)));
+        out.push(Suggestion {
+            kind: Kind::MixOut,
+            time_ms: bars[m].start_ms,
+            bar: m + 1,
+            label: "Mix out".into(),
+            confidence: 0.8,
+        });
     }
     out.sort_by_key(|s| s.time_ms);
     out
 }
 
-/// Pick up to 8 suggestions for hot cues A–H, keeping time order and
-/// dropping the least important ones first.
+/// The hot cue layout DJs expect on pads A–H, in time order:
+/// Mix in, then each Breakdown → Drop pair, then Mix out. Build, Up, Down
+/// and Outro stay as suggestions the DJ can add by hand. At most three
+/// drops (with their breakdowns) are kept, the clearest first.
 pub fn hot_cue_plan(s: &[Suggestion]) -> Vec<Suggestion> {
-    let mut picked: Vec<Suggestion> = s.to_vec();
-    let rank = |k: Kind| match k {
-        Kind::MixIn | Kind::Drop => 0,
-        Kind::Break | Kind::MixOut => 1,
-        Kind::Outro | Kind::Up => 2,
-        Kind::Build | Kind::Down => 3,
-    };
-    while picked.len() > 8 {
-        let (i, _) = picked
+    let mut drops: Vec<&Suggestion> = s.iter().filter(|x| x.kind == Kind::Drop).collect();
+    drops.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+    drops.truncate(3);
+    let mut picked: Vec<Suggestion> = Vec::new();
+    if let Some(m) = s.iter().find(|x| x.kind == Kind::MixIn) {
+        picked.push(m.clone());
+    }
+    for d in &drops {
+        // The breakdown leading into this drop.
+        if let Some(b) = s
             .iter()
-            .enumerate()
-            .max_by(|a, b| {
-                (rank(a.1.kind), -(a.1.confidence * 100.0) as i32)
-                    .cmp(&(rank(b.1.kind), -(b.1.confidence * 100.0) as i32))
-            })
-            .unwrap();
-        picked.remove(i);
+            .filter(|x| x.kind == Kind::Break && x.time_ms < d.time_ms)
+            .max_by_key(|x| x.time_ms)
+        {
+            if !picked.iter().any(|p| p.time_ms == b.time_ms) {
+                picked.push(b.clone());
+            }
+        }
+        picked.push((*d).clone());
+    }
+    if let Some(m) = s.iter().find(|x| x.kind == Kind::MixOut) {
+        picked.push(m.clone());
+    }
+    picked.sort_by_key(|x| x.time_ms);
+    picked.dedup_by_key(|x| x.time_ms);
+    picked.truncate(8);
+    // Renumber so the pads read Drop 1, Drop 2 … in order.
+    let (mut d, mut b) = (0, 0);
+    for p in &mut picked {
+        match p.kind {
+            Kind::Drop => {
+                d += 1;
+                p.label = format!("Drop {d}");
+            }
+            Kind::Break => {
+                b += 1;
+                p.label = format!("Breakdown {b}");
+            }
+            _ => {}
+        }
     }
     picked
 }

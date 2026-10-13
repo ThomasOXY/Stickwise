@@ -49,9 +49,10 @@ pub fn replace_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     std::fs::rename(&tmp, path)?;
     if let Some(dir) = path.parent()
-        && let Ok(d) = File::open(dir) {
-            let _ = full_sync(&d);
-        }
+        && let Ok(d) = File::open(dir)
+    {
+        let _ = full_sync(&d);
+    }
     if std::fs::read(path)? != bytes {
         return Err(std::io::Error::other(
             "read-back after write does not match",

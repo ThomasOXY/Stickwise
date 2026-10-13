@@ -829,11 +829,16 @@ fn smart_kind(k: analysis::smart_cue::Kind) -> &'static str {
 }
 
 /// Smart Cue suggestions for a track, from its beat grid and scroll waveform.
-fn suggestions(stick: &Stick, t: &pioneer_formats::pdb::Track) -> Option<Vec<analysis::smart_cue::Suggestion>> {
+fn suggestions(
+    stick: &Stick,
+    t: &pioneer_formats::pdb::Track,
+) -> Option<Vec<analysis::smart_cue::Suggestion>> {
     use analysis::smart_cue::{Input, analyze, bands_from_color, bands_from_three_band};
     let dat_path = stick.resolve(&t.analyze_path);
     let dat = read_anlz(&dat_path)?;
-    let columns = if let Some(s) = read_anlz(&sibling(&dat_path, "2EX")).and_then(|f| f.section(tag::WAVE_3BAND_SCROLL).cloned()) {
+    let columns = if let Some(s) = read_anlz(&sibling(&dat_path, "2EX"))
+        .and_then(|f| f.section(tag::WAVE_3BAND_SCROLL).cloned())
+    {
         bands_from_three_band(&s.body)
     } else {
         let ext = read_anlz(&sibling(&dat_path, "EXT"))?;
@@ -844,7 +849,12 @@ fn suggestions(stick: &Stick, t: &pioneer_formats::pdb::Track) -> Option<Vec<ana
         .and_then(|g| g.ok())
         .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
         .unwrap_or_default();
-    Some(analyze(&Input { beats: &beats, columns: &columns, rate: 150.0, bpm: t.bpm() as f32 }))
+    Some(analyze(&Input {
+        beats: &beats,
+        columns: &columns,
+        rate: 150.0,
+        bpm: t.bpm() as f32,
+    }))
 }
 
 #[tauri::command]
@@ -852,7 +862,8 @@ pub async fn smart_cue(path: String, track_id: u32) -> CmdResult<Vec<dto::SmartC
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let t = find_track(&stick, track_id)?;
-        let s = suggestions(&stick, t).ok_or("Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.")?;
+        let s = suggestions(&stick, t)
+            .ok_or("Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.")?;
         let plan = analysis::smart_cue::hot_cue_plan(&s);
         Ok(s.iter()
             .map(|x| dto::SmartCue {
@@ -862,7 +873,9 @@ pub async fn smart_cue(path: String, track_id: u32) -> CmdResult<Vec<dto::SmartC
                 label: x.label.clone(),
                 confidence: x.confidence,
                 color_code: x.kind.color_code(),
-                color: hot_cue_color(x.kind.color_code()).map(|c| c.0).unwrap_or([255, 255, 255]),
+                color: hot_cue_color(x.kind.color_code())
+                    .map(|c| c.0)
+                    .unwrap_or([255, 255, 255]),
                 in_plan: plan.iter().any(|p| p.time_ms == x.time_ms),
             })
             .collect())
@@ -882,9 +895,15 @@ pub async fn smart_cue_apply(
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let name = stick_name(&stick);
-        let mut r = dto::SmartCueBatch { applied: 0, skipped: 0, failed: 0 };
+        let mut r = dto::SmartCueBatch {
+            applied: 0,
+            skipped: 0,
+            failed: 0,
+        };
         for id in track_ids {
-            let Ok(t) = find_track(&stick, id) else { continue };
+            let Ok(t) = find_track(&stick, id) else {
+                continue;
+            };
             let (mut cues, _) = track_cues(&app, &stick, t);
             if cues.iter().any(|c| c.slot > 0) && !replace {
                 r.skipped += 1;
@@ -902,8 +921,10 @@ pub async fn smart_cue_apply(
                     ..CuePoint::hot(i as u8 + 1, x.time_ms)
                 });
             }
-            app.state::<Edits>()
-                .set(edits::key(&name, &t.file_path), cues.iter().map(StoredCue::from).collect())?;
+            app.state::<Edits>().set(
+                edits::key(&name, &t.file_path),
+                cues.iter().map(StoredCue::from).collect(),
+            )?;
             r.applied += 1;
         }
         Ok(r)
