@@ -317,6 +317,38 @@ GUI roste průběžně od Fáze 1b; tady se dotahuje do finální podoby podle 3
 - [ ] Phrase analýza (PSSI) — až úplně na konci.
 - [ ] Extra: export do Traktor/Engine DJ, normalizace hlasitosti souborů (jako `baken headroom`).
 
+### Fáze 8 — Hloubková analýza (stems) a Set Planner
+Cíl: Smart Cue rozpozná i **vokály** a aplikace umí **naplánovat celý set**: pořadí skladeb, kde přesně přejít, jak dlouhý přechod, podle úrovně DJe.
+
+**Rešerše (2026-10):**
+| Nástroj | Co umí | Licence | Použití |
+|---|---|---|---|
+| **CUE-DETR** (ETH Zürich, ISMIR 2024) — github.com/ETH-DISCO/cue-detr | Odhad cue bodů z Mel spektrogramu, natrénováno na **21 461 cue od profi DJů v 4 710 EDM skladbách** | kód MIT, váhy na HF (licence neuvedena) | pozice cue (bez typu) → kombinovat s naší strukturou |
+| **Demucs / HT-Demucs** (Meta) | rozdělení na stems: vokály, bicí, basa, ostatní | kód MIT, váhy sporné („research“) | **detekce vokálů** (energie vokální stopy v čase), čisté basy pro drop/breakdown |
+| **All-In-One (allin1)** — github.com/mir-aidj/all-in-one | beaty, downbeaty, segmenty intro/verse/chorus/bridge/break/outro (nad Demucs stems) | kód MIT, váhy neuvedeny; trénováno na Harmonix (pop) | struktura u vokálních/pop edity |
+| **Automix / M-DJCUE** (Zehren, ISMIR 2020) | pravidlová detekce „switch points“ pro EDM, dataset 134 skladeb | — | reference pravidel + testovací data |
+| Mixed In Key | key, BPM, energy 1–10, 8 auto cue (intro, breakdown, drop, outro) | komerční | inspirace: energy level + šablona cue |
+| DJ.Studio | Automix: pořadí podle BPM/key/energie (Camelot), timeline přechodů, doplnění chybějících skladeb | komerční | inspirace pro Set Planner UI |
+| Essentia | key, loudness, modely (vokál/instrumentál, nálada) | **AGPL**, modely **CC BY-NC-ND** | jen pro osobní použití; raději vlastní |
+
+**Architektura:** lokální **analytický sidecar v Pythonu** (spravuje ho aplikace přes `uv`, běží na Apple Silicon přes MPS), výsledky v cache (per soubor, hash). Později možný port na ONNX/Rust.
+
+**Výstup analýzy na skladbu:** beaty+downbeaty, fráze, **vokální sekce** (z vocal stemu), breakdowny/dropy (z bass+drums stemů), energy level 1–10, tónina (Camelot), intro/outro délky, „mix-in okno“ (bez vokálu) a „mix-out okno“.
+
+**Set Planner:**
+- Vstup: výběr skladeb / playlist, délka setu, **úroveň** (Začátečník / Pokročilý / Profík), energetická křivka (Warm-up, Peak time, Closing, vlastní), styl (dlouhé blendy / rychlé přechody), tolerance tempa a tóniny.
+- Pořadí: optimalizace (beam search / simulated annealing) nad cenou přechodu: Camelot vzdálenost, rozdíl BPM (a postupné změny tempa), shoda s energetickou křivkou, **kolize vokálů**, žánr/podobnost.
+- Přechody: pro každý pár zvolí mix-out v A a mix-in v B zarovnané na fráze (16/32 taktů), délku podle úrovně, bass swap na frázi, případně pitch/key shift; varování při kolizi vokálů.
+  - Začátečník: jen harmonicky kompatibilní (±1 Camelot, relativní), BPM ±3 %, dlouhé intro→outro blendy, žádné vokály přes sebe, tipy „bass swap na taktu 17“.
+  - Pokročilý: energy boost (+2), drop swap, 16taktové přechody, tempo ramp.
+  - Profík: double dropy (zarovnání dropů A+B), krátké přechody, echo-out / cut, odvážnější tóniny.
+- Výstup: **timeline setu** s energetickou křivkou, přechody barevně (OK / pozor / kolize), **náhled přechodu** (přehraje oba tracky přes sebe), zápis cue „Mix in“, „Mix out → další skladba“ s komentářem, playlist v pořadí na flashku, tahák pro hraní.
+
+**Postup:**
+1. S1 — Set Planner nad tím, co máme (BPM, key, energie z waveformu, Smart Cue) → funguje hned.
+2. S2 — Python sidecar: Demucs (vokály) + CUE-DETR (+ allin1) → Smart Cue s vokály, přesnější cue, vokální kolize v přechodech.
+3. S3 — Náhled přechodů (dvě stopy přes sebe v aplikaci), učení z tvých úprav (porovnávat s tvými cue jako teď).
+
 ---
 
 ## 6. Testovací strategie
