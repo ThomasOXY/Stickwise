@@ -8,6 +8,19 @@ Datum plánu: 2026-10-13
 
 ---
 
+## Stav (průběžně)
+**2026-10-13**
+- ✅ Rust workspace, `crates/pioneer-formats`, `crates/usb-tools`, CLI `rbx`.
+- ✅ `export.pdb`: čtení (tolerantní k poškození — chyby se hlásí, nečtou se dál) + zápis ve stylu čerstvého exportu rekordbox 7.
+  Ověřeno: roundtrip exportů z rekordboxu, řádky tracků bajt po bajtu shodné s rekordboxem, výstup čte nezávislý parser rekordcrate (600 tracků, UTF-16 názvy).
+- ✅ ANLZ (`.DAT/.EXT/.2EX`): čtení + zápis, typové cue (PCOB/PCO2), beatgrid, cesta, waveformy.
+  Ověřeno na **13 297 skutečných analýzách** z knihovny na disku `Extended` — 100 % bajt po bajtu.
+  (`.3EX` = MessagePack „embedding“ pro doporučování v rekordboxu 7, na USB se nepoužívá.)
+- ✅ `rbx usb` (výpis playlistů flashky), `rbx pdb`, `rbx anlz` (výpis cue/gridu/waveformů).
+- ✅ `rbx extract` — export songů z flashky do složek podle playlistů (+ m3u8, APFS klony duplicit, bezpečné názvy, obnovitelné).
+- ⏳ Chybí ověření cue bodů na reálných datech (lokální analýzy rekordboxu cue neobsahují — jsou v master.db) → potřeba testovací flashka.
+- ⏭ Další: Fáze 2 — import rekordbox XML → kompletní export na flashku (Contents + PDB + ANLZ + bezpečný pipeline).
+
 ## 1. Co už existuje (rešerše GitHubu)
 
 ### 1.1 Dokumentace formátů (základ všeho)

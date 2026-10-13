@@ -1,0 +1,15 @@
+[package]
+name = "usb-tools"
+description = "USB stick tools: extract playlists to folders, clone, verify"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+pioneer-formats.workspace = true
+thiserror.workspace = true
+unicode-normalization = "0.1"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

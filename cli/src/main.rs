@@ -4,6 +4,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use pioneer_formats::anlz::{AnlzFile, CueType, Waveform, WaveformKind};
 use pioneer_formats::pdb::{Database, table};
+use usb_tools::Stick;
+use usb_tools::extract;
 
 #[derive(Parser)]
 #[command(name = "rbx", version, about = "RB-EXPORT: Pioneer USB tools")]
@@ -20,6 +22,42 @@ enum Cmd {
     Pdb { file: PathBuf },
     /// Dump an ANLZ0000.DAT / .EXT / .2EX file.
     Anlz { file: PathBuf },
+    /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
+    Extract {
+        /// Root of the mounted stick, e.g. /Volumes/DJ.
+        usb: PathBuf,
+        /// Destination folder.
+        dest: PathBuf,
+        /// Playlist name to extract (repeatable); default all.
+        #[arg(short, long = "playlist")]
+        playlists: Vec<String>,
+        /// Prefix files with their position in the playlist ("01 - ").
+        #[arg(short, long)]
+        numbered: bool,
+        /// Name files "Artist - Title" instead of keeping the stick's file name.
+        #[arg(long)]
+        artist_title: bool,
+        /// How to store a track that is in several playlists.
+        #[arg(long, value_enum, default_value = "clone")]
+        dupes: Dupes,
+        /// Also extract the players' HISTORY playlists.
+        #[arg(long)]
+        history: bool,
+        /// Do not write .m3u8 files.
+        #[arg(long)]
+        no_m3u: bool,
+        /// Only show what would be copied.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Dupes {
+    /// APFS clone: no extra space.
+    Clone,
+    Copy,
+    Symlink,
 }
 
 fn main() -> Result<()> {
@@ -27,6 +65,35 @@ fn main() -> Result<()> {
         Cmd::Usb { path } => usb(&path),
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
+        Cmd::Extract {
+            usb,
+            dest,
+            playlists,
+            numbered,
+            artist_title,
+            dupes,
+            history,
+            no_m3u,
+            dry_run,
+        } => {
+            let opts = extract::ExtractOptions {
+                playlists: Vec::new(),
+                history,
+                numbered,
+                naming: if artist_title {
+                    extract::Naming::ArtistTitle
+                } else {
+                    extract::Naming::Original
+                },
+                duplicates: match dupes {
+                    Dupes::Clone => extract::Duplicates::Clone,
+                    Dupes::Copy => extract::Duplicates::Copy,
+                    Dupes::Symlink => extract::Duplicates::Symlink,
+                },
+                m3u: !no_m3u,
+            };
+            extract_cmd(&usb, &dest, &playlists, opts, dry_run)
+        }
     }
 }
 
@@ -211,6 +278,77 @@ fn anlz(file: &Path) -> Result<()> {
             let w = Waveform::parse(s)?;
             println!("waveform {:?}: {} columns", w.kind, w.columns());
         }
+    }
+    Ok(())
+}
+
+fn human(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 30 => format!("{:.2} GB", b as f64 / (1u64 << 30) as f64),
+        b => format!("{:.1} MB", b as f64 / (1u64 << 20) as f64),
+    }
+}
+
+fn extract_cmd(
+    usb: &Path,
+    dest: &Path,
+    names: &[String],
+    mut opts: extract::ExtractOptions,
+    dry_run: bool,
+) -> Result<()> {
+    let stick = Stick::open(usb)?;
+    for name in names {
+        let found: Vec<u32> = stick
+            .db
+            .playlists
+            .iter()
+            .filter(|p| !p.is_folder && p.name.eq_ignore_ascii_case(name))
+            .map(|p| p.id)
+            .collect();
+        anyhow::ensure!(!found.is_empty(), "no playlist named {name:?} on the stick");
+        opts.playlists.extend(found);
+    }
+    let plan = extract::plan(&stick, &opts);
+    for pl in &plan.playlists {
+        println!("📁 {}  ({} tracks)", pl.folder.display(), pl.files.len());
+        if dry_run {
+            for f in &pl.files {
+                println!("    {}", f.file_name);
+            }
+        }
+    }
+    println!("{} files, {}", plan.total_files, human(plan.total_bytes));
+    if !plan.missing.is_empty() {
+        println!("⚠ {} missing on the stick:", plan.missing.len());
+        for m in &plan.missing {
+            println!("    {m}");
+        }
+    }
+    if dry_run {
+        return Ok(());
+    }
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let report = extract::execute(&plan, dest, &opts, &cancel, |p| {
+        eprint!(
+            "\r[{}/{}] {} / {}  {:<60.60}",
+            p.files_done,
+            p.files_total,
+            human(p.bytes_done),
+            human(p.bytes_total),
+            p.current
+        );
+    })?;
+    eprintln!();
+    println!(
+        "✓ copied {}, cloned {}, linked {}, already there {}",
+        report.copied, report.cloned, report.linked, report.skipped_existing
+    );
+    if !report.errors.is_empty() {
+        println!("⚠ {} errors:", report.errors.len());
+        for e in &report.errors {
+            println!("    {e}");
+        }
+        anyhow::bail!("extract finished with errors");
     }
     Ok(())
 }
