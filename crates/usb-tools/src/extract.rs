@@ -336,9 +336,10 @@ pub fn execute(
             progress(&p);
         }
         if opts.m3u
-            && let Err(e) = write_m3u(&dir, pl) {
-                report.errors.push(format!("{}: m3u8: {e}", dir.display()));
-            }
+            && let Err(e) = write_m3u(&dir, pl)
+        {
+            report.errors.push(format!("{}: m3u8: {e}", dir.display()));
+        }
     }
     Ok(report)
 }

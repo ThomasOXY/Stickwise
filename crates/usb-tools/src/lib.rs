@@ -3,8 +3,11 @@
 //!
 //! Everything here only **reads** from the stick.
 
+pub mod compat;
 pub mod extract;
 pub mod names;
+pub mod probe;
 mod stick;
+pub mod verify;
 
 pub use stick::{Stick, StickError};

@@ -6,6 +6,7 @@ use pioneer_formats::anlz::{AnlzFile, CueType, Waveform, WaveformKind};
 use pioneer_formats::pdb::{Database, table};
 use usb_tools::Stick;
 use usb_tools::extract;
+use usb_tools::{compat, verify};
 
 #[derive(Parser)]
 #[command(name = "rbx", version, about = "RB-EXPORT: Pioneer USB tools")]
@@ -22,6 +23,13 @@ enum Cmd {
     Pdb { file: PathBuf },
     /// Dump an ANLZ0000.DAT / .EXT / .2EX file.
     Anlz { file: PathBuf },
+    /// Health check of a stick: files, analysis, formats per player, filesystem.
+    Verify {
+        usb: PathBuf,
+        /// Only check these players (default: all).
+        #[arg(long, value_enum)]
+        player: Vec<PlayerArg>,
+    },
     /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
     Extract {
         /// Root of the mounted stick, e.g. /Volumes/DJ.
@@ -53,6 +61,25 @@ enum Cmd {
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
+enum PlayerArg {
+    Nxs,
+    Nxs2,
+    Cdj3000,
+    Cdj3000x,
+}
+
+impl From<PlayerArg> for compat::Player {
+    fn from(p: PlayerArg) -> Self {
+        match p {
+            PlayerArg::Nxs => compat::Player::Cdj2000Nxs,
+            PlayerArg::Nxs2 => compat::Player::Cdj2000Nxs2,
+            PlayerArg::Cdj3000 => compat::Player::Cdj3000,
+            PlayerArg::Cdj3000x => compat::Player::Cdj3000X,
+        }
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
 enum Dupes {
     /// APFS clone: no extra space.
     Clone,
@@ -65,6 +92,7 @@ fn main() -> Result<()> {
         Cmd::Usb { path } => usb(&path),
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
+        Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
         Cmd::Extract {
             usb,
             dest,
@@ -351,4 +379,90 @@ fn extract_cmd(
         anyhow::bail!("extract finished with errors");
     }
     Ok(())
+}
+
+fn verify_cmd(usb: &Path, players: &[PlayerArg]) -> Result<()> {
+    let players: Vec<compat::Player> = if players.is_empty() {
+        compat::Player::ALL.to_vec()
+    } else {
+        players.iter().map(|&p| p.into()).collect()
+    };
+    let stick = Stick::open(usb)?;
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let r = verify::verify(&stick, &players, &cancel, |i, n| {
+        eprint!("\rchecking {i}/{n}")
+    });
+    eprintln!();
+    println!("{} tracks, {} playlists", r.tracks, r.playlists);
+    println!("filesystem: {}", r.filesystem.as_deref().unwrap_or("?"));
+    for (p, why) in &r.filesystem_issues {
+        println!("  ✗ {}: {why}", p.name());
+    }
+    println!("formats:");
+    for (f, n) in &r.formats {
+        println!("  {n:>5}  {f}");
+    }
+    if !r.db_problems.is_empty() {
+        println!("\n✗ database problems:");
+        for p in &r.db_problems {
+            println!("  {p}");
+        }
+    }
+    if !r.apple_double.is_empty() {
+        println!(
+            "\n⚠ {} macOS '._' files (show up as broken tracks when browsing folders)",
+            r.apple_double.len()
+        );
+    }
+    let (warnings, errors): (Vec<_>, Vec<_>) =
+        r.issues.iter().partition(|i| i.problem.is_warning());
+    if errors.is_empty() {
+        println!("\n✓ no track errors");
+    } else {
+        println!("\n✗ {} track error(s):", errors.len());
+        for i in &errors {
+            print_issue(i);
+        }
+    }
+    if !warnings.is_empty() {
+        println!("\n⚠ {} warning(s):", warnings.len());
+        for i in &warnings {
+            print_issue(i);
+        }
+    }
+    Ok(())
+}
+
+fn print_issue(i: &verify::TrackIssue) {
+    let what = match &i.problem {
+        verify::Problem::MissingAudio => "audio file missing".to_string(),
+        verify::Problem::MissingAnalysis(m) => format!("analysis: {m}"),
+        verify::Problem::SizeMismatch { database, actual } => {
+            format!("file is {actual} B, database says {database} B (file changed after analysis)")
+        }
+        verify::Problem::BrokenTag { junk } => format!(
+            "broken ID3 tag: {junk} stray bytes before the audio (players may refuse the file)"
+        ),
+        verify::Problem::WrongExtension { extension, actual } => {
+            format!(".{extension} file is really {actual}")
+        }
+        verify::Problem::Unsupported { players, reason } => format!(
+            "{reason} — {}",
+            players
+                .iter()
+                .map(|p| p.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        verify::Problem::Unreadable(e) => format!("unreadable: {e}"),
+    };
+    println!("\n  • {}", i.display);
+    if let Some(a) = &i.audio {
+        println!("    {}", a.describe());
+    }
+    println!("    {what}");
+    println!("    {}", i.file_path);
+    if !i.playlists.is_empty() {
+        println!("    playlists: {}", i.playlists.join(", "));
+    }
 }
