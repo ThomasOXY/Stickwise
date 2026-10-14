@@ -605,9 +605,10 @@ pub fn hot_cue_plan(s: &[Suggestion]) -> Vec<Suggestion> {
             .iter()
             .filter(|x| x.kind == Kind::Break && x.time_ms < d.time_ms)
             .max_by_key(|x| x.time_ms)
-            && !picked.iter().any(|p| p.time_ms == b.time_ms) {
-                picked.push(b.clone());
-            }
+            && !picked.iter().any(|p| p.time_ms == b.time_ms)
+        {
+            picked.push(b.clone());
+        }
         picked.push((*d).clone());
     }
     if let Some(m) = s.iter().find(|x| x.kind == Kind::MixOut) {

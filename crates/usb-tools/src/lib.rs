@@ -9,6 +9,7 @@ pub mod extract;
 pub mod names;
 pub mod probe;
 mod stick;
+pub mod sync;
 pub mod verify;
 
 pub use stick::{Stick, StickError};

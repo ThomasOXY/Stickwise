@@ -10,6 +10,8 @@ pioneer-formats.workspace = true
 thiserror.workspace = true
 unicode-normalization = "0.1"
 libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
