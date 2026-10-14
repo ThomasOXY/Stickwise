@@ -82,6 +82,8 @@ export type Rgb = [number, number, number];
 export interface CueSummary {
   trackId: number;
   hot: (Rgb | null)[];
+  /** Memory cues and memory loops. */
+  memory: number;
 }
 
 export interface Waveform {

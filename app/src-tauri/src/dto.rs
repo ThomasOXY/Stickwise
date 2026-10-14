@@ -64,6 +64,8 @@ pub struct StickData {
 pub struct CueSummary {
     pub track_id: u32,
     pub hot: Vec<Option<[u8; 3]>>,
+    /// Memory cues and memory loops.
+    pub memory: usize,
 }
 
 #[derive(Serialize)]

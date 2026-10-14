@@ -291,6 +291,9 @@
               {@const c = app.cues[t.id]?.[s]}
               <i class:off={!c} style:background={c ? rgb(c, s + 1) : undefined}></i>
             {/each}
+            {#if app.memCount[t.id]}
+              <b class="mem" title="{app.memCount[t.id]} memory cue">▾{app.memCount[t.id]}</b>
+            {/if}
           </span>
         </div>
       {/each}
@@ -555,7 +558,7 @@
   .cols,
   .row {
     display: grid;
-    grid-template-columns: 24px 16px minmax(160px, 1fr) minmax(120px, 0.62fr) 52px 56px 40px 84px 92px;
+    grid-template-columns: 24px 16px minmax(160px, 1fr) minmax(120px, 0.62fr) 52px 56px 40px 84px 110px;
     gap: 8px;
     align-items: center;
     padding: 0 16px;
@@ -670,6 +673,13 @@
     width: 7px;
     height: 7px;
     border-radius: 1px;
+  }
+  .c-cue .mem {
+    margin-left: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 7px;
+    color: var(--fault);
   }
   .c-cue i.off {
     background: var(--line);

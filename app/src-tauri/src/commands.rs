@@ -305,12 +305,18 @@ pub async fn cue_summary(
                 continue;
             };
             let mut hot = vec![None; 8];
-            for c in track_cues(&app, &stick, t).0 {
+            let cues = track_cues(&app, &stick, t).0;
+            for c in &cues {
                 if (1..=8).contains(&c.slot) {
-                    hot[c.slot as usize - 1] = Some(display_color(&c));
+                    hot[c.slot as usize - 1] = Some(display_color(c));
                 }
             }
-            out.push(dto::CueSummary { track_id: id, hot });
+            let memory = cues.iter().filter(|c| c.slot == 0).count();
+            out.push(dto::CueSummary {
+                track_id: id,
+                hot,
+                memory,
+            });
         }
         Ok(out)
     })

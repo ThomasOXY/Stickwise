@@ -52,6 +52,8 @@
   let curve = $state(localStorage.getItem("plan-curve") || "peak");
   /** Keep the DJ's order (only plan transitions) or let the planner order the set. */
   let keepOrder = $state(localStorage.getItem("plan-order") !== "suggest");
+  /** Write transition cues on pads G/H (visible on the pads and the CDJ) or as memory cues. */
+  let asHot = $state(localStorage.getItem("plan-cues") !== "memory");
   let plan = $state<Plan | null>(null);
   let busy = $state(false);
   let applied = $state(false);
@@ -68,6 +70,7 @@
     localStorage.setItem("plan-level", level);
     localStorage.setItem("plan-curve", curve);
     localStorage.setItem("plan-order", keepOrder ? "mine" : "suggest");
+    localStorage.setItem("plan-cues", asHot ? "hot" : "memory");
   });
 
   async function run() {
@@ -93,9 +96,11 @@
         order: plan.tracks.map((t) => t.trackId),
         leftOut: plan.leftOut,
         transitions: plan.transitions.map((t) => [t.from, t.to, t.startAtMs, t.cueInMs]),
+        asHot,
       });
       await app.reloadLibrary();
       app.cues = {};
+      app.memCount = {};
       applied = true;
       const n = plan.transitions.length;
       app.view = "tracks";
@@ -105,8 +110,10 @@
       else if (app.selectedTrack != null) await app.selectTrack(app.selectedTrack, true);
       app.notice =
         (keepOrder ? `Set „${set.name}“ zůstal ve tvém pořadí. ` : `Set „${set.name}“ je přeřazený podle plánu. `) +
-        `Zapsáno ${n * 2} memory cue (Mix in a Mix out → další skladba) u ${n + 1} skladeb, uvidíš je ve waveformu ` +
-        `a v detailu skladby. Na flashku je dostaneš synchronizací.`;
+        (asHot
+          ? `Do ${n + 1} skladeb se zapsaly hot cue přechodů: pad G = Mix in (zelený), pad H = Mix out → další skladba (růžový); kde byly obsazené, použil se jiný volný pad. `
+          : `Do ${n + 1} skladeb se zapsalo ${n * 2} memory cue (Mix in a Mix out → další skladba), v tabulce je poznáš podle ▾. `) +
+        `Na flashku je dostaneš synchronizací.`;
     } catch (e) {
       app.error = String(e);
     } finally {
@@ -156,6 +163,13 @@
       <div class="seg">
         <button class:on={keepOrder} onclick={() => (keepOrder = true)} title="Skladby zůstanou, jak jsi je seřadil; naplánují se jen přechody">Moje pořadí</button>
         <button class:on={!keepOrder} onclick={() => (keepOrder = false)} title="Plánovač vybere a seřadí skladby podle tóniny, tempa a energie">Navrhnout pořadí</button>
+      </div>
+    </div>
+    <div class="group">
+      <span class="lbl">Cue přechodů</span>
+      <div class="seg">
+        <button class:on={asHot} onclick={() => (asHot = true)} title="Mix in na pad G, Mix out na pad H; obsazené pady se nepřepisují">Hot cue G/H</button>
+        <button class:on={!asHot} onclick={() => (asHot = false)} title="Jako memory cue: na padech nic nezabírají">Memory cue</button>
       </div>
     </div>
     <label class="len" class:off={keepOrder}>

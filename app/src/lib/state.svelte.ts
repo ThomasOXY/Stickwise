@@ -46,6 +46,8 @@ class AppState {
   verifyProgress = $state<[number, number]>([0, 0]);
 
   cues = $state<Record<number, CueSummary["hot"]>>({});
+  /** Memory cue count per track, for the table. */
+  memCount = $state<Record<number, number>>({});
   selectedTrack = $state<number | null>(null);
   detailOpen = $state(false);
   detail = $state<TrackDetail | null>(null);
@@ -346,6 +348,7 @@ class AppState {
       const hot: CueSummary["hot"][number][] = Array(8).fill(null);
       for (const c of saved) if (c.slot >= 1 && c.slot <= 8) hot[c.slot - 1] = c.color;
       this.cues[d.trackId] = hot;
+      this.memCount[d.trackId] = saved.filter((c) => c.slot === 0).length;
       if (!this.isLibrary) this.pending = new Set([...this.pending, d.trackId]);
     } catch (e) {
       this.error = String(e);
@@ -480,7 +483,10 @@ class AppState {
     if (missing.length === 0 || (!this.isLibrary && !this.stickPath)) return;
     try {
       const list = this.isLibrary ? await libApi.cueSummary(missing) : await api.cueSummary(this.stickPath!, missing);
-      for (const c of list) this.cues[c.trackId] = c.hot;
+      for (const c of list) {
+        this.cues[c.trackId] = c.hot;
+        this.memCount[c.trackId] = c.memory;
+      }
     } catch {
       /* the table simply shows no cue squares */
     }

@@ -269,6 +269,7 @@ pub async fn library_cue_summary(
             out.push(dto::CueSummary {
                 track_id: id as u32,
                 hot,
+                memory: cues.iter().filter(|c| c.slot == 0).count(),
             });
         }
         Ok(out)
@@ -835,7 +836,9 @@ const MIX_IN: &str = "Mix in";
 const MIX_OUT: &str = "Mix out →";
 
 /// Put the planned order into the set (tracks left out go to the end) and
-/// mark every transition with memory cues the players show.
+/// mark every transition with cues: hot cues (pads G and H, or the nearest
+/// free pads) or memory cues. Cues an earlier plan wrote are replaced; the
+/// DJ's own cues stay.
 #[tauri::command]
 pub async fn apply_set_plan(
     app: AppHandle,
@@ -843,6 +846,7 @@ pub async fn apply_set_plan(
     order: Vec<i64>,
     left_out: Vec<i64>,
     transitions: Vec<(i64, i64, u32, u32)>,
+    as_hot: bool,
 ) -> CmdResult<()> {
     blocking(move || {
         let titles: HashMap<i64, String> = lib(&app, |l| l.tracks())?
@@ -852,30 +856,50 @@ pub async fn apply_set_plan(
         let mut ids = order.clone();
         ids.extend(left_out);
         lib(&app, |l| l.set_playlist_tracks(set_id, &ids))?;
-        // Fresh planner cues: drop the ones an earlier plan wrote.
-        let mut plan_cues: HashMap<i64, Vec<CuePoint>> = HashMap::new();
+        // (is mix out, time, comment) per track.
+        let mut marks: HashMap<i64, Vec<(bool, u32, String)>> = HashMap::new();
         for (from, to, start_at, cue_in) in transitions {
             let next = titles.get(&to).cloned().unwrap_or_default();
-            plan_cues.entry(from).or_default().push(CuePoint {
-                comment: format!("{MIX_OUT} {next}"),
-                ..CuePoint::memory(start_at)
-            });
-            plan_cues.entry(to).or_default().push(CuePoint {
-                comment: MIX_IN.into(),
-                ..CuePoint::memory(cue_in)
-            });
+            marks
+                .entry(from)
+                .or_default()
+                .push((true, start_at, format!("{MIX_OUT} {next}")));
+            marks
+                .entry(to)
+                .or_default()
+                .push((false, cue_in, MIX_IN.into()));
         }
-        for (id, add) in plan_cues {
+        let is_plan = |c: &CuePoint| c.comment == MIX_IN || c.comment.starts_with(MIX_OUT);
+        for (id, add) in marks {
             let mut cues = lib(&app, |l| l.cues(id))?;
-            cues.retain(|c| {
-                !(c.slot == 0 && (c.comment == MIX_IN || c.comment.starts_with(MIX_OUT)))
-            });
-            for c in add {
+            cues.retain(|c| !is_plan(c));
+            for (out, time, comment) in add {
+                // Mix in prefers pad G, mix out pad H; else the highest free pad.
+                let slot = as_hot
+                    .then(|| {
+                        let want: u8 = if out { 8 } else { 7 };
+                        std::iter::once(want)
+                            .chain((1..=8u8).rev())
+                            .find(|s| !cues.iter().any(|c| c.slot == *s))
+                    })
+                    .flatten();
+                let cue = match slot {
+                    Some(s) => CuePoint {
+                        comment,
+                        // Green for coming in, red-pink for going out.
+                        hot_color: if out { 0x2d } else { 0x16 },
+                        ..CuePoint::hot(s, time)
+                    },
+                    None => CuePoint {
+                        comment,
+                        ..CuePoint::memory(time)
+                    },
+                };
                 if !cues
                     .iter()
-                    .any(|x| x.slot == 0 && x.time_ms.abs_diff(c.time_ms) < 50)
+                    .any(|x| x.slot == cue.slot && x.time_ms.abs_diff(cue.time_ms) < 50)
                 {
-                    cues.push(c);
+                    cues.push(cue);
                 }
             }
             lib(&app, |l| l.set_cues(id, &cues))?;
