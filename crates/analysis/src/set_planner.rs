@@ -325,22 +325,33 @@ pub fn plan(pool: &[PlanTrack], params: &Params) -> SetPlan {
         })
         .unwrap();
 
-    let order: Vec<i64> = best.seq.iter().map(|&i| pool[i].id).collect();
+    build(pool, &best.seq, params)
+}
+
+/// Keep the DJ's own order: only time the set and plan every transition.
+pub fn plan_in_order(pool: &[PlanTrack], params: &Params) -> SetPlan {
+    let seq: Vec<usize> = (0..pool.len()).collect();
+    build(pool, &seq, params)
+}
+
+/// Timeline, target curve and transitions for a given order of `pool`.
+fn build(pool: &[PlanTrack], seq: &[usize], params: &Params) -> SetPlan {
+    let order: Vec<i64> = seq.iter().map(|&i| pool[i].id).collect();
     let left_out: Vec<i64> = pool
         .iter()
         .filter(|t| !order.contains(&t.id))
         .map(|t| t.id)
         .collect();
+    let total: f64 = seq.iter().map(|&i| play_seconds(&pool[i])).sum();
     let mut starts = Vec::new();
-    let mut t = 0.0;
     let mut target = Vec::new();
-    for &i in &best.seq {
+    let mut t = 0.0;
+    for &i in seq {
         starts.push(t);
-        target.push(params.curve.at(t / best.secs.max(1.0)));
+        target.push(params.curve.at(t / total.max(1.0)));
         t += play_seconds(&pool[i]);
     }
-    let transitions = best
-        .seq
+    let transitions = seq
         .windows(2)
         .enumerate()
         .map(|(k, w)| transition(&pool[w[0]], &pool[w[1]], params.level, target[k + 1]))
@@ -350,7 +361,7 @@ pub fn plan(pool: &[PlanTrack], params: &Params) -> SetPlan {
         left_out,
         transitions,
         starts,
-        total_seconds: best.secs,
+        total_seconds: total,
         target,
     }
 }
@@ -524,6 +535,26 @@ mod tests {
             p.total_seconds
         );
         assert!(!p.left_out.is_empty());
+    }
+
+    #[test]
+    fn own_order_is_kept() {
+        let pool = vec![
+            t(3, 128.0, "3A", 8.0),
+            t(1, 124.0, "8A", 4.0),
+            t(2, 126.0, "9A", 5.0),
+        ];
+        let p = plan_in_order(
+            &pool,
+            &Params {
+                minutes: 10.0,
+                level: Level::Beginner,
+                curve: Curve::WarmUp,
+            },
+        );
+        assert_eq!(p.order, vec![3, 1, 2]);
+        assert_eq!(p.transitions.len(), 2);
+        assert!(!p.transitions[0].key_ok, "3A → 8A clashes for a beginner");
     }
 
     #[test]

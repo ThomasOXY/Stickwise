@@ -50,6 +50,8 @@
   let minutes = $state(Number(localStorage.getItem("plan-minutes")) || 60);
   let level = $state(localStorage.getItem("plan-level") || "advanced");
   let curve = $state(localStorage.getItem("plan-curve") || "peak");
+  /** Keep the DJ's order (only plan transitions) or let the planner order the set. */
+  let keepOrder = $state(localStorage.getItem("plan-order") !== "suggest");
   let plan = $state<Plan | null>(null);
   let busy = $state(false);
   let applied = $state(false);
@@ -65,6 +67,7 @@
     localStorage.setItem("plan-minutes", String(minutes));
     localStorage.setItem("plan-level", level);
     localStorage.setItem("plan-curve", curve);
+    localStorage.setItem("plan-order", keepOrder ? "mine" : "suggest");
   });
 
   async function run() {
@@ -72,7 +75,7 @@
     busy = true;
     applied = false;
     try {
-      plan = await invoke<Plan>("plan_set", { setId: set.id, minutes, level, curve });
+      plan = await invoke<Plan>("plan_set", { setId: set.id, minutes, level, curve, keepOrder });
       open = 0;
     } catch (e) {
       app.error = String(e);
@@ -94,7 +97,16 @@
       await app.reloadLibrary();
       app.cues = {};
       applied = true;
-      app.notice = `Set „${set.name}“ je seřazený a každá skladba má memory cue Mix in a Mix out. Na flashku ho dostaneš synchronizací.`;
+      const n = plan.transitions.length;
+      app.view = "tracks";
+      // Show the new cues right away on the deck.
+      const first = plan.tracks[0]?.trackId;
+      if (first != null) await app.selectTrack(first, true);
+      else if (app.selectedTrack != null) await app.selectTrack(app.selectedTrack, true);
+      app.notice =
+        (keepOrder ? `Set „${set.name}“ zůstal ve tvém pořadí. ` : `Set „${set.name}“ je přeřazený podle plánu. `) +
+        `Zapsáno ${n * 2} memory cue (Mix in a Mix out → další skladba) u ${n + 1} skladeb, uvidíš je ve waveformu ` +
+        `a v detailu skladby. Na flashku je dostaneš synchronizací.`;
     } catch (e) {
       app.error = String(e);
     } finally {
@@ -139,9 +151,16 @@
   </div>
 
   <div class="params">
-    <label class="len">
+    <div class="group">
+      <span class="lbl">Pořadí</span>
+      <div class="seg">
+        <button class:on={keepOrder} onclick={() => (keepOrder = true)} title="Skladby zůstanou, jak jsi je seřadil; naplánují se jen přechody">Moje pořadí</button>
+        <button class:on={!keepOrder} onclick={() => (keepOrder = false)} title="Plánovač vybere a seřadí skladby podle tóniny, tempa a energie">Navrhnout pořadí</button>
+      </div>
+    </div>
+    <label class="len" class:off={keepOrder}>
       <span class="lbl">Délka</span>
-      <input type="number" min="0" max="600" step="5" bind:value={minutes} />
+      <input type="number" min="0" max="600" step="5" bind:value={minutes} disabled={keepOrder} />
       <span class="sub">min {minutes === 0 ? "(vše)" : ""}</span>
     </label>
     <div class="group">
@@ -164,7 +183,9 @@
       {#if busy && !plan}<LoaderCircle size={14} class="spin" /> Počítám…{:else}<Sparkles size={14} /> {plan ? "Naplánovat znovu" : "Naplánovat"}{/if}
     </button>
   </div>
-  <p class="hint">{LEVELS.find((l) => l[0] === level)?.[2]}</p>
+  <p class="hint">
+    {keepOrder ? "Tvoje pořadí zůstane, plánovač jen zkontroluje a naplánuje přechody. " : "Plánovač vybere skladby a najde nejlepší pořadí. "}{LEVELS.find((l) => l[0] === level)?.[2]}
+  </p>
 
   {#if !plan}
     <div class="empty">
@@ -182,8 +203,9 @@
       <span><span class="readout big good">{plan.transitions.filter((t) => relationClass(t) === "good").length}</span> čistých přechodů</span>
       <span><span class="readout big bad">{plan.transitions.filter((t) => relationClass(t) === "bad").length}</span> náročných</span>
       {#if plan.leftOut.length}<span class="sub">{plan.leftOut.length} se nevešlo, zůstanou na konci setu</span>{/if}
+      {#if keepOrder}<span class="sub">tvoje pořadí</span>{/if}
       <button class="btn primary apply" onclick={apply} disabled={busy || applied}>
-        {#if applied}<Check size={14} /> Použito{:else}Použít pořadí a cue{/if}
+        {#if applied}<Check size={14} /> Uloženo{:else}{keepOrder ? "Uložit cue přechodů" : "Použít pořadí a cue"}{/if}
       </button>
     </div>
 
@@ -299,6 +321,9 @@
     font-weight: 600;
     color: var(--text-2);
     margin-bottom: 4px;
+  }
+  .len.off {
+    opacity: 0.4;
   }
   .len input {
     width: 70px;

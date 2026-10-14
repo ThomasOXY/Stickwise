@@ -744,8 +744,9 @@ pub async fn plan_set(
     minutes: f64,
     level: String,
     curve: String,
+    keep_order: bool,
 ) -> CmdResult<SetPlanDto> {
-    use analysis::set_planner::{Curve, Level, Params, plan};
+    use analysis::set_planner::{Curve, Level, Params, plan, plan_in_order};
     blocking(move || {
         let (lists, tracks) = lib(&app, |l| Ok((l.playlists()?, l.tracks()?)))?;
         let set = lists
@@ -779,7 +780,11 @@ pub async fn plan_set(
                 _ => Curve::PeakTime,
             },
         };
-        let p = plan(&pool, &params);
+        let p = if keep_order {
+            plan_in_order(&pool, &params)
+        } else {
+            plan(&pool, &params)
+        };
         let feat: HashMap<i64, &analysis::set_planner::PlanTrack> =
             pool.iter().map(|t| (t.id, t)).collect();
         Ok(SetPlanDto {
