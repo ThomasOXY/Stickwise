@@ -834,19 +834,25 @@ pub async fn plan_set(
 
 const MIX_IN: &str = "Mix in";
 const MIX_OUT: &str = "Mix out →";
+const MIX_OUT_END: &str = "Mix out (konec setu)";
 
 /// Put the planned order into the set (tracks left out go to the end) and
-/// mark every transition with cues: hot cues (pads G and H, or the nearest
-/// free pads) or memory cues. Cues an earlier plan wrote are replaced; the
-/// DJ's own cues stay.
+/// mark every track's transition points. `marks` is one entry per planned
+/// track: (track, mix in ms, mix out ms, next track). Modes:
+/// * `only`: the track keeps just hot cue A = Mix in and B = Mix out (its
+///   other hot cues are backed up and removed; memory cues stay);
+/// * `hot`: Mix in on pad G, Mix out on pad H (or the highest free pads);
+/// * `memory`: memory cues.
+///
+/// Cues an earlier plan wrote are always replaced.
 #[tauri::command]
 pub async fn apply_set_plan(
     app: AppHandle,
     set_id: i64,
     order: Vec<i64>,
     left_out: Vec<i64>,
-    transitions: Vec<(i64, i64, u32, u32)>,
-    as_hot: bool,
+    marks: Vec<(i64, u32, u32, Option<i64>)>,
+    mode: String,
 ) -> CmdResult<()> {
     blocking(move || {
         let titles: HashMap<i64, String> = lib(&app, |l| l.tracks())?
@@ -856,50 +862,54 @@ pub async fn apply_set_plan(
         let mut ids = order.clone();
         ids.extend(left_out);
         lib(&app, |l| l.set_playlist_tracks(set_id, &ids))?;
-        // (is mix out, time, comment) per track.
-        let mut marks: HashMap<i64, Vec<(bool, u32, String)>> = HashMap::new();
-        for (from, to, start_at, cue_in) in transitions {
-            let next = titles.get(&to).cloned().unwrap_or_default();
-            marks
-                .entry(from)
-                .or_default()
-                .push((true, start_at, format!("{MIX_OUT} {next}")));
-            marks
-                .entry(to)
-                .or_default()
-                .push((false, cue_in, MIX_IN.into()));
-        }
-        let is_plan = |c: &CuePoint| c.comment == MIX_IN || c.comment.starts_with(MIX_OUT);
-        for (id, add) in marks {
+        let is_plan = |c: &CuePoint| {
+            c.comment == MIX_IN || c.comment.starts_with(MIX_OUT) || c.comment == MIX_OUT_END
+        };
+        for (id, mix_in, mix_out, next) in marks {
+            let out_comment = match next.and_then(|n| titles.get(&n)) {
+                Some(t) => format!("{MIX_OUT} {t}"),
+                None => MIX_OUT_END.to_string(),
+            };
             let mut cues = lib(&app, |l| l.cues(id))?;
-            cues.retain(|c| !is_plan(c));
-            for (out, time, comment) in add {
-                // Mix in prefers pad G, mix out pad H; else the highest free pad.
-                let slot = as_hot
-                    .then(|| {
-                        let want: u8 = if out { 8 } else { 7 };
-                        std::iter::once(want)
-                            .chain((1..=8u8).rev())
-                            .find(|s| !cues.iter().any(|c| c.slot == *s))
-                    })
-                    .flatten();
-                let cue = match slot {
-                    Some(s) => CuePoint {
-                        comment,
-                        // Green for coming in, red-pink for going out.
-                        hot_color: if out { 0x2d } else { 0x16 },
-                        ..CuePoint::hot(s, time)
-                    },
-                    None => CuePoint {
-                        comment,
-                        ..CuePoint::memory(time)
-                    },
-                };
-                if !cues
-                    .iter()
-                    .any(|x| x.slot == cue.slot && x.time_ms.abs_diff(cue.time_ms) < 50)
-                {
-                    cues.push(cue);
+            if mode == "only" {
+                lib(&app, |l| l.backup_cues(id))?;
+                cues.retain(|c| c.slot == 0 && !is_plan(c));
+                cues.push(CuePoint {
+                    comment: MIX_IN.into(),
+                    hot_color: 0x16,
+                    ..CuePoint::hot(1, mix_in)
+                });
+                cues.push(CuePoint {
+                    comment: out_comment,
+                    hot_color: 0x2d,
+                    ..CuePoint::hot(2, mix_out)
+                });
+            } else {
+                cues.retain(|c| !is_plan(c));
+                for (out, time, comment) in [
+                    (false, mix_in, MIX_IN.to_string()),
+                    (true, mix_out, out_comment),
+                ] {
+                    // Mix in prefers pad G, mix out pad H; else the highest free pad.
+                    let slot = (mode == "hot")
+                        .then(|| {
+                            let want: u8 = if out { 8 } else { 7 };
+                            std::iter::once(want)
+                                .chain((1..=8u8).rev())
+                                .find(|s| !cues.iter().any(|c| c.slot == *s))
+                        })
+                        .flatten();
+                    cues.push(match slot {
+                        Some(s) => CuePoint {
+                            comment,
+                            hot_color: if out { 0x2d } else { 0x16 },
+                            ..CuePoint::hot(s, time)
+                        },
+                        None => CuePoint {
+                            comment,
+                            ..CuePoint::memory(time)
+                        },
+                    });
                 }
             }
             lib(&app, |l| l.set_cues(id, &cues))?;
@@ -907,4 +917,44 @@ pub async fn apply_set_plan(
         Ok(())
     })
     .await
+}
+
+/// How many tracks of a set have cues backed up by a plan.
+#[tauri::command]
+pub fn set_cue_backups(app: AppHandle, set_id: i64) -> CmdResult<usize> {
+    lib(&app, |l| {
+        let ids: HashSet<i64> = l
+            .playlists()?
+            .into_iter()
+            .find(|p| p.id == set_id)
+            .map(|p| p.track_ids.into_iter().collect())
+            .unwrap_or_default();
+        let mut n = 0;
+        for id in ids {
+            if l.has_cue_backup(id)? {
+                n += 1;
+            }
+        }
+        Ok(n)
+    })
+}
+
+/// Give the tracks of a set back the cues they had before a plan replaced them.
+#[tauri::command]
+pub fn restore_set_cues(app: AppHandle, set_id: i64) -> CmdResult<usize> {
+    lib(&app, |l| {
+        let ids: HashSet<i64> = l
+            .playlists()?
+            .into_iter()
+            .find(|p| p.id == set_id)
+            .map(|p| p.track_ids.into_iter().collect())
+            .unwrap_or_default();
+        let mut n = 0;
+        for id in ids {
+            if l.restore_cues(id)? {
+                n += 1;
+            }
+        }
+        Ok(n)
+    })
 }

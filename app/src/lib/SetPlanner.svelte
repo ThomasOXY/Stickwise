@@ -52,8 +52,13 @@
   let curve = $state(localStorage.getItem("plan-curve") || "peak");
   /** Keep the DJ's order (only plan transitions) or let the planner order the set. */
   let keepOrder = $state(localStorage.getItem("plan-order") !== "suggest");
-  /** Write transition cues on pads G/H (visible on the pads and the CDJ) or as memory cues. */
-  let asHot = $state(localStorage.getItem("plan-cues") !== "memory");
+  /**
+   * Where the transition cues go: `only` = the track keeps just A = Mix in and
+   * B = Mix out (other hot cues backed up), `hot` = added on pads G/H,
+   * `memory` = memory cues.
+   */
+  let cueMode = $state(localStorage.getItem("plan-cue-mode") || "only");
+  let backups = $state(0);
   let plan = $state<Plan | null>(null);
   let busy = $state(false);
   let applied = $state(false);
@@ -70,8 +75,30 @@
     localStorage.setItem("plan-level", level);
     localStorage.setItem("plan-curve", curve);
     localStorage.setItem("plan-order", keepOrder ? "mine" : "suggest");
-    localStorage.setItem("plan-cues", asHot ? "hot" : "memory");
+    localStorage.setItem("plan-cue-mode", cueMode);
   });
+
+  async function loadBackups() {
+    if (set) backups = await invoke<number>("set_cue_backups", { setId: set.id }).catch(() => 0);
+  }
+  $effect(() => {
+    void set?.id;
+    loadBackups();
+  });
+
+  async function restore() {
+    if (!set) return;
+    try {
+      const n = await invoke<number>("restore_set_cues", { setId: set.id });
+      app.cues = {};
+      app.memCount = {};
+      if (app.selectedTrack != null) await app.selectTrack(app.selectedTrack, true);
+      app.notice = `Původní cue jsou zpátky u ${n} skladeb.`;
+      await loadBackups();
+    } catch (e) {
+      app.error = String(e);
+    }
+  }
 
   async function run() {
     if (!set) return;
@@ -95,8 +122,14 @@
         setId: set.id,
         order: plan.tracks.map((t) => t.trackId),
         leftOut: plan.leftOut,
-        transitions: plan.transitions.map((t) => [t.from, t.to, t.startAtMs, t.cueInMs]),
-        asHot,
+        // Per track: mix in (from the transition into it), mix out (into the next one).
+        marks: plan.tracks.map((t, k) => [
+          t.trackId,
+          k > 0 ? plan!.transitions[k - 1].cueInMs : t.mixInMs,
+          k < plan!.transitions.length ? plan!.transitions[k].startAtMs : t.mixOutMs,
+          plan!.tracks[k + 1]?.trackId ?? null,
+        ]),
+        mode: cueMode,
       });
       await app.reloadLibrary();
       app.cues = {};
@@ -110,9 +143,11 @@
       else if (app.selectedTrack != null) await app.selectTrack(app.selectedTrack, true);
       app.notice =
         (keepOrder ? `Set „${set.name}“ zůstal ve tvém pořadí. ` : `Set „${set.name}“ je přeřazený podle plánu. `) +
-        (asHot
-          ? `Do ${n + 1} skladeb se zapsaly hot cue přechodů: pad G = Mix in (zelený), pad H = Mix out → další skladba (růžový); kde byly obsazené, použil se jiný volný pad. `
-          : `Do ${n + 1} skladeb se zapsalo ${n * 2} memory cue (Mix in a Mix out → další skladba), v tabulce je poznáš podle ▾. `) +
+        (cueMode === "only"
+          ? `${n + 1} skladeb má teď jen dva hot cue: A = Mix in (zelený), B = Mix out → další skladba (růžový). Původní hot cue jsou zálohované, vrátíš je v plánovači tlačítkem Obnovit původní cue. `
+          : cueMode === "hot"
+            ? `Do ${n + 1} skladeb se přidaly hot cue přechodů: pad G = Mix in, pad H = Mix out → další skladba; kde byly obsazené, použil se jiný volný pad. `
+            : `Do ${n + 1} skladeb se zapsaly memory cue Mix in a Mix out → další skladba, v tabulce je poznáš podle ▾. `) +
         `Na flashku je dostaneš synchronizací.`;
     } catch (e) {
       app.error = String(e);
@@ -168,8 +203,9 @@
     <div class="group">
       <span class="lbl">Cue přechodů</span>
       <div class="seg">
-        <button class:on={asHot} onclick={() => (asHot = true)} title="Mix in na pad G, Mix out na pad H; obsazené pady se nepřepisují">Hot cue G/H</button>
-        <button class:on={!asHot} onclick={() => (asHot = false)} title="Jako memory cue: na padech nic nezabírají">Memory cue</button>
+        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title="Skladba bude mít jen A = Mix in a B = Mix out; ostatní hot cue se zazálohují a smažou, memory cue zůstanou">Jen Mix in / out (A, B)</button>
+        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title="Tvoje hot cue zůstanou, Mix in přibude na pad G, Mix out na pad H">Přidat na G/H</button>
+        <button class:on={cueMode === "memory"} onclick={() => (cueMode = "memory")} title="Jako memory cue, pady zůstanou, jak jsou">Memory cue</button>
       </div>
     </div>
     <label class="len" class:off={keepOrder}>
@@ -218,6 +254,9 @@
       <span><span class="readout big bad">{plan.transitions.filter((t) => relationClass(t) === "bad").length}</span> náročných</span>
       {#if plan.leftOut.length}<span class="sub">{plan.leftOut.length} se nevešlo, zůstanou na konci setu</span>{/if}
       {#if keepOrder}<span class="sub">tvoje pořadí</span>{/if}
+      {#if backups > 0}
+        <button class="btn restore" onclick={restore} title="Vrátí hot cue, které skladby měly před prvním použitím plánu">Obnovit původní cue ({backups})</button>
+      {/if}
       <button class="btn primary apply" onclick={apply} disabled={busy || applied}>
         {#if applied}<Check size={14} /> Uloženo{:else}{keepOrder ? "Uložit cue přechodů" : "Použít pořadí a cue"}{/if}
       </button>
@@ -400,8 +439,17 @@
     color: var(--warn);
   }
   .apply {
+    align-self: center;
+  }
+  .restore {
     margin-left: auto;
     align-self: center;
+  }
+  .restore + .apply {
+    margin-left: 0;
+  }
+  .summary > .apply:first-of-type {
+    margin-left: auto;
   }
   .chart {
     width: 100%;

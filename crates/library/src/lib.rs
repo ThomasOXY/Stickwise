@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS playlist_items (
 );
 CREATE INDEX IF NOT EXISTS items_playlist ON playlist_items(playlist_id, position);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+-- Cues a track had before a set plan replaced them (restorable).
+CREATE TABLE IF NOT EXISTS cue_backups (track_id INTEGER PRIMARY KEY, cues TEXT NOT NULL, saved TEXT NOT NULL);
 ";
 
 const TRACK_COLUMNS: &str = "id, path, title, artist, album, genre, label, remixer, key, bpm, duration, bitrate, \
@@ -395,6 +397,69 @@ impl Library {
         Ok(())
     }
 
+    /// Keep the track's current cues so they can be restored; an existing
+    /// backup is kept (it holds the cues from before the first replacement).
+    pub fn backup_cues(&self, track_id: i64) -> Result<()> {
+        let cues: Vec<serde_json::Value> = self
+            .cues(track_id)?
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "slot": c.slot, "time_ms": c.time_ms, "loop_end_ms": c.loop_end_ms,
+                    "loop_beats": c.loop_beats, "comment": c.comment, "hot_color": c.hot_color,
+                    "memory_color": c.memory_color, "active_loop": c.active_loop
+                })
+            })
+            .collect();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO cue_backups(track_id, cues, saved) VALUES (?1, ?2, datetime('now', 'localtime'))",
+            params![track_id, serde_json::to_string(&cues)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn has_cue_backup(&self, track_id: i64) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM cue_backups WHERE track_id = ?1",
+            [track_id],
+            |r| r.get::<_, i64>(0),
+        )? > 0)
+    }
+
+    /// Put back the cues saved by [`Library::backup_cues`]; returns false if there was none.
+    pub fn restore_cues(&mut self, track_id: i64) -> Result<bool> {
+        let saved: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT cues FROM cue_backups WHERE track_id = ?1",
+                [track_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(saved) = saved else { return Ok(false) };
+        let values: Vec<serde_json::Value> = serde_json::from_str(&saved)?;
+        let cues: Vec<CuePoint> = values
+            .iter()
+            .map(|v| CuePoint {
+                slot: v["slot"].as_u64().unwrap_or(0) as u8,
+                time_ms: v["time_ms"].as_u64().unwrap_or(0) as u32,
+                loop_end_ms: v["loop_end_ms"].as_u64().map(|x| x as u32),
+                loop_beats: v["loop_beats"]
+                    .as_array()
+                    .and_then(|a| Some((a.first()?.as_u64()? as u16, a.get(1)?.as_u64()? as u16))),
+                comment: v["comment"].as_str().unwrap_or_default().to_string(),
+                hot_color: v["hot_color"].as_u64().unwrap_or(0) as u8,
+                hot_led: None,
+                memory_color: v["memory_color"].as_u64().unwrap_or(0) as u8,
+                active_loop: v["active_loop"].as_bool().unwrap_or(false),
+            })
+            .collect();
+        self.set_cues(track_id, &cues)?;
+        self.conn
+            .execute("DELETE FROM cue_backups WHERE track_id = ?1", [track_id])?;
+        Ok(true)
+    }
+
     /// Hot cue colours of all tracks (for the table): track → (slot, colour code, is loop).
     pub fn hot_cue_codes(&self) -> Result<HotCueCodes> {
         let mut st = self.conn.prepare(
@@ -461,6 +526,12 @@ mod tests {
             CuePoint::memory(500),
         ];
         lib.set_cues(1, &cues).unwrap();
+        lib.backup_cues(1).unwrap();
+        lib.set_cues(1, &[CuePoint::hot(1, 9)]).unwrap();
+        lib.backup_cues(1).unwrap(); // keeps the first backup
+        assert!(lib.has_cue_backup(1).unwrap());
+        assert!(lib.restore_cues(1).unwrap());
+        assert!(!lib.has_cue_backup(1).unwrap());
         let back = lib.cues(1).unwrap();
         assert_eq!(back.len(), 2);
         assert_eq!(back[0].comment, "Drop");
