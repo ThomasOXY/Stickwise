@@ -21,6 +21,15 @@ Datum plánu: 2026-10-13
 - ⏳ Chybí ověření cue bodů na reálných datech (lokální analýzy rekordboxu cue neobsahují — jsou v master.db) → potřeba testovací flashka.
 - ⏭ Další: Fáze 2 — import rekordbox XML → kompletní export na flashku (Contents + PDB + ANLZ + bezpečný pipeline).
 
+**2026-10-14**
+- ✅ GUI (Tauri 2 + Svelte 5) podle návrhu z Pencilu; rekordbox-style rolující waveform se zoomem; editor cue (pady A–H, memory, smyčky, quantize, undo).
+- ✅ Smart Cue (energie z 3pásmového waveformu) + **CUE-DETR** (sidecar, MPS): pady pokryjí 57 % DJových vlastních cue (bez AI 37 %).
+- ✅ Bezpečný zápis cue na flashku (záloha, zápis vedle, F_FULLFSYNC, rename, read-back).
+- ✅ **Knihovna v Macu** (SQLite) s importem z rekordboxu (pyrekordbox nad kopií master.db): 4 432 skladeb, 117 playlistů, 331 cue za 0,1 s; sety, playlisty, složky, drag & drop.
+- ✅ **Synchronizace na flashku**: záloha, kopie jen chybějícího (rekordbox soubory na flashce se znovu použijí), ANLZ s cestou na flashku a cue z knihovny, odsunutí starého exportExt/OneLibrary, `export.pdb` vyměněn atomicky jako poslední. Ověřeno na skutečných datech do zkušební složky (23 skladeb, 112 hot cue).
+- ⏳ Zatím neověřeno na skutečné flashce v CDJ/Denonu.
+- ⏭ Další: **OneLibrary zápis** (bez něj CDJ-3000X / XDJ-AZ / OPUS-QUAD po synchronizaci knihovnu neuvidí), vlastní analýza nových skladeb (bez rekordboxu), Set Planner.
+
 ## 1. Co už existuje (rešerše GitHubu)
 
 ### 1.1 Dokumentace formátů (základ všeho)

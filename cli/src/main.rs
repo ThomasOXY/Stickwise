@@ -56,6 +56,16 @@ enum Cmd {
         /// JSON written by rekordbox_dump.py.
         dump: PathBuf,
     },
+    /// Sync library playlists onto a stick (or a folder standing in for one).
+    Sync {
+        /// Library database file.
+        db: PathBuf,
+        /// Stick root (or any folder).
+        stick: PathBuf,
+        /// Playlist names to put on the stick (repeatable).
+        #[arg(short, long = "playlist")]
+        playlists: Vec<String>,
+    },
     /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
     Extract {
         /// Root of the mounted stick, e.g. /Volumes/DJ.
@@ -119,6 +129,11 @@ fn main() -> Result<()> {
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
         Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
+        Cmd::Sync {
+            db,
+            stick,
+            playlists,
+        } => sync_cmd(&db, &stick, &playlists),
         Cmd::LibraryImport { db, dump } => {
             let started = std::time::Instant::now();
             let mut lib = library::Library::open(&db)?;
@@ -743,5 +758,91 @@ fn smart_cue_cmd(
             );
         }
     }
+    Ok(())
+}
+
+fn sync_cmd(db: &Path, stick: &Path, names: &[String]) -> Result<()> {
+    use usb_tools::sync::{SyncPlaylist, SyncRequest, SyncTrack, execute, plan};
+    let lib = library::Library::open(db)?;
+    let lists = lib.playlists()?;
+    let chosen: Vec<&library::Playlist> = lists
+        .iter()
+        .filter(|p| names.iter().any(|n| n == &p.name))
+        .collect();
+    anyhow::ensure!(!chosen.is_empty(), "no playlist with those names");
+    let wanted: std::collections::HashSet<i64> = chosen
+        .iter()
+        .flat_map(|p| p.track_ids.iter().copied())
+        .collect();
+    let mut tracks = Vec::new();
+    for t in lib.tracks()?.into_iter().filter(|t| wanted.contains(&t.id)) {
+        tracks.push(SyncTrack {
+            key: t.id,
+            audio: PathBuf::from(&t.path),
+            cues: lib.cues(t.id)?,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            genre: t.genre,
+            label: t.label,
+            remixer: t.remixer,
+            key_name: t.key,
+            bpm: t.bpm,
+            duration: t.duration,
+            bitrate: t.bitrate,
+            sample_rate: t.sample_rate,
+            sample_depth: t.sample_depth,
+            rating: t.rating,
+            color: t.color,
+            comment: t.comment,
+            year: t.year,
+            track_number: t.track_number,
+            date_added: t.date_added,
+            anlz_dat: (!t.anlz.is_empty()).then(|| PathBuf::from(t.anlz)),
+        });
+    }
+    let req = SyncRequest {
+        stick: stick.to_path_buf(),
+        tracks,
+        playlists: chosen
+            .iter()
+            .map(|p| SyncPlaylist {
+                key: p.id,
+                parent: 0,
+                name: p.name.clone(),
+                is_folder: false,
+                sort: p.sort_order,
+                tracks: p.track_ids.clone(),
+            })
+            .collect(),
+        device_name: stick
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        date: "2026-10-14".into(),
+    };
+    let p = plan(&req);
+    println!(
+        "plan: {} tracks, copy {} ({}), reuse {}, missing {}, no analysis {}",
+        p.tracks.len(),
+        p.copy_files,
+        human(p.copy_bytes),
+        p.reuse_files,
+        p.missing_audio.len(),
+        p.no_analysis.len()
+    );
+    let backup = std::env::temp_dir().join("rbx-sync-backup");
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let r = execute(&req, &p, &backup, &cancel, |x| {
+        eprint!(
+            "\r{:<9} {}/{} {:<50.50}",
+            x.phase, x.done, x.total, x.current
+        )
+    })?;
+    eprintln!();
+    println!(
+        "done: {} tracks, {} playlists, copied {}, reused {}, warnings {:?}",
+        r.tracks, r.playlists, r.copied, r.reused, r.warnings
+    );
     Ok(())
 }
