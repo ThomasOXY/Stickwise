@@ -19,13 +19,13 @@ use crate::edits::{self, Edits, StoredCue};
 use crate::jobs::Jobs;
 use crate::sidecar::Sidecar;
 
-type CmdResult<T> = Result<T, String>;
+pub(crate) type CmdResult<T> = Result<T, String>;
 
-fn err(e: impl std::fmt::Display) -> String {
+pub(crate) fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> CmdResult<T> + Send + 'static,
 ) -> CmdResult<T> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(err)?
@@ -198,7 +198,7 @@ const MEMORY_COLORS: [[u8; 3]; 8] = [
     [0x66, 0x00, 0x99],
 ];
 
-fn display_color(c: &CuePoint) -> [u8; 3] {
+pub(crate) fn display_color(c: &CuePoint) -> [u8; 3] {
     if c.slot > 0 {
         match hot_cue_color(c.hot_color) {
             Some((display, _)) => display,
@@ -212,7 +212,7 @@ fn display_color(c: &CuePoint) -> [u8; 3] {
     }
 }
 
-fn cue_dto(c: &CuePoint) -> dto::Cue {
+pub(crate) fn cue_dto(c: &CuePoint) -> dto::Cue {
     dto::Cue {
         slot: c.slot,
         time_ms: c.time_ms,
@@ -227,7 +227,7 @@ fn cue_dto(c: &CuePoint) -> dto::Cue {
     }
 }
 
-fn cue_point(c: &dto::Cue) -> CuePoint {
+pub(crate) fn cue_point(c: &dto::Cue) -> CuePoint {
     CuePoint {
         slot: c.slot.min(8),
         time_ms: c.time_ms,
@@ -345,59 +345,73 @@ pub async fn track_detail(
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let t = find_track(&stick, track_id)?;
-        let dat_path = stick.resolve(&t.analyze_path);
-        let dat = read_anlz(&dat_path);
-        let ext = read_anlz(&sibling(&dat_path, "EXT"));
-        let two = read_anlz(&sibling(&dat_path, "2EX"));
-
-        let pick = |file: &Option<AnlzFile>, t: [u8; 4], kind: &'static str, entry_len: usize| {
-            file.as_ref()
-                .and_then(|f| f.section(t))
-                .map(|s| dto::Waveform {
-                    kind,
-                    entry_len,
-                    data: s.body.clone(),
-                })
-        };
-        let previews: Vec<_> = [
-            pick(&two, tag::WAVE_3BAND_PREVIEW, "three-band", 3),
-            pick(&dat, tag::WAVE_PREVIEW, "mono", 1),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        let details: Vec<_> = [
-            pick(&two, tag::WAVE_3BAND_SCROLL, "three-band", 3),
-            pick(&ext, tag::WAVE_COLOR_SCROLL, "color", 2),
-            pick(&ext, tag::WAVE_SCROLL, "mono", 1),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
+        let dat_path = (!t.analyze_path.is_empty()).then(|| stick.resolve(&t.analyze_path));
         let (points, edited) = track_cues(&app, &stick, t);
-        let mut cues: Vec<dto::Cue> = points.iter().map(cue_dto).collect();
-        cues.sort_by_key(|c| (c.slot == 0, c.slot, c.time_ms));
-
-        let beats = dat
-            .as_ref()
-            .and_then(|d| d.beat_grid())
-            .and_then(|g| g.ok())
-            .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
-            .unwrap_or_default();
-        let audio_path = stick.audio_path(t);
-        Ok(dto::TrackDetail {
+        Ok(build_detail(
             track_id,
-            previews,
-            details,
-            cues,
+            dat_path.as_deref(),
+            &stick.audio_path(t),
+            &points,
             edited,
-            beats,
-            audio: probe::probe_file(&audio_path).ok().map(|i| audio_dto(&i)),
-            file_size: std::fs::metadata(&audio_path).map(|m| m.len()).unwrap_or(0),
-        })
+        ))
     })
     .await
+}
+
+/// Waveforms, beat grid, cues and audio format of a track, from its
+/// analysis files (stick or rekordbox library) and audio file.
+pub(crate) fn build_detail(
+    track_id: u32,
+    dat_path: Option<&Path>,
+    audio_path: &Path,
+    points: &[CuePoint],
+    edited: bool,
+) -> dto::TrackDetail {
+    let dat = dat_path.and_then(read_anlz);
+    let ext = dat_path.and_then(|p| read_anlz(&sibling(p, "EXT")));
+    let two = dat_path.and_then(|p| read_anlz(&sibling(p, "2EX")));
+    let pick = |file: &Option<AnlzFile>, t: [u8; 4], kind: &'static str, entry_len: usize| {
+        file.as_ref()
+            .and_then(|f| f.section(t))
+            .map(|s| dto::Waveform {
+                kind,
+                entry_len,
+                data: s.body.clone(),
+            })
+    };
+    let previews: Vec<_> = [
+        pick(&two, tag::WAVE_3BAND_PREVIEW, "three-band", 3),
+        pick(&dat, tag::WAVE_PREVIEW, "mono", 1),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let details: Vec<_> = [
+        pick(&two, tag::WAVE_3BAND_SCROLL, "three-band", 3),
+        pick(&ext, tag::WAVE_COLOR_SCROLL, "color", 2),
+        pick(&ext, tag::WAVE_SCROLL, "mono", 1),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let mut cues: Vec<dto::Cue> = points.iter().map(cue_dto).collect();
+    cues.sort_by_key(|c| (c.slot == 0, c.slot, c.time_ms));
+    let beats = dat
+        .as_ref()
+        .and_then(|d| d.beat_grid())
+        .and_then(|g| g.ok())
+        .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
+        .unwrap_or_default();
+    dto::TrackDetail {
+        track_id,
+        previews,
+        details,
+        cues,
+        edited,
+        beats,
+        audio: probe::probe_file(audio_path).ok().map(|i| audio_dto(&i)),
+        file_size: std::fs::metadata(audio_path).map(|m| m.len()).unwrap_or(0),
+    }
 }
 
 fn issue_text(
@@ -735,7 +749,7 @@ pub async fn pending_cues(app: AppHandle, path: String) -> CmdResult<Vec<u32>> {
     .await
 }
 
-fn timestamp() -> String {
+pub(crate) fn timestamp() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as libc::time_t)
@@ -845,17 +859,26 @@ fn suggestions(
     stick: &Stick,
     t: &pioneer_formats::pdb::Track,
 ) -> Option<Vec<analysis::smart_cue::Suggestion>> {
+    let dat = stick.resolve(&t.analyze_path);
+    suggestions_for(app, &dat, t.bpm() as f32, &ai_key(stick, t))
+}
+
+pub(crate) fn suggestions_for(
+    app: &AppHandle,
+    dat_path: &Path,
+    bpm: f32,
+    ai_cache_key: &str,
+) -> Option<Vec<analysis::smart_cue::Suggestion>> {
     use analysis::smart_cue::{
         AI_THRESHOLD, AiCandidate, Input, analyze, bands_from_color, bands_from_three_band, with_ai,
     };
-    let dat_path = stick.resolve(&t.analyze_path);
-    let dat = read_anlz(&dat_path)?;
-    let columns = if let Some(s) = read_anlz(&sibling(&dat_path, "2EX"))
+    let dat = read_anlz(dat_path)?;
+    let columns = if let Some(s) = read_anlz(&sibling(dat_path, "2EX"))
         .and_then(|f| f.section(tag::WAVE_3BAND_SCROLL).cloned())
     {
         bands_from_three_band(&s.body)
     } else {
-        let ext = read_anlz(&sibling(&dat_path, "EXT"))?;
+        let ext = read_anlz(&sibling(dat_path, "EXT"))?;
         bands_from_color(&ext.section(tag::WAVE_COLOR_SCROLL)?.body)
     };
     let beats: Vec<(u32, u16)> = dat
@@ -867,10 +890,10 @@ fn suggestions(
         beats: &beats,
         columns: &columns,
         rate: 150.0,
-        bpm: t.bpm() as f32,
+        bpm,
     };
     let structure = analyze(&input);
-    match app.state::<Sidecar>().cached(&ai_key(stick, t)) {
+    match app.state::<Sidecar>().cached(ai_cache_key) {
         Some(ai) => {
             let cands: Vec<AiCandidate> = ai
                 .candidates
@@ -886,6 +909,41 @@ fn suggestions(
     }
 }
 
+pub(crate) fn smart_dto(s: &[analysis::smart_cue::Suggestion]) -> Vec<dto::SmartCue> {
+    let plan = analysis::smart_cue::hot_cue_plan(s);
+    s.iter()
+        .map(|x| dto::SmartCue {
+            kind: smart_kind(x.kind),
+            time_ms: x.time_ms,
+            bar: x.bar,
+            label: x.label.clone(),
+            confidence: x.confidence,
+            color_code: x.kind.color_code(),
+            color: hot_cue_color(x.kind.color_code())
+                .map(|c| c.0)
+                .unwrap_or([255, 255, 255]),
+            in_plan: plan.iter().any(|p| p.time_ms == x.time_ms),
+            ai: x.ai,
+        })
+        .collect()
+}
+
+/// Hot cues A–H from the Smart Cue plan, keeping memory cues.
+pub(crate) fn plan_cues(
+    existing: &[CuePoint],
+    s: &[analysis::smart_cue::Suggestion],
+) -> Vec<CuePoint> {
+    let mut cues: Vec<CuePoint> = existing.iter().filter(|c| c.slot == 0).cloned().collect();
+    for (i, x) in analysis::smart_cue::hot_cue_plan(s).iter().enumerate() {
+        cues.push(CuePoint {
+            hot_color: x.kind.color_code(),
+            comment: x.label.clone(),
+            ..CuePoint::hot(i as u8 + 1, x.time_ms)
+        });
+    }
+    cues
+}
+
 #[tauri::command]
 pub async fn smart_cue(
     app: AppHandle,
@@ -897,22 +955,7 @@ pub async fn smart_cue(
         let t = find_track(&stick, track_id)?;
         let s = suggestions(&app, &stick, t)
             .ok_or("Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.")?;
-        let plan = analysis::smart_cue::hot_cue_plan(&s);
-        Ok(s.iter()
-            .map(|x| dto::SmartCue {
-                kind: smart_kind(x.kind),
-                time_ms: x.time_ms,
-                bar: x.bar,
-                label: x.label.clone(),
-                confidence: x.confidence,
-                color_code: x.kind.color_code(),
-                color: hot_cue_color(x.kind.color_code())
-                    .map(|c| c.0)
-                    .unwrap_or([255, 255, 255]),
-                in_plan: plan.iter().any(|p| p.time_ms == x.time_ms),
-                ai: x.ai,
-            })
-            .collect())
+        Ok(smart_dto(&s))
     })
     .await
 }
@@ -947,14 +990,7 @@ pub async fn smart_cue_apply(
                 r.failed += 1;
                 continue;
             };
-            cues.retain(|c| c.slot == 0);
-            for (i, x) in analysis::smart_cue::hot_cue_plan(&s).iter().enumerate() {
-                cues.push(CuePoint {
-                    hot_color: x.kind.color_code(),
-                    comment: x.label.clone(),
-                    ..CuePoint::hot(i as u8 + 1, x.time_ms)
-                });
-            }
+            cues = plan_cues(&cues, &s);
             app.state::<Edits>().set(
                 edits::key(&name, &t.file_path),
                 cues.iter().map(StoredCue::from).collect(),

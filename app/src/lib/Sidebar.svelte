@@ -27,6 +27,25 @@
   <div class="drag" data-tauri-drag-region></div>
 
   <section>
+    <h2>Knihovna</h2>
+    <div
+      class="stick lib"
+      class:active={app.isLibrary}
+      role="button"
+      tabindex="0"
+      onclick={() => !app.isLibrary && app.openLibrary()}
+      onkeydown={(e) => e.key === "Enter" && app.openLibrary()}
+    >
+      <div class="row">
+        <LibraryBig size={14} />
+        <span class="name">Tento Mac</span>
+        <span class="readout count">{app.library?.tracks.length ?? 0}</span>
+      </div>
+      <div class="libsub">Sety a playlisty, které chystáš</div>
+    </div>
+  </section>
+
+  <section>
     <h2>Flashky</h2>
     {#if app.sticks.length === 0}
       <p class="empty">Žádná připojená flashka</p>
@@ -35,7 +54,7 @@
       {@const used = s.totalBytes - s.freeBytes}
       <div
         class="stick"
-        class:active={s.path === app.stickPath}
+        class:active={!app.isLibrary && s.path === app.stickPath}
         role="button"
         tabindex="0"
         onclick={() => app.open(s.path)}
@@ -56,10 +75,6 @@
     {/each}
   </section>
 
-  <section>
-    <h2>Knihovna <span class="badge">Brzy</span></h2>
-    <div class="soon"><LibraryBig size={14} /> Celá knihovna</div>
-  </section>
 
   <section class="jobs">
     <h2>Úlohy</h2>
@@ -182,12 +197,14 @@
   .bar.amber > div {
     background: var(--cue);
   }
-  .soon {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 10px;
-    color: var(--text-3);
+  .lib .count {
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .libsub {
+    margin: 4px 0 0 22px;
+    font-size: 11px;
+    color: var(--text-2);
   }
   .job {
     padding: 0 10px;

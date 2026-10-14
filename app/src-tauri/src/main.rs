@@ -4,6 +4,7 @@ mod commands;
 mod dto;
 mod edits;
 mod jobs;
+mod library_cmds;
 mod sidecar;
 
 fn main() {
@@ -14,6 +15,8 @@ fn main() {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
             app.manage(edits::Edits::load(dir.join("cue-edits.json")));
+            let lib = library::Library::open(&dir.join("library.sqlite"))?;
+            app.manage(library_cmds::LibState(std::sync::Mutex::new(lib)));
             app.manage(sidecar::Sidecar::new(dir));
             Ok(())
         })
@@ -37,6 +40,23 @@ fn main() {
             commands::smart_cue_apply,
             commands::ai_status,
             commands::ai_analyze,
+            library_cmds::library_data,
+            library_cmds::library_import,
+            library_cmds::library_create_playlist,
+            library_cmds::library_rename_playlist,
+            library_cmds::library_delete_playlist,
+            library_cmds::library_move_playlist,
+            library_cmds::library_set_tracks,
+            library_cmds::library_track_detail,
+            library_cmds::library_save_cues,
+            library_cmds::library_cue_summary,
+            library_cmds::library_smart_cue,
+            library_cmds::library_smart_cue_apply,
+            library_cmds::library_ai_status,
+            library_cmds::library_ai_analyze,
+            library_cmds::sync_selection,
+            library_cmds::sync_plan,
+            library_cmds::sync_start,
         ])
         .run(tauri::generate_context!())
         .expect("error while running RB-EXPORT");

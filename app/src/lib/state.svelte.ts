@@ -1,12 +1,14 @@
 import { listen } from "@tauri-apps/api/event";
 import {
   api,
+  libApi,
   type Cue,
   type CueSummary,
-  type PaletteColor,
-  type SmartCue,
   type JobEvent,
+  type LibraryData,
+  type PaletteColor,
   type Playlist,
+  type SmartCue,
   type StickData,
   type StickInfo,
   type Track,
@@ -15,16 +17,22 @@ import {
 } from "./api";
 
 export type Selection =
+  | { kind: "all" }
   | { kind: "playlist"; id: number }
   | { kind: "history"; id: number }
   | { kind: "player"; player: string };
 
 export type View = "tracks" | "health";
 
+/** Where the app is working: the library on this Mac, or a stick. */
+export type Source = "library" | "stick";
+
 class AppState {
+  source = $state<Source>("library");
   sticks = $state<StickInfo[]>([]);
   stickPath = $state<string | null>(null);
   data = $state<StickData | null>(null);
+  library = $state<LibraryData | null>(null);
   loading = $state(false);
   error = $state<string | null>(null);
 
@@ -42,11 +50,14 @@ class AppState {
   detailOpen = $state(false);
   detail = $state<TrackDetail | null>(null);
 
-  playing = $state<number | null>(null);
   jobs = $state<JobEvent[]>([]);
   exportOpen = $state(false);
+  syncOpen = $state(false);
+  importing = $state(false);
+  /** Playlist being renamed in the tree. */
+  renaming = $state<number | null>(null);
 
-  /** Tracks with cue edits not yet written to the stick. */
+  /** Stick tracks with cue edits not yet written to the stick. */
   pending = $state<Set<number>>(new Set());
   palette = $state<PaletteColor[]>([]);
   quantize = $state(localStorage.getItem("quantize") !== "off");
@@ -61,6 +72,7 @@ class AppState {
   notice = $state<string | null>(null);
   private undoStack: { trackId: number; cues: Cue[] }[] = [];
 
+  isLibrary = $derived(this.source === "library");
   trackById = $derived(new Map((this.data?.tracks ?? []).map((t) => [t.id, t])));
 
   /** Track id → "error" | "warning" from the last health check. */
@@ -83,10 +95,16 @@ class AppState {
 
   errorTracks = $derived(new Set((this.verify?.issues ?? []).filter((i) => i.severity === "error").map((i) => i.trackId)));
 
+  currentPlaylist = $derived.by((): Playlist | undefined => {
+    const s = this.selection;
+    return s?.kind === "playlist" ? this.data?.playlists.find((p) => p.id === s.id) : undefined;
+  });
+
   currentTrackIds = $derived.by((): number[] => {
     const s = this.selection;
     const d = this.data;
     if (!s || !d) return [];
+    if (s.kind === "all") return d.tracks.map((t) => t.id);
     if (s.kind === "playlist") return d.playlists.find((p) => p.id === s.id)?.trackIds ?? [];
     if (s.kind === "history") return d.history.find((p) => p.id === s.id)?.trackIds ?? [];
     return this.verify?.players.find((p) => p.player === s.player)?.unplayable ?? [];
@@ -97,12 +115,13 @@ class AppState {
     return this.currentTrackIds
       .map((id) => this.trackById.get(id))
       .filter((t): t is Track => !!t)
-      .filter((t) => !q || `${t.title} ${t.artist}`.toLowerCase().includes(q));
+      .filter((t) => !q || `${t.title} ${t.artist} ${t.album} ${t.genre}`.toLowerCase().includes(q));
   });
 
   currentTitle = $derived.by(() => {
     const s = this.selection;
     if (!s || !this.data) return "";
+    if (s.kind === "all") return "Celá knihovna";
     if (s.kind === "playlist") return this.data.playlists.find((p) => p.id === s.id)?.name ?? "";
     if (s.kind === "history") return this.data.history.find((p) => p.id === s.id)?.name ?? "";
     return `Nepůjde na ${s.player}`;
@@ -117,6 +136,7 @@ class AppState {
       if (e.payload.id === this.aiJob && e.payload.state !== "running") this.aiFinished(e.payload);
     });
     this.palette = await api.cuePalette();
+    await this.openLibrary();
     await this.refreshSticks();
     setInterval(() => this.refreshSticks(), 2500);
   }
@@ -125,17 +145,15 @@ class AppState {
     try {
       const list = await api.listSticks();
       this.sticks = list;
-      if (this.stickPath && !list.some((s) => s.path === this.stickPath)) {
-        this.close();
+      if (this.source === "stick" && this.stickPath && !list.some((s) => s.path === this.stickPath)) {
+        await this.openLibrary();
       }
-      if (!this.stickPath && list.length > 0) await this.open(list[0].path);
     } catch (e) {
       this.error = String(e);
     }
   }
 
-  close() {
-    this.stickPath = null;
+  private reset() {
     this.data = null;
     this.verify = null;
     this.selection = null;
@@ -143,11 +161,56 @@ class AppState {
     this.detail = null;
     this.detailOpen = false;
     this.selectedTrack = null;
+    this.smart = null;
+    this.smartOpen = false;
+    this.aiAnalyzed = new Set();
+    this.undoStack = [];
+    this.view = "tracks";
+  }
+
+  /** The library as the same shape the stick views use. */
+  private libraryView(d: LibraryData): StickData {
+    return {
+      info: { path: "library", name: "Knihovna", totalBytes: 0, freeBytes: 0, filesystem: "" },
+      playlists: d.playlists,
+      history: [],
+      tracks: d.tracks,
+      problems: [],
+    };
+  }
+
+  async openLibrary() {
+    this.source = "library";
+    this.stickPath = null;
+    this.reset();
+    this.loading = true;
+    try {
+      await this.reloadLibrary();
+      const firstSet = this.data?.playlists.find((p) => p.isSet);
+      this.select(firstSet ? { kind: "playlist", id: firstSet.id } : { kind: "all" });
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  /** Re-read the library, keeping the selection. */
+  async reloadLibrary() {
+    const d = await libApi.data();
+    this.library = d;
+    if (this.source === "library") {
+      this.data = this.libraryView(d);
+      if (this.selection?.kind === "playlist" && !d.playlists.some((p) => this.selection?.kind === "playlist" && p.id === this.selection.id)) {
+        this.selection = { kind: "all" };
+      }
+    }
   }
 
   async open(path: string) {
-    if (this.stickPath === path && this.data) return;
-    this.close();
+    if (this.source === "stick" && this.stickPath === path && this.data) return;
+    this.source = "stick";
+    this.reset();
     this.stickPath = path;
     this.loading = true;
     this.error = null;
@@ -164,27 +227,113 @@ class AppState {
     }
   }
 
+  // ---- library editing ------------------------------------------------
+
+  async importRekordbox(source: string) {
+    this.importing = true;
+    try {
+      const r = await libApi.import(source);
+      await this.reloadLibrary();
+      this.cues = {};
+      this.loadCues(this.currentTrackIds);
+      this.notice =
+        `Z rekordboxu: ${r.tracksAdded} nových a ${r.tracksUpdated} aktualizovaných skladeb, ${r.playlists} playlistů, ${r.cues} cue.` +
+        (r.cuesKept ? ` Tvoje úpravy cue u ${r.cuesKept} skladeb zůstaly.` : "") +
+        (r.playlistsKept ? ` ${r.playlistsKept} playlistů upravených tady zůstalo beze změny.` : "");
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.importing = false;
+    }
+  }
+
+  async createPlaylist(parent: number, kind: "playlist" | "folder" | "set") {
+    const name = kind === "set" ? "Nový set" : kind === "folder" ? "Nová složka" : "Nový playlist";
+    try {
+      const id = await libApi.createPlaylist(parent, name, kind);
+      await this.reloadLibrary();
+      if (kind !== "folder") this.select({ kind: "playlist", id });
+      this.renaming = id;
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  async renamePlaylist(id: number, name: string) {
+    this.renaming = null;
+    if (!name.trim()) return;
+    await libApi.renamePlaylist(id, name.trim()).catch((e) => (this.error = String(e)));
+    await this.reloadLibrary();
+  }
+
+  async deletePlaylist(id: number) {
+    await libApi.deletePlaylist(id).catch((e) => (this.error = String(e)));
+    if (this.selection?.kind === "playlist" && this.selection.id === id) this.selection = { kind: "all" };
+    await this.reloadLibrary();
+  }
+
+  async movePlaylist(id: number, parent: number, index: number) {
+    await libApi.movePlaylist(id, parent, index).catch((e) => (this.error = String(e)));
+    await this.reloadLibrary();
+  }
+
+  async setPlaylistTracks(id: number, ids: number[]) {
+    await libApi.setTracks(id, ids).catch((e) => (this.error = String(e)));
+    await this.reloadLibrary();
+  }
+
+  /** Append tracks to a playlist, skipping ones already in it. */
+  async addToPlaylist(id: number, ids: number[]) {
+    const p = this.data?.playlists.find((x) => x.id === id);
+    if (!p || p.isFolder) return;
+    const add = ids.filter((t) => !p.trackIds.includes(t));
+    if (add.length === 0) return;
+    await this.setPlaylistTracks(id, [...p.trackIds, ...add]);
+    this.notice = `Přidáno do „${p.name}“: ${add.length}`;
+  }
+
+  /** Remove the rows at `positions` from the selected playlist. */
+  async removeFromPlaylist(positions: number[]) {
+    const p = this.currentPlaylist;
+    if (!p) return;
+    const drop = new Set(positions);
+    await this.setPlaylistTracks(p.id, p.trackIds.filter((_, i) => !drop.has(i)));
+  }
+
+  /** Move the row at `from` to `to` in the selected playlist. */
+  async reorder(from: number, to: number) {
+    const p = this.currentPlaylist;
+    if (!p || from === to) return;
+    const ids = [...p.trackIds];
+    const [t] = ids.splice(from, 1);
+    ids.splice(to > from ? to - 1 : to, 0, t);
+    await this.setPlaylistTracks(p.id, ids);
+  }
+
+  // ---- cues -----------------------------------------------------------
+
   async loadPending() {
     if (!this.stickPath) return;
     this.pending = new Set(await api.pendingCues(this.stickPath));
   }
 
-  /** Replace the cues of the selected track (kept in the app until written to the stick). */
+  /** Replace the cues of the selected track: saved in the library, or kept until written to the stick. */
   async setCues(cues: Cue[], undoable = true) {
     const d = this.detail;
-    const path = this.stickPath;
-    if (!d || !path) return;
+    if (!d || (!this.isLibrary && !this.stickPath)) return;
     if (undoable) {
       this.undoStack.push({ trackId: d.trackId, cues: d.cues });
       if (this.undoStack.length > 100) this.undoStack.shift();
     }
     try {
-      const saved = await api.saveCues(path, d.trackId, cues);
-      if (this.detail?.trackId === d.trackId) this.detail = { ...this.detail, cues: saved, edited: true };
-      const hot: (CueSummary["hot"][number])[] = Array(8).fill(null);
+      const saved = this.isLibrary
+        ? await libApi.saveCues(d.trackId, cues)
+        : await api.saveCues(this.stickPath!, d.trackId, cues);
+      if (this.detail?.trackId === d.trackId) this.detail = { ...this.detail, cues: saved, edited: !this.isLibrary };
+      const hot: CueSummary["hot"][number][] = Array(8).fill(null);
       for (const c of saved) if (c.slot >= 1 && c.slot <= 8) hot[c.slot - 1] = c.color;
       this.cues[d.trackId] = hot;
-      this.pending = new Set([...this.pending, d.trackId]);
+      if (!this.isLibrary) this.pending = new Set([...this.pending, d.trackId]);
     } catch (e) {
       this.error = String(e);
     }
@@ -199,7 +348,7 @@ class AppState {
     await this.setCues(last.cues, false);
   }
 
-  /** Throw away the edits of the selected track. */
+  /** Throw away the stick edits of the selected track. */
   async revertCues() {
     const d = this.detail;
     if (!d || !this.stickPath) return;
@@ -229,9 +378,9 @@ class AppState {
 
   async loadSmart() {
     const id = this.selectedTrack;
-    if (id == null || !this.stickPath) return;
+    if (id == null) return;
     try {
-      const s = await api.smartCue(this.stickPath, id);
+      const s = this.isLibrary ? await libApi.smartCue(id) : await api.smartCue(this.stickPath!, id);
       if (this.selectedTrack === id) {
         this.smart = s;
         this.smartOpen = true;
@@ -243,11 +392,12 @@ class AppState {
 
   /** Smart Cue onto hot cues of every track in the current list. */
   async smartCuePlaylist(replace: boolean) {
-    const path = this.stickPath;
     const ids = this.currentTrackIds;
-    if (!path || ids.length === 0) return;
+    if (ids.length === 0) return;
     try {
-      const r = await api.smartCueApply(path, ids, replace);
+      const r = this.isLibrary
+        ? await libApi.smartCueApply(ids, replace)
+        : await api.smartCueApply(this.stickPath!, ids, replace);
       for (const id of ids) delete this.cues[id];
       await this.loadCues(ids);
       await this.loadPending();
@@ -256,7 +406,7 @@ class AppState {
         `Smart Cue nastavil hot cue u ${r.applied} skladeb` +
         (r.skipped ? `, ${r.skipped} už hot cue měly a zůstaly beze změny` : "") +
         (r.failed ? `, ${r.failed} nejde rozebrat (chybí beatgrid nebo waveform)` : "") +
-        ". Na flashku se zapíšou tlačítkem Zapsat cue.";
+        (this.isLibrary ? ". Na flashku se dostanou synchronizací." : ". Na flashku se zapíšou tlačítkem Zapsat cue.");
     } catch (e) {
       this.error = String(e);
     }
@@ -275,14 +425,16 @@ class AppState {
     this.selection = s;
     this.view = "tracks";
     this.trackFilter = "";
-    this.loadCues(this.currentTrackIds);
-    this.loadAiStatus(this.currentTrackIds);
+    const ids = this.currentTrackIds;
+    // The whole library can be large: cue squares load as rows are needed.
+    this.loadCues(s.kind === "all" ? ids.slice(0, 300) : ids);
+    this.loadAiStatus(s.kind === "all" ? ids.slice(0, 300) : ids);
   }
 
   async loadAiStatus(ids: number[]) {
-    if (!this.stickPath) return;
+    if (!this.isLibrary && !this.stickPath) return;
     try {
-      const st = await api.aiStatus(this.stickPath, ids);
+      const st = this.isLibrary ? await libApi.aiStatus(ids) : await api.aiStatus(this.stickPath!, ids);
       this.aiInstalled = st.installed;
       this.aiAnalyzed = new Set([...this.aiAnalyzed, ...st.analyzed]);
     } catch {
@@ -292,11 +444,11 @@ class AppState {
 
   /** Run CUE-DETR on tracks without results (background job). */
   async aiAnalyze(ids: number[]) {
-    if (!this.stickPath || this.aiJob != null) return;
+    if (this.aiJob != null) return;
     const todo = ids.filter((id) => !this.aiAnalyzed.has(id));
     if (todo.length === 0) return;
     try {
-      this.aiJob = await api.aiAnalyze(this.stickPath, todo);
+      this.aiJob = this.isLibrary ? await libApi.aiAnalyze(todo) : await api.aiAnalyze(this.stickPath!, todo);
     } catch (e) {
       this.error = String(e);
     }
@@ -311,11 +463,11 @@ class AppState {
   }
 
   async loadCues(ids: number[]) {
-    const path = this.stickPath;
     const missing = ids.filter((id) => !(id in this.cues));
-    if (!path || missing.length === 0) return;
+    if (missing.length === 0 || (!this.isLibrary && !this.stickPath)) return;
     try {
-      for (const c of await api.cueSummary(path, missing)) this.cues[c.trackId] = c.hot;
+      const list = this.isLibrary ? await libApi.cueSummary(missing) : await api.cueSummary(this.stickPath!, missing);
+      for (const c of list) this.cues[c.trackId] = c.hot;
     } catch {
       /* the table simply shows no cue squares */
     }
@@ -342,11 +494,10 @@ class AppState {
       this.smartOpen = false;
     }
     this.selectedTrack = id;
-    const path = this.stickPath;
-    if (!path) return;
+    if (!this.isLibrary && !this.stickPath) return;
     if (this.detail?.trackId === id && !reload) return;
     try {
-      const d = await api.trackDetail(path, id);
+      const d = this.isLibrary ? await libApi.trackDetail(id) : await api.trackDetail(this.stickPath!, id);
       if (this.selectedTrack === id) this.detail = d;
     } catch (e) {
       this.error = String(e);

@@ -4,6 +4,8 @@
   import EmptyState from "./lib/EmptyState.svelte";
   import ExportSheet from "./lib/ExportSheet.svelte";
   import HealthReport from "./lib/HealthReport.svelte";
+  import LibraryHeader from "./lib/LibraryHeader.svelte";
+  import SyncSheet from "./lib/SyncSheet.svelte";
   import PlaylistTree from "./lib/PlaylistTree.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import StickHeader from "./lib/StickHeader.svelte";
@@ -20,7 +22,7 @@
 
   function onKey(e: KeyboardEvent) {
     const typing = (e.target as HTMLElement)?.tagName === "INPUT";
-    if (typing || app.exportOpen || app.writeOpen) return;
+    if (typing || app.exportOpen || app.writeOpen || app.syncOpen) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -38,7 +40,7 @@
   <Sidebar />
   <main>
     {#if app.data}
-      <StickHeader />
+      {#if app.isLibrary}<LibraryHeader />{:else}<StickHeader />{/if}
       <div class="content">
         <PlaylistTree />
         {#if app.view === "health"}
@@ -55,7 +57,7 @@
         <button class="toast ok" onclick={() => (app.notice = null)}>{app.notice}</button>
       {/if}
     {:else if app.loading}
-      <div class="loading" data-tauri-drag-region>Načítám knihovnu z flashky…</div>
+      <div class="loading" data-tauri-drag-region>{app.isLibrary ? "Načítám knihovnu…" : "Načítám knihovnu z flashky…"}</div>
     {:else}
       <EmptyState />
     {/if}
@@ -67,6 +69,9 @@
 {/if}
 {#if app.writeOpen && app.data}
   <WriteCuesSheet />
+{/if}
+{#if app.syncOpen}
+  <SyncSheet />
 {/if}
 
 <style>

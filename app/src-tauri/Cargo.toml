@@ -16,4 +16,5 @@ serde_json = "1"
 pioneer-formats.workspace = true
 usb-tools.workspace = true
 analysis.workspace = true
+library.workspace = true
 libc = "0.2"

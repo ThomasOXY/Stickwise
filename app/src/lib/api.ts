@@ -15,6 +15,10 @@ export interface Playlist {
   isFolder: boolean;
   sortOrder: number;
   trackIds: number[];
+  /** Library only: a DJ set. */
+  isSet?: boolean;
+  /** Library only: `local` or `rekordbox`. */
+  source?: string;
 }
 
 export interface Track {
@@ -32,6 +36,37 @@ export interface Track {
   rating: number;
   fileSize: number;
   artwork: string | null;
+  /** Library only: audio file not found. */
+  missing?: boolean;
+  /** Library only: has rekordbox analysis. */
+  analyzed?: boolean;
+}
+
+export interface LibraryData {
+  tracks: Track[];
+  playlists: Playlist[];
+  rekordboxSources: string[];
+  lastImport: string | null;
+}
+
+export interface ImportReport {
+  tracksAdded: number;
+  tracksUpdated: number;
+  cues: number;
+  cuesKept: number;
+  playlists: number;
+  playlistsKept: number;
+}
+
+export interface SyncPlan {
+  tracks: number;
+  playlists: number;
+  copyFiles: number;
+  copyBytes: number;
+  reuseFiles: number;
+  freeBytes: number;
+  missingAudio: string[];
+  noAnalysis: string[];
 }
 
 export interface StickData {
@@ -178,6 +213,29 @@ export interface JobEvent {
   message: string;
   dest: string;
 }
+
+export const libApi = {
+  data: () => invoke<LibraryData>("library_data"),
+  import: (source: string) => invoke<ImportReport>("library_import", { source }),
+  createPlaylist: (parent: number, name: string, kind: "playlist" | "folder" | "set") =>
+    invoke<number>("library_create_playlist", { parent, name, kind }),
+  renamePlaylist: (id: number, name: string) => invoke<void>("library_rename_playlist", { id, name }),
+  deletePlaylist: (id: number) => invoke<void>("library_delete_playlist", { id }),
+  movePlaylist: (id: number, parent: number, index: number) =>
+    invoke<void>("library_move_playlist", { id, parent, index }),
+  setTracks: (id: number, trackIds: number[]) => invoke<void>("library_set_tracks", { id, trackIds }),
+  trackDetail: (id: number) => invoke<TrackDetail>("library_track_detail", { id }),
+  saveCues: (id: number, cues: Cue[]) => invoke<Cue[]>("library_save_cues", { id, cues }),
+  cueSummary: (trackIds: number[]) => invoke<CueSummary[]>("library_cue_summary", { trackIds }),
+  smartCue: (id: number) => invoke<SmartCue[]>("library_smart_cue", { id }),
+  smartCueApply: (trackIds: number[], replace: boolean) =>
+    invoke<SmartCueBatch>("library_smart_cue_apply", { trackIds, replace }),
+  aiStatus: (trackIds: number[]) => invoke<AiStatus>("library_ai_status", { trackIds }),
+  aiAnalyze: (trackIds: number[]) => invoke<number>("library_ai_analyze", { trackIds }),
+  syncSelection: (stick: string) => invoke<number[]>("sync_selection", { stick }),
+  syncPlan: (stick: string, playlistIds: number[]) => invoke<SyncPlan>("sync_plan", { stick, playlistIds }),
+  syncStart: (stick: string, playlistIds: number[]) => invoke<number>("sync_start", { stick, playlistIds }),
+};
 
 export const api = {
   listSticks: () => invoke<StickInfo[]>("list_sticks"),
