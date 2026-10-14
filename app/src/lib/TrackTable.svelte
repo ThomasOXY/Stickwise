@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, Sparkles } from "@lucide/svelte";
+  import { ChevronRight, ListMusic, ListPlus, Search, Sparkles, Trash } from "@lucide/svelte";
   import { keyColor, plural, rgb, time } from "./format";
   import { app } from "./state.svelte";
 
@@ -8,9 +8,18 @@
   let scrollTop = $state(0);
   let viewport = $state(600);
   let rowsEl = $state<HTMLDivElement>();
-  /** Row (position) selected in the list; a track can appear twice. */
-  let selIndex = $state<number | null>(null);
+  /** Selected rows (positions: a track can appear twice in a playlist). */
+  let selRows = $state<Set<number>>(new Set());
+  /** Where a shift-click range starts. */
+  let anchor = $state<number | null>(null);
   let dropAt = $state<number | null>(null);
+  let menu = $state<{ x: number; y: number; sub: "sets" | "playlists" | null } | null>(null);
+  let menuFilter = $state("");
+
+  /** Track ids of the selected rows, in list order, without repeats. */
+  const selectedIds = $derived([...new Set([...selRows].sort((a, b) => a - b).map((i) => list[i]?.id).filter((id) => id != null))]);
+  const sets = $derived((app.data?.playlists ?? []).filter((p) => p.isSet));
+  const plainLists = $derived((app.data?.playlists ?? []).filter((p) => !p.isSet && !p.isFolder));
 
   const list = $derived(app.currentTracks);
   const aiTodo = $derived(app.currentTrackIds.filter((id) => !app.aiAnalyzed.has(id)).length);
@@ -31,7 +40,8 @@
 
   $effect(() => {
     void app.selection;
-    selIndex = null;
+    selRows = new Set();
+    anchor = null;
     if (rowsEl) rowsEl.scrollTop = 0;
   });
 
@@ -54,34 +64,96 @@
   }
 
   function choose(i: number) {
-    selIndex = i;
+    selRows = new Set([i]);
+    anchor = i;
     app.selectTrack(list[i].id);
+  }
+
+  /** Click with ⌘ toggles a row, with ⇧ selects a range, plain click selects one. */
+  function clickRow(e: MouseEvent, i: number) {
+    if (e.metaKey || e.ctrlKey) {
+      const next = new Set(selRows);
+      next.has(i) ? next.delete(i) : next.add(i);
+      selRows = next;
+      anchor = i;
+      if (next.has(i)) app.selectTrack(list[i].id);
+    } else if (e.shiftKey && anchor != null) {
+      const [a, b] = anchor < i ? [anchor, i] : [i, anchor];
+      selRows = new Set(Array.from({ length: b - a + 1 }, (_, k) => a + k));
+      app.selectTrack(list[i].id);
+    } else {
+      choose(i);
+    }
+  }
+
+  function scrollTo(j: number) {
+    if (!rowsEl) return;
+    if (j * ROW < rowsEl.scrollTop) rowsEl.scrollTop = j * ROW;
+    else if ((j + 1) * ROW > rowsEl.scrollTop + viewport) rowsEl.scrollTop = (j + 1) * ROW - viewport;
+  }
+
+  function openMenu(e: MouseEvent, i: number) {
+    if (!app.isLibrary) return;
+    e.preventDefault();
+    if (!selRows.has(i)) choose(i);
+    menuFilter = "";
+    // Keep the menu on screen.
+    menu = { x: Math.min(e.clientX, window.innerWidth - 260), y: Math.min(e.clientY, window.innerHeight - 220), sub: null };
+  }
+
+  async function addTo(id: number) {
+    const ids = selectedIds;
+    menu = null;
+    await app.addToPlaylist(id, ids);
+  }
+
+  async function newSet() {
+    const ids = selectedIds;
+    menu = null;
+    await app.newSetWith(ids);
+  }
+
+  function removeSelected() {
+    menu = null;
+    app.removeFromPlaylist([...selRows]);
+    selRows = new Set();
   }
 
   function onKey(e: KeyboardEvent) {
     if (list.length === 0) return;
-    const i = selIndex ?? list.findIndex((t) => t.id === app.selectedTrack);
+    const i = anchor ?? list.findIndex((t) => t.id === app.selectedTrack);
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const j = Math.min(list.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)));
-      choose(j);
-      if (rowsEl) {
-        if (j * ROW < rowsEl.scrollTop) rowsEl.scrollTop = j * ROW;
-        else if ((j + 1) * ROW > rowsEl.scrollTop + viewport) rowsEl.scrollTop = (j + 1) * ROW - viewport;
+      if (e.shiftKey) {
+        selRows = new Set([...selRows, j]);
+        anchor = j;
+        app.selectTrack(list[j].id);
+      } else {
+        choose(j);
       }
+      scrollTo(j);
+    } else if (e.key === "a" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      selRows = new Set(list.map((_, k) => k));
+    } else if (e.key === "Escape") {
+      selRows = new Set(anchor != null ? [anchor] : []);
+      menu = null;
     } else if (e.key === "Enter" && app.selectedTrack != null) {
       app.detailOpen = true;
-    } else if ((e.key === "Backspace" || e.key === "Delete") && editable && i >= 0) {
+    } else if ((e.key === "Backspace" || e.key === "Delete") && editable && selRows.size > 0) {
       e.preventDefault();
-      app.removeFromPlaylist([i]);
+      removeSelected();
     }
   }
 
   function dragStart(e: DragEvent, i: number) {
     if (!app.isLibrary || !e.dataTransfer) return;
+    // Dragging a selected row takes the whole selection along.
+    const many = selRows.has(i) && selRows.size > 1;
     e.dataTransfer.effectAllowed = "copyMove";
-    e.dataTransfer.setData("application/x-rbx-tracks", JSON.stringify([list[i].id]));
-    if (editable) e.dataTransfer.setData("application/x-rbx-row", String(i));
+    e.dataTransfer.setData("application/x-rbx-tracks", JSON.stringify(many ? selectedIds : [list[i].id]));
+    if (editable && !many) e.dataTransfer.setData("application/x-rbx-row", String(i));
   }
 
   function dragOver(e: DragEvent, i: number) {
@@ -116,6 +188,9 @@
     <span><span class="readout big">{time(total)}</span> celkem</span>
     {#if bad > 0}
       <span><span class="readout big fault">{bad}</span> {plural(bad, "nepůjde", "nepůjdou", "nepůjde")}</span>
+    {/if}
+    {#if selRows.size > 1}
+      <span class="picked"><span class="readout big">{selRows.size}</span> vybráno</span>
     {/if}
     <div class="smart-wrap">
       <button class="btn small" onclick={() => (smartMenu = !smartMenu)} disabled={list.length === 0 || app.selection?.kind === "all"}>
@@ -179,7 +254,7 @@
         {@const sev = app.status.get(t.id)}
         <div
           class="row"
-          class:selected={selIndex === i || (selIndex == null && t.id === app.selectedTrack)}
+          class:selected={selRows.has(i) || (selRows.size === 0 && t.id === app.selectedTrack)}
           class:drop-before={dropAt === i}
           class:drop-after={dropAt === i + 1 && i === list.length - 1}
           class:missing={t.missing}
@@ -190,7 +265,8 @@
           draggable={app.isLibrary}
           ondragstart={(e) => dragStart(e, i)}
           ondragover={(e) => dragOver(e, i)}
-          onclick={() => choose(i)}
+          onclick={(e) => clickRow(e, i)}
+          oncontextmenu={(e) => openMenu(e, i)}
           ondblclick={() => {
             choose(i);
             app.detailOpen = true;
@@ -225,6 +301,57 @@
   </div>
 </section>
 
+<svelte:window onclick={(e) => menu && !(e.target as HTMLElement).closest(".ctx") && (menu = null)} />
+
+{#if menu}
+  {@const n = selectedIds.length}
+  {@const q = menuFilter.trim().toLowerCase()}
+  <div class="ctx" style:left="{menu.x}px" style:top="{menu.y}px" role="menu">
+    <div class="ctx-head">{n} {plural(n, "skladba", "skladby", "skladeb")}</div>
+    <button role="menuitem" class:open={menu.sub === "sets"} onmouseenter={() => menu && (menu.sub = "sets")} onclick={() => menu && (menu.sub = "sets")}>
+      <Sparkles size={13} /> Vložit do setu <ChevronRight size={13} class="chev" />
+    </button>
+    <button role="menuitem" class:open={menu.sub === "playlists"} onmouseenter={() => menu && (menu.sub = "playlists")} onclick={() => menu && (menu.sub = "playlists")}>
+      <ListMusic size={13} /> Vložit do playlistu <ChevronRight size={13} class="chev" />
+    </button>
+    <button role="menuitem" onmouseenter={() => menu && (menu.sub = null)} onclick={newSet}>
+      <ListPlus size={13} /> Nový set z výběru
+    </button>
+    {#if editable}
+      <div class="sep"></div>
+      <button role="menuitem" class="danger" onmouseenter={() => menu && (menu.sub = null)} onclick={removeSelected}>
+        <Trash size={13} /> Odebrat z „{app.currentTitle}“
+      </button>
+    {/if}
+
+    {#if menu.sub}
+      {@const items = (menu.sub === "sets" ? sets : plainLists).filter((p) => !q || p.name.toLowerCase().includes(q))}
+      <div class="sub" class:left={menu.x > window.innerWidth - 540}>
+        {#if (menu.sub === "sets" ? sets : plainLists).length > 8}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input type="search" placeholder="Hledat" bind:value={menuFilter} autofocus />
+        {/if}
+        <div class="sub-list">
+          {#each items as p (p.id)}
+            {@const has = selectedIds.filter((id) => p.trackIds.includes(id)).length}
+            <button role="menuitem" onclick={() => addTo(p.id)} disabled={has === n}>
+              <span class="pn">{p.name}</span>
+              <span class="readout cnt">{has === n ? "už tam jsou" : p.trackIds.length}</span>
+            </button>
+          {/each}
+          {#if items.length === 0}
+            <p class="none">{menu.sub === "sets" ? "Zatím nemáš žádný set." : "Nic nenalezeno."}</p>
+          {/if}
+        </div>
+        {#if menu.sub === "sets"}
+          <div class="sep"></div>
+          <button role="menuitem" onclick={newSet}><ListPlus size={13} /> Nový set z výběru</button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+{/if}
+
 <style>
   .table {
     flex: 1;
@@ -253,6 +380,97 @@
   }
   .big.fault {
     color: var(--fault);
+  }
+  .picked {
+    color: var(--cue);
+  }
+  .picked .big {
+    color: var(--cue);
+  }
+  .ctx {
+    position: fixed;
+    width: 240px;
+    padding: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+    z-index: 30;
+  }
+  .ctx-head {
+    padding: 4px 10px 6px;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .ctx button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .ctx button:hover:not(:disabled),
+  .ctx button.open {
+    background: var(--panel-2);
+  }
+  .ctx button:disabled {
+    color: var(--text-3);
+  }
+  .ctx :global(.chev) {
+    margin-left: auto;
+    color: var(--text-2);
+  }
+  .ctx .danger {
+    color: #f2a3a5;
+  }
+  .sep {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--line);
+  }
+  .sub {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 4px);
+    width: 260px;
+    padding: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+  }
+  .sub.left {
+    left: auto;
+    right: calc(100% + 4px);
+  }
+  .sub input {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+  .sub-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .pn {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cnt {
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .none {
+    margin: 6px 10px;
+    font-size: 12px;
+    color: var(--text-3);
   }
   .smart-wrap {
     position: relative;

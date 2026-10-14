@@ -292,6 +292,19 @@ class AppState {
     this.notice = `Přidáno do „${p.name}“: ${add.length}`;
   }
 
+  /** A new set holding `ids`, ready to be named in the tree. */
+  async newSetWith(ids: number[]) {
+    try {
+      const id = await libApi.createPlaylist(0, "Nový set", "set");
+      await libApi.setTracks(id, ids);
+      await this.reloadLibrary();
+      this.renaming = id;
+      this.notice = `Nový set s ${ids.length} skladbami. Pojmenuj ho vlevo v seznamu setů.`;
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
   /** Remove the rows at `positions` from the selected playlist. */
   async removeFromPlaylist(positions: number[]) {
     const p = this.currentPlaylist;
