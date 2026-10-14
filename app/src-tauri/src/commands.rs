@@ -832,7 +832,9 @@ fn smart_kind(k: analysis::smart_cue::Kind) -> &'static str {
 
 /// Smart Cue suggestions for a track, from its beat grid and scroll waveform.
 fn ai_key(stick: &Stick, t: &pioneer_formats::pdb::Track) -> String {
-    let size = std::fs::metadata(stick.audio_path(t)).map(|m| m.len()).unwrap_or(t.file_size as u64);
+    let size = std::fs::metadata(stick.audio_path(t))
+        .map(|m| m.len())
+        .unwrap_or(t.file_size as u64);
     Sidecar::key(&stick_name(stick), &t.file_path, size)
 }
 
@@ -843,7 +845,9 @@ fn suggestions(
     stick: &Stick,
     t: &pioneer_formats::pdb::Track,
 ) -> Option<Vec<analysis::smart_cue::Suggestion>> {
-    use analysis::smart_cue::{AI_THRESHOLD, AiCandidate, Input, analyze, bands_from_color, bands_from_three_band, with_ai};
+    use analysis::smart_cue::{
+        AI_THRESHOLD, AiCandidate, Input, analyze, bands_from_color, bands_from_three_band, with_ai,
+    };
     let dat_path = stick.resolve(&t.analyze_path);
     let dat = read_anlz(&dat_path)?;
     let columns = if let Some(s) = read_anlz(&sibling(&dat_path, "2EX"))
@@ -871,7 +875,10 @@ fn suggestions(
             let cands: Vec<AiCandidate> = ai
                 .candidates
                 .iter()
-                .map(|c| AiCandidate { time_ms: (c.time * 1000.0) as u32, score: c.score as f32 })
+                .map(|c| AiCandidate {
+                    time_ms: (c.time * 1000.0) as u32,
+                    score: c.score as f32,
+                })
                 .collect();
             Some(with_ai(&input, &structure, &cands, AI_THRESHOLD))
         }
@@ -880,7 +887,11 @@ fn suggestions(
 }
 
 #[tauri::command]
-pub async fn smart_cue(app: AppHandle, path: String, track_id: u32) -> CmdResult<Vec<dto::SmartCue>> {
+pub async fn smart_cue(
+    app: AppHandle,
+    path: String,
+    track_id: u32,
+) -> CmdResult<Vec<dto::SmartCue>> {
     blocking(move || {
         let stick = Stick::open(&path).map_err(err)?;
         let t = find_track(&stick, track_id)?;
@@ -970,16 +981,29 @@ pub async fn ai_status(app: AppHandle, path: String, track_ids: Vec<u32>) -> Cmd
         let sc = app.state::<Sidecar>();
         let analyzed = track_ids
             .into_iter()
-            .filter(|&id| stick.db.track(id).is_some_and(|t| sc.cached(&ai_key(&stick, t)).is_some()))
+            .filter(|&id| {
+                stick
+                    .db
+                    .track(id)
+                    .is_some_and(|t| sc.cached(&ai_key(&stick, t)).is_some())
+            })
             .collect();
-        Ok(AiStatus { installed: sc.installed(), analyzed })
+        Ok(AiStatus {
+            installed: sc.installed(),
+            analyzed,
+        })
     })
     .await
 }
 
 /// Run CUE-DETR on the tracks that have no AI results yet, as a background job.
 #[tauri::command]
-pub fn ai_analyze(app: AppHandle, jobs: State<'_, Jobs>, path: String, track_ids: Vec<u32>) -> CmdResult<u32> {
+pub fn ai_analyze(
+    app: AppHandle,
+    jobs: State<'_, Jobs>,
+    path: String,
+    track_ids: Vec<u32>,
+) -> CmdResult<u32> {
     let stick = Stick::open(&path).map_err(err)?;
     let todo: Vec<(String, PathBuf)> = {
         let sc = app.state::<Sidecar>();
@@ -1027,7 +1051,11 @@ pub fn ai_analyze(app: AppHandle, jobs: State<'_, Jobs>, path: String, track_ids
                 ev.message = if errors.is_empty() {
                     format!("AI analýza hotová u {done} skladeb")
                 } else {
-                    format!("{} skladeb nešlo analyzovat: {}", errors.len(), errors.join("; "))
+                    format!(
+                        "{} skladeb nešlo analyzovat: {}",
+                        errors.len(),
+                        errors.join("; ")
+                    )
                 };
             }
             Err(e) => {

@@ -153,6 +153,9 @@ fn track_from_row(r: &rusqlite::Row) -> rusqlite::Result<Track> {
     })
 }
 
+/// Track id → hot cues as (slot, colour code, is loop).
+pub type HotCueCodes = std::collections::HashMap<i64, Vec<(u8, u8, bool)>>;
+
 pub struct Library {
     conn: Connection,
 }
@@ -392,12 +395,12 @@ impl Library {
         Ok(())
     }
 
-    /// Hot cue colours of many tracks at once (for the table): track → slot → colour code.
-    pub fn hot_cue_codes(&self) -> Result<std::collections::HashMap<i64, Vec<(u8, u8, bool)>>> {
+    /// Hot cue colours of all tracks (for the table): track → (slot, colour code, is loop).
+    pub fn hot_cue_codes(&self) -> Result<HotCueCodes> {
         let mut st = self.conn.prepare(
             "SELECT track_id, slot, hot_color, loop_end_ms IS NOT NULL FROM cues WHERE slot > 0",
         )?;
-        let mut out: std::collections::HashMap<i64, Vec<(u8, u8, bool)>> = Default::default();
+        let mut out = HotCueCodes::default();
         for row in st.query_map([], |r| {
             Ok((
                 r.get::<_, i64>(0)?,

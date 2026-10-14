@@ -70,7 +70,10 @@ impl Sidecar {
     fn store(&self, key: &str, cues: &AiCues) {
         let dir = self.cache_dir();
         if std::fs::create_dir_all(&dir).is_ok() {
-            let _ = std::fs::write(dir.join(format!("{key}.json")), serde_json::to_vec(cues).unwrap_or_default());
+            let _ = std::fs::write(
+                dir.join(format!("{key}.json")),
+                serde_json::to_vec(cues).unwrap_or_default(),
+            );
         }
     }
 
@@ -85,7 +88,10 @@ impl Sidecar {
         if !self.installed() {
             return Err("AI analýza není nainstalovaná (chybí sidecar/.venv).".into());
         }
-        let by_path: HashMap<String, &String> = jobs.iter().map(|(k, p)| (p.display().to_string(), k)).collect();
+        let by_path: HashMap<String, &String> = jobs
+            .iter()
+            .map(|(k, p)| (p.display().to_string(), k))
+            .collect();
         let mut child = Command::new(self.python())
             .arg(self.dir.join("cue_detr.py"))
             .args(jobs.iter().map(|(_, p)| p))
@@ -103,15 +109,23 @@ impl Sidecar {
                 break;
             }
             let Ok(line) = line else { break };
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
             let path = v["path"].as_str().unwrap_or_default().to_string();
             if let Some(e) = v["error"].as_str() {
                 errors.push(format!("{path}: {e}"));
-            } else if let (Some(key), Ok(cues)) = (by_path.get(&path), serde_json::from_value::<AiCues>(v.clone())) {
+            } else if let (Some(key), Ok(cues)) = (
+                by_path.get(&path),
+                serde_json::from_value::<AiCues>(v.clone()),
+            ) {
                 self.store(key, &cues);
             }
             done += 1;
-            let name = Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             progress(done, &name);
         }
         let _ = child.wait();
