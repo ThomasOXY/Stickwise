@@ -66,6 +66,19 @@ enum Cmd {
         #[arg(short, long = "playlist")]
         playlists: Vec<String>,
     },
+    /// Plan a set from a library playlist (Set Planner, without AI cues).
+    Plan {
+        db: PathBuf,
+        playlist: String,
+        #[arg(long, default_value_t = 60.0)]
+        minutes: f64,
+        /// beginner | advanced | pro
+        #[arg(long, default_value = "advanced")]
+        level: String,
+        /// warmup | peak | journey | closing
+        #[arg(long, default_value = "peak")]
+        curve: String,
+    },
     /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
     Extract {
         /// Root of the mounted stick, e.g. /Volumes/DJ.
@@ -129,6 +142,13 @@ fn main() -> Result<()> {
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
         Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
+        Cmd::Plan {
+            db,
+            playlist,
+            minutes,
+            level,
+            curve,
+        } => plan_cmd(&db, &playlist, minutes, &level, &curve),
         Cmd::Sync {
             db,
             stick,
@@ -844,5 +864,115 @@ fn sync_cmd(db: &Path, stick: &Path, names: &[String]) -> Result<()> {
         "done: {} tracks, {} playlists, copied {}, reused {}, warnings {:?}",
         r.tracks, r.playlists, r.copied, r.reused, r.warnings
     );
+    Ok(())
+}
+
+fn plan_cmd(db: &Path, name: &str, minutes: f64, level: &str, curve: &str) -> Result<()> {
+    use analysis::set_planner::{Curve, Level, Params, PlanTrack, camelot, energy, plan};
+    use analysis::smart_cue::{Input, Kind, analyze, bands_from_three_band};
+    use pioneer_formats::anlz::tag;
+    let lib = library::Library::open(db)?;
+    let p = lib
+        .playlists()?
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| anyhow::anyhow!("no playlist {name}"))?;
+    let tracks: std::collections::HashMap<i64, library::Track> =
+        lib.tracks()?.into_iter().map(|t| (t.id, t)).collect();
+    let mut pool = Vec::new();
+    for id in &p.track_ids {
+        let t = &tracks[id];
+        let dat = std::fs::read(&t.anlz)
+            .ok()
+            .and_then(|b| AnlzFile::parse(&b).ok());
+        let two = std::fs::read(Path::new(&t.anlz).with_extension("2EX"))
+            .ok()
+            .and_then(|b| AnlzFile::parse(&b).ok());
+        let cols = two
+            .as_ref()
+            .and_then(|f| f.section(tag::WAVE_3BAND_SCROLL))
+            .map(|s| bands_from_three_band(&s.body))
+            .unwrap_or_default();
+        let beats: Vec<(u32, u16)> = dat
+            .as_ref()
+            .and_then(|d| d.beat_grid())
+            .and_then(|g| g.ok())
+            .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
+            .unwrap_or_default();
+        let s = analyze(&Input {
+            beats: &beats,
+            columns: &cols,
+            rate: 150.0,
+            bpm: t.bpm as f32,
+        });
+        let dur = (t.duration * 1000.0) as u32;
+        let mix_in = s
+            .iter()
+            .find(|x| x.kind == Kind::MixIn)
+            .map(|x| x.time_ms)
+            .unwrap_or(0);
+        let mix_out = s
+            .iter()
+            .find(|x| x.kind == Kind::Outro)
+            .or_else(|| s.iter().find(|x| x.kind == Kind::MixOut))
+            .map(|x| x.time_ms)
+            .unwrap_or(dur.saturating_sub(60_000));
+        pool.push(PlanTrack {
+            id: t.id,
+            bpm: t.bpm,
+            camelot: camelot(&t.key),
+            energy: energy(&cols, 150.0, mix_in, mix_out, t.bpm),
+            duration: t.duration,
+            mix_in_ms: mix_in,
+            mix_out_ms: mix_out.max(mix_in + 30_000),
+        });
+    }
+    let params = Params {
+        minutes,
+        level: match level {
+            "beginner" => Level::Beginner,
+            "pro" => Level::Pro,
+            _ => Level::Advanced,
+        },
+        curve: match curve {
+            "warmup" => Curve::WarmUp,
+            "closing" => Curve::Closing,
+            "journey" => Curve::Journey,
+            _ => Curve::PeakTime,
+        },
+    };
+    let started = std::time::Instant::now();
+    let r = plan(&pool, &params);
+    println!(
+        "{} of {} tracks, {:.0} min, planned in {} ms",
+        r.order.len(),
+        pool.len(),
+        r.total_seconds / 60.0,
+        started.elapsed().as_millis()
+    );
+    for (i, id) in r.order.iter().enumerate() {
+        let t = &tracks[id];
+        let f = pool.iter().find(|x| x.id == *id).unwrap();
+        println!(
+            "{:>2}. {:>5}  {:>6.1} {:>4} E{:>4.1} (cíl {:.1})  {} – {}",
+            i + 1,
+            fmt_ms((r.starts[i] * 1000.0) as u32),
+            t.bpm,
+            t.key,
+            f.energy,
+            r.target[i],
+            t.artist,
+            t.title
+        );
+        if let Some(tr) = r.transitions.get(i) {
+            println!(
+                "        ↳ {:<9} {:+.1} %  {} taktů  ok={}",
+                tr.key_relation,
+                tr.pitch_percent,
+                tr.bars,
+                tr.key_ok && tr.tempo_ok
+            );
+        }
+    }
     Ok(())
 }

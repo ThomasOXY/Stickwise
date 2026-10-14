@@ -57,6 +57,8 @@ fn main() {
             library_cmds::sync_selection,
             library_cmds::sync_plan,
             library_cmds::sync_start,
+            library_cmds::plan_set,
+            library_cmds::apply_set_plan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running RB-EXPORT");

@@ -22,7 +22,7 @@ export type Selection =
   | { kind: "history"; id: number }
   | { kind: "player"; player: string };
 
-export type View = "tracks" | "health";
+export type View = "tracks" | "health" | "planner";
 
 /** Where the app is working: the library on this Mac, or a stick. */
 export type Source = "library" | "stick";

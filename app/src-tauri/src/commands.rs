@@ -273,11 +273,11 @@ fn track_cues(
 }
 
 /// `ANLZ0000.DAT` path → sibling with another extension.
-fn sibling(dat: &Path, ext: &str) -> PathBuf {
+pub(crate) fn sibling(dat: &Path, ext: &str) -> PathBuf {
     dat.with_extension(ext)
 }
 
-fn read_anlz(path: &Path) -> Option<AnlzFile> {
+pub(crate) fn read_anlz(path: &Path) -> Option<AnlzFile> {
     std::fs::read(path)
         .ok()
         .and_then(|b| AnlzFile::parse(&b).ok())

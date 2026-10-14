@@ -5,6 +5,7 @@
   import ExportSheet from "./lib/ExportSheet.svelte";
   import HealthReport from "./lib/HealthReport.svelte";
   import LibraryHeader from "./lib/LibraryHeader.svelte";
+  import SetPlanner from "./lib/SetPlanner.svelte";
   import SyncSheet from "./lib/SyncSheet.svelte";
   import PlaylistTree from "./lib/PlaylistTree.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
@@ -45,6 +46,8 @@
         <PlaylistTree />
         {#if app.view === "health"}
           <HealthReport />
+        {:else if app.view === "planner"}
+          <SetPlanner />
         {:else}
           <TrackTable />
           {#if app.detailOpen}<TrackDetail />{/if}

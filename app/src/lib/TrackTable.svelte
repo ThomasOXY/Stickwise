@@ -192,6 +192,11 @@
     {#if selRows.size > 1}
       <span class="picked"><span class="readout big">{selRows.size}</span> vybráno</span>
     {/if}
+    {#if app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
+      <button class="btn small plan" onclick={() => (app.view = "planner")} disabled={list.length < 2} title="Seřadí skladby podle tóniny, tempa a energie a naplánuje přechody">
+        <Sparkles size={13} /> Naplánovat set
+      </button>
+    {/if}
     <div class="smart-wrap">
       <button class="btn small" onclick={() => (smartMenu = !smartMenu)} disabled={list.length === 0 || app.selection?.kind === "all"}>
         <Sparkles size={13} /> Smart Cue pro playlist
@@ -380,6 +385,15 @@
   }
   .big.fault {
     color: var(--fault);
+  }
+  .btn.plan {
+    margin-left: auto;
+    align-self: center;
+    border-color: var(--cue);
+    color: var(--cue);
+  }
+  .btn.plan + .smart-wrap {
+    margin-left: 0;
   }
   .picked {
     color: var(--cue);

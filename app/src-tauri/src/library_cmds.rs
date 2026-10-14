@@ -643,3 +643,239 @@ pub fn sync_start(
     });
     Ok(id)
 }
+
+// ---- Set Planner -------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlannedTrackDto {
+    pub track_id: i64,
+    /// Start in the set, seconds.
+    pub start: f64,
+    pub energy: f64,
+    pub target: f64,
+    pub bpm: f64,
+    pub key: String,
+    pub mix_in_ms: u32,
+    pub mix_out_ms: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionDto {
+    pub from: i64,
+    pub to: i64,
+    pub key_relation: String,
+    pub key_ok: bool,
+    pub pitch_percent: f64,
+    pub tempo_ok: bool,
+    pub bars: u32,
+    pub start_at_ms: u32,
+    pub cue_in_ms: u32,
+    pub energy_step: f64,
+    pub tips: Vec<String>,
+    pub cost: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetPlanDto {
+    pub tracks: Vec<PlannedTrackDto>,
+    pub left_out: Vec<i64>,
+    pub transitions: Vec<TransitionDto>,
+    pub total_seconds: f64,
+}
+
+/// What the planner needs about one library track.
+fn plan_track(app: &AppHandle, t: &library::Track) -> analysis::set_planner::PlanTrack {
+    use analysis::smart_cue::{Kind, bands_from_color, bands_from_three_band};
+    use pioneer_formats::anlz::tag;
+    let duration_ms = (t.duration * 1000.0) as u32;
+    let bar_ms = (4.0 * 60000.0 / t.bpm.max(60.0)) as u32;
+    let mut mix_in = 0;
+    let mut mix_out = duration_ms.saturating_sub(32 * bar_ms);
+    let mut energy = 5.0;
+    if !t.anlz.is_empty() {
+        let dat = Path::new(&t.anlz);
+        if let Some(s) = suggestions_for(app, dat, t.bpm as f32, &ai_key(t)) {
+            if let Some(m) = s.iter().find(|x| x.kind == Kind::MixIn) {
+                mix_in = m.time_ms;
+            }
+            if let Some(m) = s
+                .iter()
+                .find(|x| x.kind == Kind::Outro)
+                .or_else(|| s.iter().find(|x| x.kind == Kind::MixOut))
+            {
+                mix_out = m.time_ms;
+            }
+        }
+        let columns = crate::commands::read_anlz(&crate::commands::sibling(dat, "2EX"))
+            .and_then(|f| {
+                f.section(tag::WAVE_3BAND_SCROLL)
+                    .map(|s| bands_from_three_band(&s.body))
+            })
+            .or_else(|| {
+                crate::commands::read_anlz(&crate::commands::sibling(dat, "EXT")).and_then(|f| {
+                    f.section(tag::WAVE_COLOR_SCROLL)
+                        .map(|s| bands_from_color(&s.body))
+                })
+            });
+        if let Some(c) = columns {
+            energy = analysis::set_planner::energy(&c, 150.0, mix_in, mix_out, t.bpm);
+        }
+    }
+    analysis::set_planner::PlanTrack {
+        id: t.id,
+        bpm: t.bpm,
+        camelot: analysis::set_planner::camelot(&t.key),
+        energy,
+        duration: t.duration,
+        mix_out_ms: mix_out
+            .max(mix_in + 30_000)
+            .min(duration_ms.max(mix_in + 30_000)),
+        mix_in_ms: mix_in,
+    }
+}
+
+#[tauri::command]
+pub async fn plan_set(
+    app: AppHandle,
+    set_id: i64,
+    minutes: f64,
+    level: String,
+    curve: String,
+) -> CmdResult<SetPlanDto> {
+    use analysis::set_planner::{Curve, Level, Params, plan};
+    blocking(move || {
+        let (lists, tracks) = lib(&app, |l| Ok((l.playlists()?, l.tracks()?)))?;
+        let set = lists
+            .iter()
+            .find(|p| p.id == set_id)
+            .ok_or("set nenalezen")?;
+        let by_id: HashMap<i64, &library::Track> = tracks.iter().map(|t| (t.id, t)).collect();
+        let mut seen = HashSet::new();
+        let pool: Vec<analysis::set_planner::PlanTrack> = set
+            .track_ids
+            .iter()
+            .filter(|id| seen.insert(**id))
+            .filter_map(|id| by_id.get(id))
+            .filter(|t| Path::new(&t.path).is_file())
+            .map(|t| plan_track(&app, t))
+            .collect();
+        if pool.len() < 2 {
+            return Err("Do setu dej aspoň dvě skladby, ze kterých se má vybírat.".into());
+        }
+        let params = Params {
+            minutes,
+            level: match level.as_str() {
+                "beginner" => Level::Beginner,
+                "pro" => Level::Pro,
+                _ => Level::Advanced,
+            },
+            curve: match curve.as_str() {
+                "warmup" => Curve::WarmUp,
+                "closing" => Curve::Closing,
+                "journey" => Curve::Journey,
+                _ => Curve::PeakTime,
+            },
+        };
+        let p = plan(&pool, &params);
+        let feat: HashMap<i64, &analysis::set_planner::PlanTrack> =
+            pool.iter().map(|t| (t.id, t)).collect();
+        Ok(SetPlanDto {
+            tracks: p
+                .order
+                .iter()
+                .enumerate()
+                .map(|(i, id)| {
+                    let f = feat[id];
+                    PlannedTrackDto {
+                        track_id: *id,
+                        start: p.starts[i],
+                        energy: (f.energy * 10.0).round() / 10.0,
+                        target: (p.target[i] * 10.0).round() / 10.0,
+                        bpm: f.bpm,
+                        key: by_id.get(id).map(|t| t.key.clone()).unwrap_or_default(),
+                        mix_in_ms: f.mix_in_ms,
+                        mix_out_ms: f.mix_out_ms,
+                    }
+                })
+                .collect(),
+            left_out: p.left_out,
+            transitions: p
+                .transitions
+                .into_iter()
+                .map(|t| TransitionDto {
+                    from: t.from,
+                    to: t.to,
+                    key_relation: t.key_relation.to_string(),
+                    key_ok: t.key_ok,
+                    pitch_percent: (t.pitch_percent * 10.0).round() / 10.0,
+                    tempo_ok: t.tempo_ok,
+                    bars: t.bars,
+                    start_at_ms: t.start_at_ms,
+                    cue_in_ms: t.cue_in_ms,
+                    energy_step: (t.energy_step * 10.0).round() / 10.0,
+                    tips: t.tips,
+                    cost: t.cost,
+                })
+                .collect(),
+            total_seconds: p.total_seconds,
+        })
+    })
+    .await
+}
+
+const MIX_IN: &str = "Mix in";
+const MIX_OUT: &str = "Mix out →";
+
+/// Put the planned order into the set (tracks left out go to the end) and
+/// mark every transition with memory cues the players show.
+#[tauri::command]
+pub async fn apply_set_plan(
+    app: AppHandle,
+    set_id: i64,
+    order: Vec<i64>,
+    left_out: Vec<i64>,
+    transitions: Vec<(i64, i64, u32, u32)>,
+) -> CmdResult<()> {
+    blocking(move || {
+        let titles: HashMap<i64, String> = lib(&app, |l| l.tracks())?
+            .into_iter()
+            .map(|t| (t.id, t.title))
+            .collect();
+        let mut ids = order.clone();
+        ids.extend(left_out);
+        lib(&app, |l| l.set_playlist_tracks(set_id, &ids))?;
+        // Fresh planner cues: drop the ones an earlier plan wrote.
+        let mut plan_cues: HashMap<i64, Vec<CuePoint>> = HashMap::new();
+        for (from, to, start_at, cue_in) in transitions {
+            let next = titles.get(&to).cloned().unwrap_or_default();
+            plan_cues.entry(from).or_default().push(CuePoint {
+                comment: format!("{MIX_OUT} {next}"),
+                ..CuePoint::memory(start_at)
+            });
+            plan_cues.entry(to).or_default().push(CuePoint {
+                comment: MIX_IN.into(),
+                ..CuePoint::memory(cue_in)
+            });
+        }
+        for (id, add) in plan_cues {
+            let mut cues = lib(&app, |l| l.cues(id))?;
+            cues.retain(|c| {
+                !(c.slot == 0 && (c.comment == MIX_IN || c.comment.starts_with(MIX_OUT)))
+            });
+            for c in add {
+                if !cues
+                    .iter()
+                    .any(|x| x.slot == 0 && x.time_ms.abs_diff(c.time_ms) < 50)
+                {
+                    cues.push(c);
+                }
+            }
+            lib(&app, |l| l.set_cues(id, &cues))?;
+        }
+        Ok(())
+    })
+    .await
+}
