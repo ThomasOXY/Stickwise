@@ -674,6 +674,12 @@ pub struct TransitionDto {
     pub start_at_ms: u32,
     pub cue_in_ms: u32,
     pub energy_step: f64,
+    /// `long-blend`, `breakdown-blend`, `drop-swap`, `double-drop`, `echo-out`.
+    pub technique: String,
+    pub technique_name: String,
+    /// Cues for the outgoing and incoming track: (ms, label).
+    pub a_marks: Vec<(u32, String)>,
+    pub b_marks: Vec<(u32, String)>,
     pub tips: Vec<String>,
     pub cost: f64,
 }
@@ -696,9 +702,19 @@ fn plan_track(app: &AppHandle, t: &library::Track) -> analysis::set_planner::Pla
     let mut mix_in = 0;
     let mut mix_out = duration_ms.saturating_sub(32 * bar_ms);
     let mut energy = 5.0;
+    let (mut drops, mut breaks, mut builds) = (Vec::new(), Vec::new(), Vec::new());
     if !t.anlz.is_empty() {
         let dat = Path::new(&t.anlz);
         if let Some(s) = suggestions_for(app, dat, t.bpm as f32, &ai_key(t)) {
+            let at = |k: Kind| {
+                s.iter()
+                    .filter(|x| x.kind == k)
+                    .map(|x| x.time_ms)
+                    .collect::<Vec<u32>>()
+            };
+            drops = at(Kind::Drop);
+            breaks = at(Kind::Break);
+            builds = at(Kind::Build);
             if let Some(m) = s.iter().find(|x| x.kind == Kind::MixIn) {
                 mix_in = m.time_ms;
             }
@@ -735,6 +751,9 @@ fn plan_track(app: &AppHandle, t: &library::Track) -> analysis::set_planner::Pla
             .max(mix_in + 30_000)
             .min(duration_ms.max(mix_in + 30_000)),
         mix_in_ms: mix_in,
+        drops,
+        breaks,
+        builds,
     }
 }
 
@@ -822,6 +841,27 @@ pub async fn plan_set(
                     start_at_ms: t.start_at_ms,
                     cue_in_ms: t.cue_in_ms,
                     energy_step: (t.energy_step * 10.0).round() / 10.0,
+                    technique: t.technique.id().into(),
+                    technique_name: t.technique.name().into(),
+                    // Labels that point at the next track get its title.
+                    a_marks: t
+                        .a_marks
+                        .iter()
+                        .map(|m| {
+                            let next = by_id.get(&t.to).map(|x| x.title.as_str()).unwrap_or("");
+                            let label = if m.label.ends_with('→') || m.label.ends_with("pusť") {
+                                format!("{} {next}", m.label)
+                            } else {
+                                m.label.clone()
+                            };
+                            (m.time_ms, label)
+                        })
+                        .collect(),
+                    b_marks: t
+                        .b_marks
+                        .iter()
+                        .map(|m| (m.time_ms, m.label.clone()))
+                        .collect(),
                     tips: t.tips,
                     cost: t.cost,
                 })
@@ -832,87 +872,96 @@ pub async fn plan_set(
     .await
 }
 
-const MIX_IN: &str = "Mix in";
-const MIX_OUT: &str = "Mix out →";
-const MIX_OUT_END: &str = "Mix out (konec setu)";
+/// Pad colour for a transition cue, by what it marks.
+fn mark_color(label: &str) -> u8 {
+    let l = label.to_lowercase();
+    if l.starts_with("echo") {
+        0x3c // purple: echo out
+    } else if l.contains('→') || l.contains("pusť") {
+        0x2d // pink: hand over to the next track
+    } else if l.starts_with("mix in") || l.starts_with("start") {
+        0x16 // green: start here
+    } else if l.contains("double") {
+        0x05 // blue
+    } else if l.starts_with("drop") {
+        0x2a // red
+    } else if l.contains("build") {
+        0x22 // orange
+    } else {
+        0x2d
+    }
+}
 
 /// Put the planned order into the set (tracks left out go to the end) and
-/// mark every track's transition points. `marks` is one entry per planned
-/// track: (track, mix in ms, mix out ms, next track). Modes:
-/// * `only`: the track keeps just hot cue A = Mix in and B = Mix out (its
-///   other hot cues are backed up and removed; memory cues stay);
-/// * `hot`: Mix in on pad G, Mix out on pad H (or the highest free pads);
+/// write each track's transition cues. `marks` holds, per planned track,
+/// the cues its transitions need (ms, label). Modes:
+/// * `only`: the track keeps just these cues as hot cues A, B, … in time
+///   order (its other hot cues are backed up and removed; memory cues stay);
+/// * `hot`: added on the highest free pads (H, G, …);
 /// * `memory`: memory cues.
 ///
-/// Cues an earlier plan wrote are always replaced.
+/// Cues an earlier plan wrote (remembered per track) are always replaced.
 #[tauri::command]
 pub async fn apply_set_plan(
     app: AppHandle,
     set_id: i64,
     order: Vec<i64>,
     left_out: Vec<i64>,
-    marks: Vec<(i64, u32, u32, Option<i64>)>,
+    marks: Vec<(i64, Vec<(u32, String)>)>,
     mode: String,
 ) -> CmdResult<()> {
     blocking(move || {
-        let titles: HashMap<i64, String> = lib(&app, |l| l.tracks())?
-            .into_iter()
-            .map(|t| (t.id, t.title))
-            .collect();
         let mut ids = order.clone();
         ids.extend(left_out);
         lib(&app, |l| l.set_playlist_tracks(set_id, &ids))?;
-        let is_plan = |c: &CuePoint| {
-            c.comment == MIX_IN || c.comment.starts_with(MIX_OUT) || c.comment == MIX_OUT_END
-        };
-        for (id, mix_in, mix_out, next) in marks {
-            let out_comment = match next.and_then(|n| titles.get(&n)) {
-                Some(t) => format!("{MIX_OUT} {t}"),
-                None => MIX_OUT_END.to_string(),
-            };
+        for (id, mut add) in marks {
+            add.sort_by_key(|m| m.0);
+            add.dedup_by_key(|m| m.0 / 50);
+            let key = format!("plancues:{id}");
+            let previous: Vec<(u8, u32, String)> = lib(&app, |l| l.meta(&key))?
+                .and_then(|v| serde_json::from_str(&v).ok())
+                .unwrap_or_default();
             let mut cues = lib(&app, |l| l.cues(id))?;
+            cues.retain(|c| {
+                !previous
+                    .iter()
+                    .any(|p| p.0 == c.slot && p.1 == c.time_ms && p.2 == c.comment)
+            });
+            // Cues from the first planner version, which did not remember what it wrote.
+            cues.retain(|c| {
+                !(c.comment == "Mix in"
+                    || c.comment.starts_with("Mix out →")
+                    || c.comment == "Mix out (konec setu)")
+            });
+            let mut written = Vec::new();
             if mode == "only" {
                 lib(&app, |l| l.backup_cues(id))?;
-                cues.retain(|c| c.slot == 0 && !is_plan(c));
-                cues.push(CuePoint {
-                    comment: MIX_IN.into(),
-                    hot_color: 0x16,
-                    ..CuePoint::hot(1, mix_in)
-                });
-                cues.push(CuePoint {
-                    comment: out_comment,
-                    hot_color: 0x2d,
-                    ..CuePoint::hot(2, mix_out)
-                });
-            } else {
-                cues.retain(|c| !is_plan(c));
-                for (out, time, comment) in [
-                    (false, mix_in, MIX_IN.to_string()),
-                    (true, mix_out, out_comment),
-                ] {
-                    // Mix in prefers pad G, mix out pad H; else the highest free pad.
-                    let slot = (mode == "hot")
-                        .then(|| {
-                            let want: u8 = if out { 8 } else { 7 };
-                            std::iter::once(want)
-                                .chain((1..=8u8).rev())
-                                .find(|s| !cues.iter().any(|c| c.slot == *s))
-                        })
-                        .flatten();
-                    cues.push(match slot {
-                        Some(s) => CuePoint {
-                            comment,
-                            hot_color: if out { 0x2d } else { 0x16 },
-                            ..CuePoint::hot(s, time)
-                        },
-                        None => CuePoint {
-                            comment,
-                            ..CuePoint::memory(time)
-                        },
-                    });
-                }
+                cues.retain(|c| c.slot == 0);
             }
-            lib(&app, |l| l.set_cues(id, &cues))?;
+            for (time, label) in add {
+                let slot = match mode.as_str() {
+                    "only" => (1..=8u8).find(|s| !cues.iter().any(|c| c.slot == *s)),
+                    "hot" => (1..=8u8).rev().find(|s| !cues.iter().any(|c| c.slot == *s)),
+                    _ => None,
+                };
+                let cue = match slot {
+                    Some(s) => CuePoint {
+                        comment: label.clone(),
+                        hot_color: mark_color(&label),
+                        ..CuePoint::hot(s, time)
+                    },
+                    None => CuePoint {
+                        comment: label.clone(),
+                        ..CuePoint::memory(time)
+                    },
+                };
+                written.push((cue.slot, cue.time_ms, cue.comment.clone()));
+                cues.push(cue);
+            }
+            lib(&app, |l| {
+                l.set_cues(id, &cues)?;
+                l.set_meta(&key, &serde_json::to_string(&written).unwrap_or_default())
+            })?;
         }
         Ok(())
     })

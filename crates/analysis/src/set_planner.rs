@@ -44,7 +44,7 @@ impl Curve {
 }
 
 /// What the planner needs to know about a track.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PlanTrack {
     pub id: i64,
     pub bpm: f64,
@@ -58,6 +58,55 @@ pub struct PlanTrack {
     pub mix_out_ms: u32,
     /// Where this track is started when mixing it in (ms).
     pub mix_in_ms: u32,
+    /// Structure from Smart Cue (ms, on downbeats): drops, breakdown
+    /// starts, build-up starts.
+    pub drops: Vec<u32>,
+    pub breaks: Vec<u32>,
+    pub builds: Vec<u32>,
+}
+
+/// How one track hands over to the next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Technique {
+    /// Outro of A under the intro of B, bass swap halfway.
+    LongBlend,
+    /// B's intro comes in during A's breakdown, melodies blend.
+    BreakdownBlend,
+    /// B's build-up runs over A's breakdown; on A's drop, B drops instead.
+    DropSwap,
+    /// Both drops land together.
+    DoubleDrop,
+    /// A echoes out on a phrase end, B starts clean (keys or tempo clash).
+    EchoOut,
+}
+
+impl Technique {
+    pub fn id(self) -> &'static str {
+        match self {
+            Technique::LongBlend => "long-blend",
+            Technique::BreakdownBlend => "breakdown-blend",
+            Technique::DropSwap => "drop-swap",
+            Technique::DoubleDrop => "double-drop",
+            Technique::EchoOut => "echo-out",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Technique::LongBlend => "Dlouhý blend",
+            Technique::BreakdownBlend => "Breakdown blend",
+            Technique::DropSwap => "Drop swap",
+            Technique::DoubleDrop => "Double drop",
+            Technique::EchoOut => "Echo out / střih",
+        }
+    }
+}
+
+/// A cue a transition needs: where (ms) and what it says.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mark {
+    pub time_ms: u32,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -85,6 +134,10 @@ pub struct Transition {
     /// Where in the incoming track to start it (ms).
     pub cue_in_ms: u32,
     pub energy_step: f64,
+    pub technique: Technique,
+    /// Cues to put in the outgoing / incoming track for this transition.
+    pub a_marks: Vec<Mark>,
+    pub b_marks: Vec<Mark>,
     /// Human advice for this transition.
     pub tips: Vec<String>,
     /// 0 good … higher is harder.
@@ -342,19 +395,58 @@ fn build(pool: &[PlanTrack], seq: &[usize], params: &Params) -> SetPlan {
         .filter(|t| !order.contains(&t.id))
         .map(|t| t.id)
         .collect();
-    let total: f64 = seq.iter().map(|&i| play_seconds(&pool[i])).sum();
-    let mut starts = Vec::new();
-    let mut target = Vec::new();
+    let rough: f64 = seq.iter().map(|&i| play_seconds(&pool[i])).sum();
+
+    // Transitions one after another, so the planner can vary the techniques.
+    let mut transitions: Vec<Transition> = Vec::new();
     let mut t = 0.0;
-    for &i in seq {
-        starts.push(t);
-        target.push(params.curve.at(t / total.max(1.0)));
-        t += play_seconds(&pool[i]);
+    for (k, w) in seq.windows(2).enumerate() {
+        let x = (t + play_seconds(&pool[w[0]])) / rough.max(1.0);
+        let prev = transitions.last().map(|tr| tr.technique);
+        let entry = transitions
+            .last()
+            .map(|tr| tr.cue_in_ms)
+            .unwrap_or(pool[w[0]].mix_in_ms);
+        let tr = transition(
+            &pool[w[0]],
+            &pool[w[1]],
+            params.level,
+            params.curve.at(x),
+            prev,
+            k,
+            entry,
+        );
+        t += play_seconds(&pool[w[0]]);
+        transitions.push(tr);
     }
-    let transitions = seq
-        .windows(2)
-        .enumerate()
-        .map(|(k, w)| transition(&pool[w[0]], &pool[w[1]], params.level, target[k + 1]))
+
+    // Real timeline: a track plays from where it was started to where the
+    // next one takes over.
+    let mut starts = Vec::new();
+    let mut t = 0.0;
+    for (k, &i) in seq.iter().enumerate() {
+        starts.push(t);
+        let entry = if k == 0 {
+            pool[i].mix_in_ms
+        } else {
+            transitions[k - 1].cue_in_ms
+        };
+        let exit = transitions
+            .get(k)
+            .map(|tr| tr.start_at_ms)
+            .unwrap_or(pool[i].mix_out_ms);
+        // Incoming tracks run at the outgoing track's tempo.
+        let ratio = if k == 0 {
+            1.0
+        } else {
+            pool[seq[k - 1]].bpm.max(1.0) / pool[i].bpm.max(1.0)
+        };
+        t += (exit.saturating_sub(entry) as f64 / 1000.0 * ratio.max(0.5)).max(20.0);
+    }
+    let total = t;
+    let target = starts
+        .iter()
+        .map(|s| params.curve.at(s / total.max(1.0)))
         .collect();
     SetPlan {
         order,
@@ -371,16 +463,208 @@ fn camelot_name(c: Option<(u8, bool)>) -> String {
         .unwrap_or_else(|| "?".into())
 }
 
-fn transition(a: &PlanTrack, b: &PlanTrack, level: Level, target_energy: f64) -> Transition {
-    let (relation, _, key_ok) = harmony(a.camelot, b.camelot, level);
+fn bar_ms(bpm: f64) -> u32 {
+    (4.0 * 60000.0 / bpm.max(60.0)) as u32
+}
+
+fn mark(time_ms: u32, label: impl Into<String>) -> Mark {
+    Mark {
+        time_ms,
+        label: label.into(),
+    }
+}
+
+/// One way to play A → B, if the tracks allow it.
+struct Option_ {
+    technique: Technique,
+    start_at: u32,
+    cue_in: u32,
+    a: Vec<Mark>,
+    b: Vec<Mark>,
+    tips: Vec<String>,
+    /// Preference: lower is chosen first.
+    score: f64,
+}
+
+fn options(
+    a: &PlanTrack,
+    b: &PlanTrack,
+    level: Level,
+    a_entry: u32,
+    good_keys: bool,
+    clean_keys: bool,
+    tempo_ok: bool,
+) -> Vec<Option_> {
+    let next = |s: &str| s.to_string();
+    let ab = bar_ms(a.bpm);
+    // B's ms in A's time once B is pitched to A's tempo.
+    let to_a = |ms: u32| (ms as f64 * b.bpm.max(1.0) / a.bpm.max(1.0)) as u32;
+    let to_b = |ms: u32| (ms as f64 * a.bpm.max(1.0) / b.bpm.max(1.0)) as u32;
+    let blend = blend_bars(level);
+    // A should play a good part of itself before anything comes in: half of
+    // what is left from where it was started, at least 48 bars.
+    let min_start = (a_entry + (48 * ab).max(a.mix_out_ms.saturating_sub(a_entry) / 2))
+        .min(a.mix_out_ms.saturating_sub(8 * ab));
+    let mut out = Vec::new();
+
+    // Classic outro → intro.
+    out.push(Option_ {
+        technique: Technique::LongBlend,
+        start_at: a.mix_out_ms,
+        cue_in: b.mix_in_ms,
+        a: vec![mark(a.mix_out_ms, next("Mix out →"))],
+        b: vec![mark(b.mix_in_ms, "Mix in")],
+        tips: vec![format!(
+            "Na Mix out skladby A pusť B od Mix in, blend {blend} taktů, basy přehoď v polovině (po {} taktech).",
+            blend / 2
+        )],
+        score: match level {
+            Level::Beginner => 0.0,
+            Level::Advanced => 0.45,
+            Level::Pro => 0.6,
+        },
+    });
+
+    // The last breakdown of A (late enough) that is followed by a drop.
+    let a_break_drop = a
+        .breaks
+        .iter()
+        .rev()
+        .filter(|&&bd| bd >= min_start)
+        .find_map(|&bd| a.drops.iter().find(|&&d| d > bd).map(|&d| (bd, d)));
+    let b_drop = b.drops.first().copied();
+
+    if level != Level::Beginner && good_keys && tempo_ok {
+        if let Some(&bd) = a
+            .breaks
+            .iter()
+            .rev()
+            .find(|&&bd| bd >= min_start && bd + 8 * ab <= a.mix_out_ms)
+        {
+            out.push(Option_ {
+                technique: Technique::BreakdownBlend,
+                start_at: bd,
+                cue_in: b.mix_in_ms,
+                a: vec![mark(bd, next("Breakdown: pusť"))],
+                b: vec![mark(b.mix_in_ms, "Mix in")],
+                tips: vec![
+                    "Na začátku posledního breakdownu A pusť B od Mix in, basy B zatím stažené.".into(),
+                    "Melodie se přes breakdown proplétají; na konci breakdownu A stáhni a pusť basy B.".into(),
+                ],
+                score: 0.3,
+            });
+        }
+        if let (Some((bd, a_drop)), Some(bd_b)) = (a_break_drop, b_drop) {
+            // B's build-up (or the 16 bars before its drop) leads up to A's drop.
+            let b_build = b
+                .builds
+                .iter()
+                .rev()
+                .copied()
+                .find(|&x| x < bd_b)
+                .unwrap_or(bd_b.saturating_sub(to_b(16 * ab)));
+            let mut lead = to_a(bd_b.saturating_sub(b_build));
+            let mut b_start = b_build;
+            if a_drop.saturating_sub(lead) < bd {
+                // A's breakdown is shorter than B's build: start B later in its build.
+                lead = a_drop - bd;
+                b_start = bd_b.saturating_sub(to_b(lead));
+            }
+            let start_at = a_drop.saturating_sub(lead);
+            if lead >= 4 * ab {
+                out.push(Option_ {
+                    technique: Technique::DropSwap,
+                    start_at,
+                    cue_in: b_start,
+                    a: vec![mark(start_at, next("Swap: pusť")), mark(a_drop, next("Drop →"))],
+                    b: vec![mark(b_start, "Start (build)"), mark(bd_b, "Drop")],
+                    tips: vec![
+                        "Během breakdownu A pusť buildup B (basy B dole).".into(),
+                        "Přesně na drop A stáhni A a nech dropnout B místo něj — publikum čeká drop A a přijde B.".into(),
+                    ],
+                    score: if b.energy >= a.energy - 0.5 { 0.2 } else { 0.5 },
+                });
+            }
+            if level == Level::Pro && clean_keys && b.energy >= 6.0 && a.energy >= 6.0 {
+                out.push(Option_ {
+                    technique: Technique::DoubleDrop,
+                    start_at,
+                    cue_in: b_start,
+                    a: vec![
+                        mark(start_at, next("Double: pusť")),
+                        mark(a_drop, "Double drop"),
+                    ],
+                    b: vec![mark(b_start, "Start"), mark(bd_b, "Double drop")],
+                    tips: vec![
+                        "Pusť B tak, aby jeho drop padl přesně na drop A.".into(),
+                        "Na dropu nech hrát obě, basy jen z jedné; po 8–16 taktech A stáhni."
+                            .into(),
+                    ],
+                    score: 0.15,
+                });
+            }
+        }
+    }
+
+    // When keys or tempo clash: echo out on a phrase and start B clean.
+    let b_cut = if b.energy > a.energy + 1.0 {
+        b_drop.unwrap_or(b.mix_in_ms)
+    } else {
+        b.mix_in_ms
+    };
+    out.push(Option_ {
+        technique: Technique::EchoOut,
+        start_at: a.mix_out_ms,
+        cue_in: b_cut,
+        a: vec![mark(a.mix_out_ms, next("Echo out →"))],
+        b: vec![mark(
+            b_cut,
+            if b_cut == b.mix_in_ms {
+                "Start"
+            } else {
+                "Start (drop)"
+            },
+        )],
+        tips: vec![
+            "Na konci fráze dej na A echo (1/2 nebo 3/4 beat) a stáhni ho.".into(),
+            "B pusť čistě na první dobu další fráze, bez překryvu melodií.".into(),
+        ],
+        score: if good_keys && tempo_ok { 1.0 } else { 0.05 },
+    });
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transition(
+    a: &PlanTrack,
+    b: &PlanTrack,
+    level: Level,
+    target_energy: f64,
+    prev: Option<Technique>,
+    k: usize,
+    a_entry: u32,
+) -> Transition {
+    let (relation, harm, key_ok) = harmony(a.camelot, b.camelot, level);
+    let clean_keys = matches!(relation, "same" | "relative" | "+1" | "-1");
+    // Melodies only overlap when the keys get along, whatever the level.
+    let good_keys = key_ok && harm <= 0.5;
     let p = pitch(a.bpm, b.bpm);
     let tempo_ok = p.abs() <= max_pitch(level);
-    let bars = blend_bars(level);
-    let mut tips = Vec::new();
-    tips.push(format!(
-        "Pusť ji na Mix out skladby A, blend {bars} taktů, basy přehoď v polovině (po {} taktech).",
-        bars / 2
-    ));
+    let mut opts = options(a, b, level, a_entry, good_keys, clean_keys, tempo_ok);
+    // Variety: avoid playing the same trick twice in a row, and rotate
+    // between the good ones along the set.
+    for (n, o) in opts.iter_mut().enumerate() {
+        if Some(o.technique) == prev {
+            o.score += 0.3;
+        }
+        o.score += ((k + n) % 3) as f64 * 0.02;
+    }
+    let o = opts
+        .into_iter()
+        .min_by(|x, y| x.score.partial_cmp(&y.score).unwrap())
+        .unwrap();
+
+    let mut tips = o.tips;
     if p.abs() >= 0.05 {
         tips.push(format!(
             "Tempo: {:.1} → {:.1} BPM, příchozí skladbu posuň o {:+.1} %.",
@@ -389,32 +673,27 @@ fn transition(a: &PlanTrack, b: &PlanTrack, level: Level, target_energy: f64) ->
     }
     match relation {
         "same" | "relative" | "+1" | "-1" => tips.push(format!(
-            "Tónina {} → {}: sedí, můžeš míchat dlouho.",
+            "Tónina {} → {}: sedí, melodie můžou hrát přes sebe.",
             camelot_name(a.camelot),
             camelot_name(b.camelot)
         )),
         "+2" | "+7" => tips.push(format!(
-            "Tónina {} → {}: energy boost, krátký přechod přes drop.",
+            "Tónina {} → {}: energy boost, překryv melodií jen krátce.",
             camelot_name(a.camelot),
             camelot_name(b.camelot)
         )),
         "?" => tips.push("Tónina neznámá, poslouchej, jestli se melodie nepere.".into()),
         _ => tips.push(format!(
-            "Tónina {} → {} se tluče: krátký střih nebo echo out, melodie přes sebe nepouštěj.",
+            "Tónina {} → {} se tluče: melodie přes sebe nepouštěj.",
             camelot_name(a.camelot),
             camelot_name(b.camelot)
         )),
     }
-    if !tempo_ok {
-        tips.push(format!(
-            "Velký skok tempa ({p:+.1} %): přejdi střihem nebo přes breakdown."
-        ));
-    }
     let step = b.energy - a.energy;
     if step >= 2.0 {
-        tips.push("Velký skok energie nahoru: přechod na drop příchozí skladby.".into());
+        tips.push("Velký skok energie nahoru: nech to bouchnout na dropu B.".into());
     } else if step <= -2.0 {
-        tips.push("Energie jde dolů: nech dohrát outro, ať to nespadne náhle.".into());
+        tips.push("Energie jde dolů: nech A dohrát, ať to nespadne náhle.".into());
     }
     Transition {
         from: a.id,
@@ -423,10 +702,13 @@ fn transition(a: &PlanTrack, b: &PlanTrack, level: Level, target_energy: f64) ->
         key_ok,
         pitch_percent: p,
         tempo_ok,
-        bars,
-        start_at_ms: a.mix_out_ms,
-        cue_in_ms: b.mix_in_ms,
+        bars: blend_bars(level),
+        start_at_ms: o.start_at,
+        cue_in_ms: o.cue_in,
         energy_step: step,
+        technique: o.technique,
+        a_marks: o.a,
+        b_marks: o.b,
         tips,
         cost: pair_cost(a, b, level, target_energy),
     }
@@ -470,6 +752,7 @@ mod tests {
             duration: 300.0,
             mix_in_ms: 0,
             mix_out_ms: 240_000,
+            ..Default::default()
         }
     }
 
@@ -535,6 +818,53 @@ mod tests {
             p.total_seconds
         );
         assert!(!p.left_out.is_empty());
+    }
+
+    #[test]
+    fn creative_transitions_need_structure_and_vary() {
+        let edm = |id: i64, key: &str| PlanTrack {
+            drops: vec![60_000, 150_000],
+            breaks: vec![120_000],
+            builds: vec![135_000],
+            ..t(id, 128.0, key, 7.0)
+        };
+        let pool = vec![edm(1, "8A"), edm(2, "9A"), edm(3, "9A"), edm(4, "10A")];
+        let p = plan_in_order(
+            &pool,
+            &Params {
+                minutes: 0.0,
+                level: Level::Advanced,
+                curve: Curve::PeakTime,
+            },
+        );
+        let techs: Vec<Technique> = p.transitions.iter().map(|t| t.technique).collect();
+        assert!(techs.contains(&Technique::DropSwap), "{techs:?}");
+        assert!(techs.windows(2).all(|w| w[0] != w[1]), "varied: {techs:?}");
+        let swap = p
+            .transitions
+            .iter()
+            .find(|t| t.technique == Technique::DropSwap)
+            .unwrap();
+        // B's first drop (60 s) has no build-up before it, so B starts 16 bars
+        // (30 s at 128 BPM) before A's second drop at 150 s.
+        assert_eq!(swap.start_at_ms, 120_000);
+        assert_eq!(swap.cue_in_ms, 30_000);
+        assert_eq!(swap.a_marks.len(), 2);
+        assert_eq!(swap.b_marks[1].label, "Drop");
+        // A beginner only gets long blends.
+        let p = plan_in_order(
+            &pool,
+            &Params {
+                minutes: 0.0,
+                level: Level::Beginner,
+                curve: Curve::PeakTime,
+            },
+        );
+        assert!(
+            p.transitions
+                .iter()
+                .all(|t| t.technique == Technique::LongBlend)
+        );
     }
 
     #[test]

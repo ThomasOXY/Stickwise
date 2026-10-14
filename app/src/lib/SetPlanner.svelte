@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { ArrowDown, ArrowRight, ArrowUp, Check, LoaderCircle, Sparkles, TriangleAlert, X } from "@lucide/svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { ArrowDown, ArrowRight, ArrowUp, Check, LoaderCircle, Play, Sparkles, Square, TriangleAlert, X } from "@lucide/svelte";
+  import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+  import { onDestroy } from "svelte";
   import { cueTime, keyColor, time } from "./format";
   import { app } from "./state.svelte";
 
@@ -25,6 +26,10 @@
     startAtMs: number;
     cueInMs: number;
     energyStep: number;
+    technique: string;
+    techniqueName: string;
+    aMarks: [number, string][];
+    bMarks: [number, string][];
     tips: string[];
     cost: number;
   }
@@ -123,11 +128,13 @@
         order: plan.tracks.map((t) => t.trackId),
         leftOut: plan.leftOut,
         // Per track: mix in (from the transition into it), mix out (into the next one).
+        // Per track: the cues of the transition into it and out of it.
         marks: plan.tracks.map((t, k) => [
           t.trackId,
-          k > 0 ? plan!.transitions[k - 1].cueInMs : t.mixInMs,
-          k < plan!.transitions.length ? plan!.transitions[k].startAtMs : t.mixOutMs,
-          plan!.tracks[k + 1]?.trackId ?? null,
+          [
+            ...(k > 0 ? plan!.transitions[k - 1].bMarks : [[t.mixInMs, "Mix in"]]),
+            ...(k < plan!.transitions.length ? plan!.transitions[k].aMarks : [[t.mixOutMs, "Konec setu"]]),
+          ],
         ]),
         mode: cueMode,
       });
@@ -144,10 +151,10 @@
       app.notice =
         (keepOrder ? `Set „${set.name}“ zůstal ve tvém pořadí. ` : `Set „${set.name}“ je přeřazený podle plánu. `) +
         (cueMode === "only"
-          ? `${n + 1} skladeb má teď jen dva hot cue: A = Mix in (zelený), B = Mix out → další skladba (růžový). Původní hot cue jsou zálohované, vrátíš je v plánovači tlačítkem Obnovit původní cue. `
+          ? `${n + 1} skladeb má na padech jen cue svých přechodů (A, B, … podle času): zelená = start, růžová = předání další skladbě, červená = drop, fialová = echo out. Původní hot cue jsou zálohované (Obnovit původní cue). `
           : cueMode === "hot"
-            ? `Do ${n + 1} skladeb se přidaly hot cue přechodů: pad G = Mix in, pad H = Mix out → další skladba; kde byly obsazené, použil se jiný volný pad. `
-            : `Do ${n + 1} skladeb se zapsaly memory cue Mix in a Mix out → další skladba, v tabulce je poznáš podle ▾. `) +
+            ? `Do ${n + 1} skladeb se přidaly hot cue přechodů na nejvyšší volné pady (H, G, …). `
+            : `Do ${n + 1} skladeb se zapsaly memory cue přechodů, v tabulce je poznáš podle ▾. `) +
         `Na flashku je dostaneš synchronizací.`;
     } catch (e) {
       app.error = String(e);
@@ -155,6 +162,92 @@
       busy = false;
     }
   }
+
+  // ---- transition preview: both tracks over each other as planned ----
+  let playingIdx = $state<number | null>(null);
+  let audioA: HTMLAudioElement | null = null;
+  let audioB: HTMLAudioElement | null = null;
+  let raf = 0;
+
+  function stopPreview() {
+    cancelAnimationFrame(raf);
+    audioA?.pause();
+    audioB?.pause();
+    audioA = audioB = null;
+    playingIdx = null;
+  }
+  onDestroy(stopPreview);
+
+  function preview(i: number) {
+    if (playingIdx === i) return stopPreview();
+    stopPreview();
+    if (!plan) return;
+    const tr = plan.transitions[i];
+    const A = app.trackById.get(tr.from);
+    const B = app.trackById.get(tr.to);
+    const pa = plan.tracks[i];
+    const pb = plan.tracks[i + 1];
+    if (!A || !B || !pa || !pb) return;
+    const bar = 240 / Math.max(60, pa.bpm);
+    const start = tr.startAtMs / 1000;
+    // The moment the trick lands in A (a drop for swaps), else the start.
+    const key = tr.aMarks.length > 1 ? tr.aMarks[1][0] / 1000 : start;
+    const blend = (tr.technique === "breakdown-blend" ? 16 : tr.bars) * bar;
+    const end = Math.max(key + 8 * bar, start + blend + 4 * bar);
+    audioA = new Audio(convertFileSrc(A.absPath));
+    audioB = new Audio(convertFileSrc(B.absPath));
+    audioB.playbackRate = pa.bpm / Math.max(1, pb.bpm);
+    audioB.preservesPitch = true;
+    audioA.currentTime = Math.max(0, start - 8 * bar);
+    audioB.currentTime = tr.cueInMs / 1000;
+    audioB.volume = 0;
+    audioA.play().catch((e) => (app.error = `Náhled nejde přehrát: ${e.message ?? e}`));
+    playingIdx = i;
+    let bStarted = false;
+    const tick = () => {
+      if (!audioA || !audioB) return;
+      const a = audioA.currentTime;
+      if (!bStarted && a >= start) {
+        bStarted = true;
+        audioB.play().catch(() => {});
+      }
+      const t = a - start;
+      let va = 1;
+      let vb = 0;
+      if (bStarted) {
+        switch (tr.technique) {
+          case "drop-swap":
+            vb = a < key ? 0.7 : 1;
+            va = a < key ? 1 : 0;
+            break;
+          case "double-drop":
+            vb = 1;
+            va = a < key + 8 * bar ? 1 : Math.max(0, 1 - (a - key - 8 * bar) / (4 * bar));
+            break;
+          case "echo-out":
+            vb = 1;
+            va = Math.max(0, 1 - t / bar);
+            break;
+          default:
+            vb = Math.min(1, t / (blend / 2));
+            va = t < blend / 2 ? 1 : Math.max(0, 1 - (t - blend / 2) / (blend / 2));
+        }
+      }
+      audioA.volume = Math.max(0, Math.min(1, va));
+      audioB.volume = Math.max(0, Math.min(1, vb));
+      if (a >= end) return stopPreview();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+
+  const TECH_COLOR: Record<string, string> = {
+    "long-blend": "var(--text-2)",
+    "breakdown-blend": "var(--hc-f)",
+    "drop-swap": "var(--hc-b)",
+    "double-drop": "var(--hc-g)",
+    "echo-out": "var(--hc-h)",
+  };
 
   // Chart geometry.
   const W = 1000;
@@ -203,8 +296,8 @@
     <div class="group">
       <span class="lbl">Cue přechodů</span>
       <div class="seg">
-        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title="Skladba bude mít jen A = Mix in a B = Mix out; ostatní hot cue se zazálohují a smažou, memory cue zůstanou">Jen Mix in / out (A, B)</button>
-        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title="Tvoje hot cue zůstanou, Mix in přibude na pad G, Mix out na pad H">Přidat na G/H</button>
+        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title="Na padech zůstanou jen cue přechodů (start, swap, drop, mix out) v pořadí A, B, …; ostatní hot cue se zazálohují a smažou, memory cue zůstanou">Jen cue přechodů</button>
+        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title="Tvoje hot cue zůstanou, cue přechodů přibudou na nejvyšší volné pady (H, G, …)">Přidat na volné pady</button>
         <button class:on={cueMode === "memory"} onclick={() => (cueMode = "memory")} title="Jako memory cue, pady zůstanou, jak jsou">Memory cue</button>
       </div>
     </div>
@@ -301,8 +394,12 @@
         </div>
         {#if plan.transitions[i]}
           {@const tr = plan.transitions[i]}
+          <div class="trans-row">
+          <button class="prev" class:on={playingIdx === i} onclick={() => preview(i)} title="Přehrát přechod: obě skladby přes sebe podle plánu">
+            {#if playingIdx === i}<Square size={11} fill="currentColor" />{:else}<Play size={11} fill="currentColor" />{/if}
+          </button>
           <button class="trans {relationClass(tr)}" onclick={() => (open = open === i ? null : i)}>
-            <span class="line"></span>
+            <span class="tech" style:color={TECH_COLOR[tr.technique]} style:border-color={TECH_COLOR[tr.technique]}>{tr.techniqueName}</span>
             <span class="rel">{RELATION[tr.keyRelation] ?? tr.keyRelation}</span>
             <span>{tr.pitchPercent > 0 ? "+" : ""}{tr.pitchPercent.toFixed(1)} %</span>
             <span>{tr.bars} taktů od {cueTime(tr.startAtMs)}</span>
@@ -312,10 +409,18 @@
             </span>
             {#if relationClass(tr) === "bad"}<TriangleAlert size={12} />{/if}
           </button>
+          </div>
           {#if open === i}
             <ul class="tips">
               {#each tr.tips as tip}<li>{tip}</li>{/each}
-              <li class="sub">Příchozí skladbu startuj od {cueTime(tr.cueInMs)} (Mix in).</li>
+              <li class="marks">
+                <span>V „{title(tr.from)}“:</span>
+                {#each tr.aMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
+              </li>
+              <li class="marks">
+                <span>V „{title(tr.to)}“:</span>
+                {#each tr.bMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
+              </li>
             </ul>
           {/if}
         {/if}
@@ -549,24 +654,63 @@
     height: 8px;
     border-radius: 2px;
   }
+  .trans-row {
+    display: flex;
+    align-items: center;
+  }
+  .prev {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    margin-left: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .prev:hover,
+  .prev.on {
+    color: var(--cue);
+    border-color: var(--cue);
+  }
+  .tech {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border: 1px solid;
+    border-radius: 4px;
+    min-width: 104px;
+    text-align: center;
+  }
+  .marks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: var(--text-2);
+  }
+  .mk {
+    font-family: var(--font-readout);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--panel-2);
+    border-radius: 4px;
+    padding: 0 6px;
+  }
   .trans {
     display: flex;
     align-items: center;
     gap: 14px;
     width: 100%;
     height: 24px;
-    padding: 0 8px 0 44px;
+    padding: 0 8px 0 10px;
     border: 0;
     background: none;
     font-size: 11px;
     color: var(--text-2);
     text-align: left;
-  }
-  .trans .line {
-    width: 14px;
-    height: 2px;
-    border-radius: 1px;
-    background: currentColor;
   }
   .trans.good {
     color: var(--play);
@@ -580,7 +724,7 @@
   .trans .rel {
     min-width: 110px;
   }
-  .trans span:not(.rel):not(.line) {
+  .trans span:not(.rel):not(.tech) {
     color: var(--text-2);
   }
   .step {

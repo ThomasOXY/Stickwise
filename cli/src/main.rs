@@ -917,7 +917,16 @@ fn plan_cmd(db: &Path, name: &str, minutes: f64, level: &str, curve: &str) -> Re
             .or_else(|| s.iter().find(|x| x.kind == Kind::MixOut))
             .map(|x| x.time_ms)
             .unwrap_or(dur.saturating_sub(60_000));
+        let at = |k: Kind| {
+            s.iter()
+                .filter(|x| x.kind == k)
+                .map(|x| x.time_ms)
+                .collect::<Vec<u32>>()
+        };
         pool.push(PlanTrack {
+            drops: at(Kind::Drop),
+            breaks: at(Kind::Break),
+            builds: at(Kind::Build),
             id: t.id,
             bpm: t.bpm,
             camelot: camelot(&t.key),
@@ -966,11 +975,20 @@ fn plan_cmd(db: &Path, name: &str, minutes: f64, level: &str, curve: &str) -> Re
         );
         if let Some(tr) = r.transitions.get(i) {
             println!(
-                "        ↳ {:<9} {:+.1} %  {} taktů  ok={}",
+                "        ↳ {:<16} {:<9} {:+.1} %  start {}  ok={}  A:{:?} B:{:?}",
+                tr.technique.name(),
                 tr.key_relation,
                 tr.pitch_percent,
-                tr.bars,
-                tr.key_ok && tr.tempo_ok
+                fmt_ms(tr.start_at_ms),
+                tr.key_ok && tr.tempo_ok,
+                tr.a_marks
+                    .iter()
+                    .map(|m| format!("{} {}", fmt_ms(m.time_ms), m.label))
+                    .collect::<Vec<_>>(),
+                tr.b_marks
+                    .iter()
+                    .map(|m| format!("{} {}", fmt_ms(m.time_ms), m.label))
+                    .collect::<Vec<_>>()
             );
         }
     }
