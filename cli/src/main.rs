@@ -49,6 +49,13 @@ enum Cmd {
         #[arg(long, default_value_t = 0.9)]
         detr_threshold: f32,
     },
+    /// Import a rekordbox dump (sidecar/rekordbox_dump.py) into a library file.
+    LibraryImport {
+        /// Library database file.
+        db: PathBuf,
+        /// JSON written by rekordbox_dump.py.
+        dump: PathBuf,
+    },
     /// Copy playlists from a stick into folders: <dest>/<folder>/<playlist>/files.
     Extract {
         /// Root of the mounted stick, e.g. /Volumes/DJ.
@@ -112,6 +119,24 @@ fn main() -> Result<()> {
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
         Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
+        Cmd::LibraryImport { db, dump } => {
+            let started = std::time::Instant::now();
+            let mut lib = library::Library::open(&db)?;
+            let dump: library::RekordboxDump = serde_json::from_slice(&std::fs::read(&dump)?)?;
+            let r = lib.import_rekordbox(&dump)?;
+            println!(
+                "{} ({:.1} s)",
+                serde_json::to_string(&r)?,
+                started.elapsed().as_secs_f64()
+            );
+            let lists = lib.playlists()?;
+            println!(
+                "{} tracks, {} playlists/folders",
+                lib.tracks()?.len(),
+                lists.len()
+            );
+            Ok(())
+        }
         Cmd::SmartCue {
             usb,
             track,
