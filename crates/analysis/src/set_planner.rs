@@ -291,11 +291,11 @@ pub fn plan(pool: &[PlanTrack], params: &Params) -> SetPlan {
             }
             let last = &pool[*s.seq.last().unwrap()];
             let x = s.secs / target_secs.max(1.0);
-            for j in 0..n {
+            for (j, cand) in pool.iter().enumerate() {
                 if s.used[j] {
                     continue;
                 }
-                let c = pair_cost(last, &pool[j], params.level, params.curve.at(x));
+                let c = pair_cost(last, cand, params.level, params.curve.at(x));
                 let mut ns = s.clone();
                 ns.seq.push(j);
                 ns.used[j] = true;
