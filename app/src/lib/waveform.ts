@@ -136,6 +136,8 @@ export function fit(canvas: HTMLCanvasElement): { w: number; h: number; dpr: num
   return { w, h, dpr };
 }
 
+const images = new WeakMap<HTMLCanvasElement, ImageData>();
+
 /**
  * Paint the time window [t0, t1] seconds of `w` (which has `rate` columns
  * per second) into the whole canvas, mirrored around the centre line.
@@ -143,19 +145,27 @@ export function fit(canvas: HTMLCanvasElement): { w: number; h: number; dpr: num
 export function paint(canvas: HTMLCanvasElement, w: Waveform, rate: number, t0: number, t1: number) {
   const { w: W, h: H } = fit(canvas);
   const ctx = canvas.getContext("2d")!;
-  const img = ctx.createImageData(W, H);
+  // One buffer per canvas, reused every frame: no garbage while scrolling.
+  let img = images.get(canvas);
+  if (!img || img.width !== W || img.height !== H) {
+    img = ctx.createImageData(W, H);
+    images.set(canvas, img);
+  }
   const px = new Uint32Array(img.data.buffer);
+  px.fill(0);
   const n = columnCount(w);
   const mid = H / 2;
   const half = H / 2 - 1;
   const colsPerPx = ((t1 - t0) * rate) / W;
+  // Pixel x covers columns [(x0 + x) * colsPerPx, …): a fixed grid, whatever the start.
+  const x0 = Math.round((t0 * rate) / colsPerPx);
   const three = w.kind === "three-band";
   const cLow = pack(LOW);
   const cMid = pack(MID);
   const cHigh = pack(HIGH);
 
   for (let x = 0; x < W; x++) {
-    const a = t0 * rate + x * colsPerPx;
+    const a = (x0 + x) * colsPerPx;
     const s = sampleRange(w, a, a + colsPerPx, n);
     if (!s) continue;
     const top = Math.round(mid - s.h * half);

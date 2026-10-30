@@ -22,7 +22,10 @@ use crate::sidecar::Sidecar;
 
 pub struct LibState(pub Mutex<Library>);
 
-fn lib<T>(app: &AppHandle, f: impl FnOnce(&mut Library) -> library::Result<T>) -> CmdResult<T> {
+pub(crate) fn lib<T>(
+    app: &AppHandle,
+    f: impl FnOnce(&mut Library) -> library::Result<T>,
+) -> CmdResult<T> {
     let state = app.state::<LibState>();
     let mut l = state.0.lock().map_err(err)?;
     f(&mut l).map_err(err)
@@ -49,6 +52,10 @@ pub struct LibTrack {
     pub missing: bool,
     /// Has rekordbox analysis (waveform, beat grid).
     pub analyzed: bool,
+    /// `YYYY-MM-DD`, empty if unknown.
+    pub date_added: String,
+    /// The analysis is this app's own (re-analysable), not rekordbox's.
+    pub own_analysis: bool,
 }
 
 #[derive(Serialize)]
@@ -75,7 +82,7 @@ fn format_label(path: &str, bitrate: u32, depth: u32) -> String {
 }
 
 /// rekordbox library folders (holding master.db), newest first.
-fn rekordbox_sources() -> Vec<String> {
+pub(crate) fn rekordbox_sources() -> Vec<String> {
     let mut found: Vec<(std::time::SystemTime, String)> = Vec::new();
     let mut check = |dir: PathBuf| {
         if let Ok(m) = std::fs::metadata(dir.join("master.db"))
@@ -98,6 +105,7 @@ fn rekordbox_sources() -> Vec<String> {
 
 #[tauri::command]
 pub async fn library_data(app: AppHandle) -> CmdResult<LibraryData> {
+    let own = app.path().app_data_dir().map_err(err)?.join("analysis");
     blocking(move || {
         let (tracks, playlists, last) = lib(&app, |l| {
             Ok((l.tracks()?, l.playlists()?, l.meta("last_import")?))
@@ -124,6 +132,8 @@ pub async fn library_data(app: AppHandle) -> CmdResult<LibraryData> {
                     key: t.key,
                     duration: t.duration.round() as u16,
                     rating: t.rating,
+                    date_added: t.date_added,
+                    own_analysis: Path::new(&t.anlz).starts_with(&own),
                 }
             })
             .collect();
@@ -141,16 +151,12 @@ pub async fn library_data(app: AppHandle) -> CmdResult<LibraryData> {
 #[tauri::command]
 pub async fn library_import(app: AppHandle, source: String) -> CmdResult<library::ImportReport> {
     blocking(move || {
+        crate::sidecar::ensure_installed(&app)?;
         let sc = app.state::<Sidecar>();
-        if !sc.installed() {
-            return Err(
-                "Import potřebuje pomocné nástroje: v terminálu spusť  cd sidecar && uv sync"
-                    .into(),
-            );
-        }
         let out = sc.data.join("rekordbox-dump.json");
         let status = std::process::Command::new(sc.dir.join(".venv/bin/python"))
-            .arg(sc.dir.join("rekordbox_dump.py"))
+            .arg(sc.script("rekordbox_dump.py"))
+            .env("PYTHONDONTWRITEBYTECODE", "1")
             .arg(&source)
             .arg(&out)
             .stdout(std::process::Stdio::null())
@@ -207,8 +213,36 @@ pub fn library_move_playlist(app: AppHandle, id: i64, parent: i64, index: usize)
 }
 
 #[tauri::command]
+pub fn library_order_playlists(app: AppHandle, groups: Vec<Vec<i64>>) -> CmdResult<()> {
+    lib(&app, |l| groups.iter().try_for_each(|ids| l.order_playlists(ids)))
+}
+
+#[tauri::command]
 pub fn library_set_tracks(app: AppHandle, id: i64, track_ids: Vec<i64>) -> CmdResult<()> {
     lib(&app, |l| l.set_playlist_tracks(id, &track_ids))
+}
+
+/// Folders and audio files dropped on the playlist list. Folders become
+/// playlists under `parent`; loose files go into `playlist` if dropped on one.
+#[tauri::command]
+pub async fn library_add_folders(
+    app: AppHandle,
+    paths: Vec<PathBuf>,
+    parent: i64,
+    playlist: Option<i64>,
+) -> CmdResult<library::FolderReport> {
+    blocking(move || {
+        // Reading tags is the slow part: done before taking the library.
+        let scan = library::folders::scan(&paths);
+        lib(&app, |l| {
+            let r = l.add_scan(&scan, parent)?;
+            if let Some(p) = playlist.filter(|_| !r.loose.is_empty()) {
+                l.add_to_playlist(p, &r.loose)?;
+            }
+            Ok(r)
+        })
+    })
+    .await
 }
 
 fn track(app: &AppHandle, id: i64) -> CmdResult<library::Track> {
@@ -334,15 +368,162 @@ pub async fn library_ai_status(
             .map(|id| id as u32)
             .collect();
         Ok(crate::commands::AiStatus {
-            installed: sc.installed(),
+            installed: sc.available(),
             analyzed,
         })
     })
     .await
 }
 
-fn emit_job(app: &AppHandle, ev: &dto::JobEvent) {
+pub(crate) fn emit_job(app: &AppHandle, ev: &dto::JobEvent) {
     let _ = app.emit("job", ev.clone());
+}
+
+/// Where this app keeps its own analysis files.
+fn analysis_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+    Ok(app.path().app_data_dir().map_err(err)?.join("analysis"))
+}
+
+/// Library tracks of `ids` that need analysing: no analysis, or with
+/// `again` also this app's own. rekordbox's analyses are never replaced.
+fn needs_analysis(app: &AppHandle, ids: impl IntoIterator<Item = i64>, again: bool) -> CmdResult<Vec<library::Track>> {
+    let dir = analysis_dir(app)?;
+    let mut seen = HashSet::new();
+    Ok(ids
+        .into_iter()
+        .filter(|id| seen.insert(*id))
+        .filter_map(|id| track(app, id).ok())
+        .filter(|t| {
+            let missing = t.anlz.is_empty() || !Path::new(&t.anlz).is_file();
+            (missing || (again && Path::new(&t.anlz).starts_with(&dir))) && Path::new(&t.path).is_file()
+        })
+        .collect())
+}
+
+/// Analyse `todo` (waveforms, beat grid, key) into the app's data folder
+/// and record it in the library. `progress(done, file name)` after each
+/// track. Returns how many were done, the errors, and whether Beat This!
+/// was used.
+fn analyze_all(
+    app: &AppHandle,
+    todo: &[library::Track],
+    cancel: &std::sync::atomic::AtomicBool,
+    progress: impl Fn(usize, &str) + Sync,
+) -> (usize, Vec<String>, bool) {
+    let Ok(dir) = analysis_dir(app) else {
+        return (0, vec!["chybí složka dat aplikace".into()], false);
+    };
+    let tracker = beat_tracker(app);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    let errors = Mutex::new(Vec::new());
+    // Decoding, waveforms and key in parallel; the beat model (which uses
+    // every core itself) one track at a time.
+    let workers = std::thread::available_parallelism().map_or(2, |n| n.get().saturating_sub(2).clamp(1, 4));
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= todo.len() || cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                let t = &todo[i];
+                let name = Path::new(&t.path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let result = analyzer::analyze(Path::new(&t.path), (t.bpm > 0.0).then_some(t.bpm), tracker)
+                    .and_then(|a| {
+                        let dat = analyzer::write(&a, &t.path, &dir.join(format!("{:016x}", path_hash(&t.path))))?;
+                        Ok((a, dat))
+                    })
+                    .map_err(|e| e.to_string())
+                    .and_then(|(a, dat)| {
+                        lib(app, |l| {
+                            l.set_analysis(t.id, &dat.display().to_string(), a.grid.map(|g| g.bpm), a.key, a.duration)
+                        })
+                    });
+                if let Err(e) = result {
+                    errors.lock().unwrap().push(format!("{name}: {e}"));
+                }
+                progress(done.fetch_add(1, Ordering::Relaxed) + 1, &name);
+            });
+        }
+    });
+    (done.into_inner(), errors.into_inner().unwrap(), tracker.is_some())
+}
+
+/// Analyse tracks that have no analysis (waveforms, beat grid, key), a few
+/// at a time, as a background job. The files go to the app's data folder.
+#[tauri::command]
+pub fn library_analyze(
+    app: AppHandle,
+    jobs: State<'_, Jobs>,
+    track_ids: Vec<i64>,
+    again: bool,
+) -> CmdResult<u32> {
+    let todo = needs_analysis(&app, track_ids, again)?;
+    let (id, cancel) = jobs.start();
+    let total = todo.len();
+    std::thread::spawn(move || {
+        let mut ev = dto::JobEvent {
+            id,
+            label: "Analýza skladeb".into(),
+            state: "running",
+            files_total: total,
+            bytes_total: total.max(1) as u64,
+            ..Default::default()
+        };
+        emit_job(&app, &ev);
+        let (n, errors, model) = analyze_all(&app, &todo, &cancel, |n, name| {
+            let mut e = ev.clone();
+            e.files_done = n;
+            e.bytes_done = n as u64;
+            e.current = name.to_string();
+            emit_job(&app, &e);
+        });
+        ev.files_done = n;
+        ev.bytes_done = total as u64;
+        (ev.state, ev.message) = if cancel.load(Ordering::Relaxed) {
+            ("cancelled", format!("Analýza zastavena po {n} skladbách"))
+        } else if errors.is_empty() {
+            (
+                "done",
+                format!(
+                    "Analyzováno {n} skladeb: waveform, beatgrid a tónina{}",
+                    if model { "" } else { " (bez modelu Beat This!, grid jen přibližný)" }
+                ),
+            )
+        } else {
+            ("error", format!("{} skladeb nešlo analyzovat: {}", errors.len(), errors.join("; ")))
+        };
+        emit_job(&app, &ev);
+        app.state::<Jobs>().finish(id);
+    });
+    Ok(id)
+}
+
+/// Beat This!, loaded on first use from the app's resources (in a dev
+/// build from `src-tauri/models`). `None` when the models are missing: the
+/// built-in detector takes over.
+fn beat_tracker(app: &AppHandle) -> Option<&'static analyzer::tracker::Tracker> {
+    static TRACKER: std::sync::OnceLock<Option<analyzer::tracker::Tracker>> = std::sync::OnceLock::new();
+    TRACKER
+        .get_or_init(|| {
+            let dirs = [
+                app.path().resource_dir().ok().map(|d| d.join("models")),
+                Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models")),
+            ];
+            dirs.into_iter().flatten().find_map(|d| {
+                analyzer::tracker::Tracker::load(&d.join("mel_spectrogram.onnx"), &d.join("beat_this.onnx")).ok()
+            })
+        })
+        .as_ref()
+}
+
+/// FNV-1a of a path: the folder name for its analysis files.
+fn path_hash(path: &str) -> u64 {
+    path.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
 }
 
 #[tauri::command]
@@ -374,14 +555,17 @@ pub fn library_ai_analyze(
             current: String::new(),
             message: String::new(),
             dest: String::new(),
+            ..Default::default()
         };
         emit_job(&app, &ev);
-        let result = app.state::<Sidecar>().run(&todo, &cancel, |done, name| {
-            let mut e = ev.clone();
-            e.files_done = done;
-            e.bytes_done = done as u64;
-            e.current = name.to_string();
-            emit_job(&app, &e);
+        let result = crate::sidecar::ensure_installed(&app).and_then(|()| {
+            app.state::<Sidecar>().run(&todo, &cancel, |done, name| {
+                let mut e = ev.clone();
+                e.files_done = done;
+                e.bytes_done = done as u64;
+                e.current = name.to_string();
+                emit_job(&app, &e);
+            })
         });
         ev.files_done = total;
         ev.bytes_done = total as u64;
@@ -416,8 +600,14 @@ pub fn library_ai_analyze(
 }
 
 /// Selected playlists with the folders above them and everything inside
-/// selected folders, plus their tracks.
-fn sync_request(app: &AppHandle, stick: &str, playlist_ids: &[i64]) -> CmdResult<SyncRequest> {
+/// selected folders, plus their tracks. `flat`: no folders on the stick,
+/// every playlist at the top in the order the tree shows them.
+fn sync_request(
+    app: &AppHandle,
+    stick: &str,
+    playlist_ids: &[i64],
+    flat: bool,
+) -> CmdResult<SyncRequest> {
     let (all, tracks) = lib(app, |l| Ok((l.playlists()?, l.tracks()?)))?;
     let by_id: HashMap<i64, &Playlist> = all.iter().map(|p| (p.id, p)).collect();
     let mut chosen: HashSet<i64> = HashSet::new();
@@ -470,27 +660,69 @@ fn sync_request(app: &AppHandle, stick: &str, playlist_ids: &[i64]) -> CmdResult
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let mut playlists: Vec<SyncPlaylist> = lists
+        .iter()
+        .map(|p| SyncPlaylist {
+            key: p.id,
+            parent: if chosen.contains(&p.parent_id) {
+                p.parent_id
+            } else {
+                0
+            },
+            name: p.name.clone(),
+            is_folder: p.is_folder,
+            sort: p.sort_order,
+            tracks: p.track_ids.clone(),
+        })
+        .collect();
+    if flat {
+        playlists = flatten(playlists);
+    }
     Ok(SyncRequest {
         stick: PathBuf::from(stick),
         tracks: sync_tracks,
-        playlists: lists
-            .iter()
-            .map(|p| SyncPlaylist {
-                key: p.id,
-                parent: if chosen.contains(&p.parent_id) {
-                    p.parent_id
-                } else {
-                    0
-                },
-                name: p.name.clone(),
-                is_folder: p.is_folder,
-                sort: p.sort_order,
-                tracks: p.track_ids.clone(),
-            })
-            .collect(),
+        playlists,
         device_name: name,
         date: timestamp()[..10].to_string(),
+        settings: None,
+        engine: None,
     })
+}
+
+/// Folders dissolved: their playlists move to the top, in tree order. A
+/// name that would repeat gets its folder's name in brackets.
+fn flatten(lists: Vec<SyncPlaylist>) -> Vec<SyncPlaylist> {
+    fn walk<'a>(all: &'a [SyncPlaylist], parent: i64, folder: &str, out: &mut Vec<(&'a SyncPlaylist, String)>) {
+        let mut kids: Vec<&SyncPlaylist> = all.iter().filter(|p| p.parent == parent).collect();
+        kids.sort_by_key(|p| (p.sort, p.key));
+        for p in kids {
+            if p.is_folder {
+                walk(all, p.key, &p.name, out);
+            } else {
+                out.push((p, folder.to_string()));
+            }
+        }
+    }
+    let mut order = Vec::new();
+    walk(&lists, 0, "", &mut order);
+    let mut count: HashMap<&str, usize> = HashMap::new();
+    for (p, _) in &order {
+        *count.entry(p.name.as_str()).or_default() += 1;
+    }
+    order
+        .iter()
+        .enumerate()
+        .map(|(i, (p, folder))| SyncPlaylist {
+            parent: 0,
+            sort: i as i64,
+            name: if count[p.name.as_str()] > 1 && !folder.is_empty() {
+                format!("{} ({folder})", p.name)
+            } else {
+                p.name.clone()
+            },
+            ..(*p).clone()
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -531,7 +763,7 @@ pub async fn sync_plan(
     playlist_ids: Vec<i64>,
 ) -> CmdResult<SyncPlanDto> {
     blocking(move || {
-        let req = sync_request(&app, &stick, &playlist_ids)?;
+        let req = sync_request(&app, &stick, &playlist_ids, false)?;
         let p = sync::plan(&req);
         Ok(SyncPlanDto {
             tracks: p.tracks.len(),
@@ -547,10 +779,14 @@ pub async fn sync_plan(
     .await
 }
 
-const PHASES: [(&str, &str); 4] = [
+const PHASES: [(&str, &str); 8] = [
+    ("analyze", "Analýza skladeb"),
+    ("backup", "Záloha databáze"),
     ("copy", "Kopírování skladeb"),
     ("analysis", "Analýzy a cue"),
     ("database", "Databáze"),
+    ("settings", "Nastavení přehrávače"),
+    ("engine", "Denon knihovna"),
     ("verify", "Kontrola"),
 ];
 
@@ -560,8 +796,38 @@ pub fn sync_start(
     jobs: State<'_, Jobs>,
     stick: String,
     playlist_ids: Vec<i64>,
+    write_settings: bool,
+    engine: Option<String>,
+    flat: bool,
 ) -> CmdResult<u32> {
-    let req = sync_request(&app, &stick, &playlist_ids)?;
+    let settings = if write_settings {
+        Some(crate::player_cmds::profile(&app)?.0)
+    } else {
+        None
+    };
+    let engine = match &engine {
+        Some(e) => Some(engine_library::Schema::parse(e).ok_or("Neznámá verze Engine knihovny.")?),
+        None => None,
+    };
+    let request = {
+        let app = app.clone();
+        let stick = stick.clone();
+        let playlist_ids = playlist_ids.clone();
+        move || -> CmdResult<SyncRequest> {
+            let mut req = sync_request(&app, &stick, &playlist_ids, flat)?;
+            req.settings = settings.clone();
+            req.engine = engine;
+            Ok(req)
+        }
+    };
+    let mut req = request()?;
+    // Tracks without analysis are analysed first, so the players get their
+    // waveforms and grids.
+    let unanalysed = needs_analysis(
+        &app,
+        req.tracks.iter().filter(|t| t.anlz_dat.as_ref().is_none_or(|p| !p.is_file())).map(|t| t.key),
+        false,
+    )?;
     lib(&app, |l| {
         l.set_meta(
             &selection_key(&stick),
@@ -570,8 +836,53 @@ pub fn sync_start(
     })?;
     let (id, cancel) = jobs.start();
     std::thread::spawn(move || {
-        let plan = sync::plan(&req);
         let name = req.device_name.clone();
+        // Share of the whole bar for the analysis: ~3.5 s a track against
+        // copying at ~25 MB/s.
+        let n = unanalysed.len();
+        let copy_secs = sync::plan(&req).copy_bytes as f64 / 25e6 + 15.0;
+        let w = if n == 0 { 0.0 } else { n as f64 * 3.5 / (n as f64 * 3.5 + copy_secs) };
+        let mut analysed = String::new();
+        if n > 0 {
+            let ev = dto::JobEvent {
+                id,
+                label: format!("Sync {name}"),
+                state: "running",
+                files_total: n,
+                bytes_total: n as u64,
+                dest: req.stick.display().to_string(),
+                phase: "analyze".into(),
+                fraction: Some(0.0),
+                current: PHASES[0].1.into(),
+                ..Default::default()
+            };
+            emit_job(&app, &ev);
+            let (_, errors, _) = analyze_all(&app, &unanalysed, &cancel, |k, track| {
+                let mut e = ev.clone();
+                e.files_done = k;
+                e.bytes_done = k as u64;
+                e.fraction = Some(w * k as f64 / n as f64);
+                e.current = format!("{}: {track}", PHASES[0].1);
+                emit_job(&app, &e);
+            });
+            // The library now points at the new analysis files.
+            match request() {
+                Ok(r) => req = r,
+                Err(e) => {
+                    let mut e2 = ev.clone();
+                    e2.state = "error";
+                    e2.message = e;
+                    emit_job(&app, &e2);
+                    app.state::<Jobs>().finish(id);
+                    return;
+                }
+            }
+            analysed = format!(" Před zápisem zanalyzováno {} skladeb.", n - errors.len());
+            if !errors.is_empty() {
+                analysed += &format!(" Bez analýzy zůstalo {}: {}.", errors.len(), errors.join("; "));
+            }
+        }
+        let plan = sync::plan(&req);
         let mut ev = dto::JobEvent {
             id,
             label: format!("Sync {name}"),
@@ -583,6 +894,8 @@ pub fn sync_start(
             current: String::new(),
             message: String::new(),
             dest: req.stick.display().to_string(),
+            phase: "backup".into(),
+            fraction: Some(w),
         };
         emit_job(&app, &ev);
         let home = std::env::var("HOME").unwrap_or_default();
@@ -596,6 +909,8 @@ pub fn sync_start(
             e.files_total = p.total;
             e.bytes_done = p.bytes_done;
             e.bytes_total = p.bytes_total.max(1);
+            e.phase = p.phase.to_string();
+            e.fraction = Some(w + (1.0 - w) * p.fraction);
             let phase = PHASES
                 .iter()
                 .find(|x| x.0 == p.phase)
@@ -615,17 +930,41 @@ pub fn sync_start(
                     "Synchronizace zastavena. Flashka má dál svou předchozí knihovnu.".into();
             }
             Ok(r) => {
-                ev.state = if r.warnings.is_empty() {
-                    "done"
-                } else {
-                    "error"
-                };
+                // Written: what could not go along is told, not a failure.
+                ev.state = "done";
                 ev.files_done = ev.files_total;
                 ev.bytes_done = ev.bytes_total;
+                ev.fraction = Some(1.0);
                 let mut msg = format!(
                     "Na flashce je {} skladeb v {} playlistech. Zkopírováno {}, použito z flashky {}.",
                     r.tracks, r.playlists, r.copied, r.reused
                 );
+                if !r.skipped.is_empty() {
+                    msg += &format!(
+                        " Vynecháno {} skladeb, jejich soubor nejde přečíst (poškozený nebo nedostupný): {}.",
+                        r.skipped.len(),
+                        r.skipped.join("; ")
+                    );
+                }
+                msg += &analysed;
+                if r.settings_written {
+                    msg += " Nastavení přehrávače je na flashce.";
+                }
+                if let Some(e) = &r.engine {
+                    let schema = e.schema.unwrap_or(engine_library::Schema::DEFAULT);
+                    msg += &format!(
+                        " Denon (Engine OS {} a novější): {} skladeb, {} playlistů nad stejnými soubory.",
+                        schema.min_firmware(),
+                        e.tracks,
+                        e.playlists
+                    );
+                    if e.dropped_cues > 0 {
+                        msg += &format!(
+                            " {} cue se na Denon nevešlo (8 padů a 8 smyček na skladbu).",
+                            e.dropped_cues
+                        );
+                    }
+                }
                 if !r.moved_aside.is_empty() {
                     msg += &format!(" Odsunuto stranou: {}.", r.moved_aside.join(", "));
                 }
@@ -1006,4 +1345,80 @@ pub fn restore_set_cues(app: AppHandle, set_id: i64) -> CmdResult<usize> {
         }
         Ok(n)
     })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineStatus {
+    /// `3.0.2`, when the stick has a Denon library.
+    pub version: Option<String>,
+    /// The oldest Engine OS that reads it; `None` for an unknown schema.
+    pub min_firmware: Option<String>,
+    pub tracks: usize,
+}
+
+/// The Denon library a stick carries, if any.
+#[tauri::command]
+pub async fn engine_status(stick: String) -> CmdResult<EngineStatus> {
+    blocking(move || {
+        let db = Path::new(&stick)
+            .join(usb_tools::engine::DB_DIR)
+            .join("m.db");
+        if !db.is_file() {
+            return Ok(EngineStatus {
+                version: None,
+                min_firmware: None,
+                tracks: 0,
+            });
+        }
+        let ((a, b, c), _) = engine_library::info(&db).map_err(err)?;
+        let tracks = engine_library::read(&db)
+            .map(|l| l.tracks.len())
+            .unwrap_or(0);
+        Ok(EngineStatus {
+            version: Some(format!("{a}.{b}.{c}")),
+            min_firmware: engine_library::Schema::from_version((a, b, c))
+                .map(|s| s.min_firmware().to_string()),
+            tracks,
+        })
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pl(key: i64, parent: i64, name: &str, folder: bool, sort: i64) -> SyncPlaylist {
+        SyncPlaylist {
+            key,
+            parent,
+            name: name.into(),
+            is_folder: folder,
+            sort,
+            tracks: vec![key],
+        }
+    }
+
+    #[test]
+    fn flatten_keeps_tree_order_and_names_repeats() {
+        let out = flatten(vec![
+            pl(1, 0, "16.2.2026", false, 2),
+            pl(2, 0, "Imported Playlists", true, 0),
+            pl(3, 2, "16.2.2026", false, 1),
+            pl(4, 2, "SET 23.1.2026", false, 0),
+            pl(5, 0, "CHATA", false, 1),
+        ]);
+        let names: Vec<_> = out.iter().map(|p| (p.name.as_str(), p.parent, p.sort)).collect();
+        assert_eq!(
+            names,
+            vec![
+                ("SET 23.1.2026", 0, 0),
+                ("16.2.2026 (Imported Playlists)", 0, 1),
+                ("CHATA", 0, 2),
+                ("16.2.2026", 0, 3),
+            ]
+        );
+        assert!(out.iter().all(|p| !p.is_folder && p.tracks == vec![p.key]));
+    }
 }

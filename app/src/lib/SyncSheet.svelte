@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { CircleCheck, Eject, Folder, ListMusic, Usb } from "@lucide/svelte";
-  import { api, libApi, type Playlist, type SyncPlan } from "./api";
-  import { fsName, gb, plural, size } from "./format";
+  import { Check, CircleCheck, Eject, Folder, ListMusic, LoaderCircle, Usb } from "@lucide/svelte";
+  import { api, libApi, type EngineStatus, type Playlist, type SyncPlan } from "./api";
+  import { fsName, gb, plural, size, time } from "./format";
   import { app } from "./state.svelte";
 
   let stick = $state<string | null>(app.sticks[0]?.path ?? null);
@@ -10,6 +10,37 @@
   let planning = $state(false);
   let jobId = $state<number | null>(null);
   let failed = $state<string | null>(null);
+  let writeSettings = $state(localStorage.getItem("syncSettings") !== "off");
+  $effect(() => localStorage.setItem("syncSettings", writeSettings ? "on" : "off"));
+  /** All playlists at the top of the stick, no folders to click through on the player. */
+  let flat = $state(localStorage.getItem("syncFlat") !== "off");
+  $effect(() => localStorage.setItem("syncFlat", flat ? "on" : "off"));
+
+  // Hybrid stick: a Denon (Engine DJ) library over the same audio files.
+  const ENGINE: { schema: string; label: string; note: string }[] = [
+    { schema: "2.21.0", label: "Engine OS 3.1+", note: "i nejstarší Denony" },
+    { schema: "3.0.1", label: "Engine OS 4.3+", note: "doporučeno" },
+    { schema: "3.0.2", label: "Engine OS 5+", note: "jen nejnovější" },
+  ];
+  const engineKey = (s: string) => `syncEngine:${s.split("/").pop()}`;
+  let engine = $state<string | null>(null);
+  let engineStatus = $state<EngineStatus | null>(null);
+  $effect(() => {
+    const s = stick;
+    if (!s) return;
+    engine = localStorage.getItem(engineKey(s)) || null;
+    engineStatus = null;
+    libApi.engineStatus(s).then((st) => (engineStatus = st), () => {});
+  });
+  function setEngine(v: string | null) {
+    engine = v;
+    if (stick) v ? localStorage.setItem(engineKey(stick), v) : localStorage.removeItem(engineKey(stick));
+  }
+  const newer = (a: string, b: string) => {
+    const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+    for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+    return false;
+  };
 
   const lists = $derived(app.library?.playlists ?? []);
   const job = $derived(jobId != null ? app.jobs.find((j) => j.id === jobId) : undefined);
@@ -79,7 +110,8 @@
     if (!stick) return;
     failed = null;
     try {
-      jobId = await libApi.syncStart(stick, [...picked]);
+      started = performance.now();
+      jobId = await libApi.syncStart(stick, [...picked], writeSettings, engine, flat);
     } catch (e) {
       failed = String(e);
     }
@@ -96,10 +128,50 @@
     }
   }
 
+  // Progress: the steps, how far the whole sync is, copy speed and time left.
+  const STEPS: [string, string][] = [
+    ["analyze", "Analýza"],
+    ["backup", "Záloha"],
+    ["copy", "Kopírování"],
+    ["analysis", "Analýzy a cue"],
+    ["database", "Databáze"],
+    ["settings", "Nastavení"],
+    ["engine", "Denon"],
+    ["verify", "Kontrola"],
+  ];
+  const steps = $derived(
+    STEPS.filter(
+      ([k]) =>
+        (k !== "settings" || writeSettings) && (k !== "engine" || engine) && (k !== "analyze" || (plan?.noAnalysis.length ?? 0) > 0),
+    ),
+  );
+  let started = 0;
+  let now = $state(performance.now());
+  let copyFrom: { t: number; bytes: number } | null = null;
+  let speed = $state(0);
+  $effect(() => {
+    if (job?.state !== "running") return;
+    const t = setInterval(() => (now = performance.now()), 500);
+    return () => clearInterval(t);
+  });
+  $effect(() => {
+    if (!job || job.phase !== "copy") return;
+    const t = performance.now();
+    if (!copyFrom) copyFrom = { t, bytes: job.bytesDone };
+    else if (t - copyFrom.t > 1000) speed = ((job.bytesDone - copyFrom.bytes) / (t - copyFrom.t)) * 1000;
+  });
+  const stepIndex = $derived(job ? steps.findIndex(([k]) => k === job.phase) : -1);
+  const fraction = $derived(job?.fraction ?? 0);
+  const elapsed = $derived(Math.max(0, (now - started) / 1000));
+  const remaining = $derived(fraction > 0.03 && elapsed > 3 ? (elapsed * (1 - fraction)) / fraction : null);
+
   const fits = $derived(!plan || plan.freeBytes === 0 || plan.copyBytes + 64e6 < plan.freeBytes);
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && job?.state !== "running" && (app.syncOpen = false)} />
+<svelte:window
+  onkeydown={(e) =>
+    e.key === "Escape" && job?.state !== "running" && app.settingsFor === undefined && (app.syncOpen = false)}
+/>
 
 <div class="dim"></div>
 <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sync-title">
@@ -143,7 +215,7 @@
           <div><span class="readout big">{plan.copyFiles}</span> zkopírovat ({size(plan.copyBytes)}), <span class="readout">{plan.reuseFiles}</span> už na flashce je</div>
           {#if !fits}<div class="err">Na flashce je málo místa ({size(plan.freeBytes)} volných).</div>{/if}
           {#if plan.missingAudio.length}<div class="warn">{plan.missingAudio.length} skladeb nemá soubor na Macu, vynechají se.</div>{/if}
-          {#if plan.noAnalysis.length}<div class="warn">{plan.noAnalysis.length} skladeb nemá analýzu: pojedou, ale bez waveformu a beatgridu.</div>{/if}
+          {#if plan.noAnalysis.length}<div class="warn">{plan.noAnalysis.length} skladeb nemá analýzu: před zápisem je zanalyzuju (waveform, beatgrid, tónina).</div>{/if}
         </div>
       {:else if planning}
         <p class="sub">Počítám, co je potřeba zkopírovat…</p>
@@ -156,6 +228,43 @@
         {#if stickInfo?.filesystem === "exfat"}Flashka je exFAT: CDJ-2000NXS2 a starší ji nepřečtou.{/if}
         OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) zatím nezapisujeme.
       </p>
+      <div class="engine">
+        <label class="opt">
+          <input type="checkbox" checked={!!engine} onchange={(e) => setEngine(e.currentTarget.checked ? "3.0.1" : null)} />
+          <span>Hybridní flashka: i pro Denon (Engine DJ), hudba na flashce jen jednou</span>
+        </label>
+        {#if engine}
+          <div class="eng-seg" role="radiogroup" aria-label="Nejstarší Denon">
+            {#each ENGINE as o (o.schema)}
+              <button role="radio" aria-checked={engine === o.schema} class:on={engine === o.schema} onclick={() => setEngine(o.schema)}>
+                <span class="t">{o.label}</span><span class="n">{o.note}</span>
+              </button>
+            {/each}
+          </div>
+          <p class="note">
+            Vyber nejstarší firmware Denonu, na kterém budeš hrát; novější ho přečtou taky. Denon si knihovnu při prvním
+            použití převede na svou verzi a starší přehrávač ji pak nepřečte, další synchronizace ji ale vrátí zpátky.
+            {#if engineStatus?.version}
+              Na flashce už je Denon knihovna {engineStatus.version} ({engineStatus.tracks} skladeb): nahradí se, stará půjde do zálohy.
+              {#if newer(engineStatus.version, engine)}Převedl ji novější Engine OS, zapíšu zpátky {engine}.{/if}
+            {/if}
+          </p>
+        {/if}
+      </div>
+      <label class="opt">
+        <input type="checkbox" bind:checked={flat} />
+        <span>
+          Všechny playlisty rovnou nahoru, bez složek
+          <span class="sub">Na přehrávači se nemusíš proklikávat složkami. Stejné názvy dostanou do závorky jméno složky.</span>
+        </span>
+      </label>
+      <label class="opt">
+        <input type="checkbox" bind:checked={writeSettings} />
+        <span>
+          Zapsat i moje nastavení přehrávače (My Settings)
+          <button class="link" onclick={(e) => (e.preventDefault(), (app.settingsFor = null))}>upravit</button>
+        </span>
+      </label>
       {#if failed}<p class="err">{failed}</p>{/if}
     </div>
     <div class="foot">
@@ -166,12 +275,33 @@
     </div>
   {:else if job.state === "running"}
     <div class="body">
-      <h2>Synchronizuji {stickInfo?.name ?? ""}</h2>
-      <p class="sub">{job.current}</p>
-      <div class="bigbar"><div style:width="{(job.bytesDone / Math.max(1, job.bytesTotal)) * 100}%"></div></div>
+      <div class="head">
+        <h2>Synchronizuji {stickInfo?.name ?? ""}</h2>
+        <span class="readout pct">{Math.floor(fraction * 100)} %</span>
+      </div>
+      <ol class="steps">
+        {#each steps as [key, label], i (key)}
+          <li class:past={i < stepIndex} class:now={i === stepIndex}>
+            {#if i < stepIndex}<Check size={12} />{:else if i === stepIndex}<LoaderCircle size={12} class="spin" />{:else}<span class="pip"></span>{/if}
+            {label}
+          </li>
+        {/each}
+      </ol>
+      <div class="bigbar"><div style:width="{fraction * 100}%"></div></div>
+      <p class="sub cur">{job.current}</p>
       <div class="stats">
-        <span><span class="readout">{job.filesDone} / {job.filesTotal}</span></span>
-        {#if job.bytesTotal > 1}<span><span class="readout">{size(job.bytesDone)} / {size(job.bytesTotal)}</span></span>{/if}
+        {#if job.phase === "copy"}
+          <span>Skladba <span class="readout">{Math.min(job.filesDone + 1, job.filesTotal)} / {job.filesTotal}</span></span>
+          <span><span class="readout">{size(job.bytesDone)} / {size(job.bytesTotal)}</span></span>
+          {#if speed > 0}<span><span class="readout">{(speed / 1e6).toFixed(1)}</span> MB/s</span>{/if}
+        {:else if job.phase === "analysis" || job.phase === "analyze"}
+          <span>Skladba <span class="readout">{job.filesDone} / {job.filesTotal}</span></span>
+        {:else}
+          <span></span>
+        {/if}
+        <span>
+          {#if remaining != null}zbývá <span class="readout">~{time(remaining)}</span>{:else}<span class="readout">{time(elapsed)}</span>{/if}
+        </span>
       </div>
       <p class="sub">Flashku nevytahuj. Kdyby se to stalo, zůstane na ní předchozí knihovna.</p>
     </div>
@@ -359,12 +489,130 @@
     padding: 12px 20px;
     border-top: 1px solid var(--line);
   }
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .pct {
+    font-size: 22px;
+    color: var(--cue);
+  }
+  .steps {
+    display: flex;
+    gap: 14px;
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .steps li {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .steps li.past {
+    color: var(--text-2);
+  }
+  .steps li.past :global(svg) {
+    color: var(--play);
+  }
+  .steps li.now {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .steps li.now :global(svg) {
+    color: var(--cue);
+  }
+  .pip {
+    width: 6px;
+    height: 6px;
+    margin: 0 3px;
+    border-radius: 50%;
+    border: 1px solid var(--text-3);
+  }
+  .cur {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 8px;
+  }
+  .opt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    font-size: 12px;
+  }
+  .opt .sub {
+    display: block;
+    margin: 2px 0 0;
+  }
+  .engine {
+    margin-top: 12px;
+    padding-top: 2px;
+  }
+  .engine .opt {
+    margin-top: 0;
+  }
+  .eng-seg {
+    display: flex;
+    margin: 8px 0 0 25px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--booth);
+  }
+  .eng-seg button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 5px 4px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    background: none;
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .eng-seg button:last-child {
+    border-right: 0;
+  }
+  .eng-seg button.on {
+    background: var(--panel-2);
+    color: var(--cue);
+    font-weight: 600;
+  }
+  .eng-seg .n {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-3);
+  }
+  .engine .note {
+    margin: 8px 0 0 25px;
+  }
+  .opt input {
+    accent-color: var(--cue);
+    width: 15px;
+    height: 15px;
+    margin: 0;
+  }
+  .link {
+    border: 0;
+    background: none;
+    color: var(--cue);
+    padding: 0 0 0 4px;
+    font: inherit;
+    text-decoration: underline;
+  }
   .bigbar {
     height: 8px;
     border-radius: 4px;
     background: var(--line);
     overflow: hidden;
-    margin: 22px 0 10px;
+    margin: 14px 0 10px;
   }
   .bigbar div {
     height: 100%;

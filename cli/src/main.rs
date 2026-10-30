@@ -65,6 +65,9 @@ enum Cmd {
         /// Playlist names to put on the stick (repeatable).
         #[arg(short, long = "playlist")]
         playlists: Vec<String>,
+        /// Also write a Denon / Engine DJ library: 2.21.0, 3.0.1 or 3.0.2.
+        #[arg(long)]
+        engine: Option<String>,
     },
     /// Plan a set from a library playlist (Set Planner, without AI cues).
     Plan {
@@ -107,6 +110,25 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// USB disks and memory cards, and whether they may be formatted.
+    Disks,
+    /// Show a Denon / Engine DJ library (stick root or m.db).
+    Engine { path: PathBuf },
+    /// Show the player settings ("My Settings") of a stick or a folder.
+    Settings { dir: PathBuf },
+    /// Erase a stick (FAT32 or exFAT, MBR) and prepare it for the players.
+    Format {
+        /// Whole disk, e.g. `disk6` (see `rbx disks`).
+        disk: String,
+        /// `fat32` or `exfat`.
+        #[arg(long, default_value = "fat32")]
+        fs: String,
+        #[arg(long)]
+        name: String,
+        /// The stick's current name, to confirm.
+        #[arg(long)]
+        confirm: String,
+    },
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -139,6 +161,14 @@ enum Dupes {
 fn main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::Usb { path } => usb(&path),
+        Cmd::Disks => disks(),
+        Cmd::Settings { dir } => settings(&dir),
+        Cmd::Format {
+            disk,
+            fs,
+            name,
+            confirm,
+        } => format_disk(&disk, &fs, &name, &confirm),
         Cmd::Pdb { file } => pdb(&file),
         Cmd::Anlz { file } => anlz(&file),
         Cmd::Verify { usb, player } => verify_cmd(&usb, &player),
@@ -153,7 +183,9 @@ fn main() -> Result<()> {
             db,
             stick,
             playlists,
-        } => sync_cmd(&db, &stick, &playlists),
+            engine,
+        } => sync_cmd(&db, &stick, &playlists, engine.as_deref()),
+        Cmd::Engine { path } => engine_cmd(&path),
         Cmd::LibraryImport { db, dump } => {
             let started = std::time::Instant::now();
             let mut lib = library::Library::open(&db)?;
@@ -781,7 +813,7 @@ fn smart_cue_cmd(
     Ok(())
 }
 
-fn sync_cmd(db: &Path, stick: &Path, names: &[String]) -> Result<()> {
+fn sync_cmd(db: &Path, stick: &Path, names: &[String], engine: Option<&str>) -> Result<()> {
     use usb_tools::sync::{SyncPlaylist, SyncRequest, SyncTrack, execute, plan};
     let lib = library::Library::open(db)?;
     let lists = lib.playlists()?;
@@ -840,6 +872,10 @@ fn sync_cmd(db: &Path, stick: &Path, names: &[String]) -> Result<()> {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default(),
         date: "2026-10-14".into(),
+        settings: None,
+        engine: engine
+            .map(|e| engine_library::Schema::parse(e).context("--engine is 2.21.0, 3.0.1 or 3.0.2"))
+            .transpose()?,
     };
     let p = plan(&req);
     println!(
@@ -991,6 +1027,133 @@ fn plan_cmd(db: &Path, name: &str, minutes: f64, level: &str, curve: &str) -> Re
                     .collect::<Vec<_>>()
             );
         }
+    }
+    Ok(())
+}
+
+fn disks() -> Result<()> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let protected = [PathBuf::from(home)];
+    for d in usb_tools::format::list(&protected)? {
+        let vols: Vec<String> = d
+            .volumes
+            .iter()
+            .map(|v| format!("{} ({})", v.name, v.content))
+            .collect();
+        println!(
+            "{:<8} {:>7.1} GB  {:<4} {:<10} {:<28} {}  {}",
+            d.id,
+            d.size as f64 / 1e9,
+            d.bus,
+            if d.removable { "removable" } else { "fixed" },
+            d.media,
+            vols.join(", "),
+            d.blocked
+                .as_deref()
+                .map_or("OK".to_string(), |b| format!("BLOCKED: {b}")),
+        );
+    }
+    Ok(())
+}
+
+fn settings(dir: &Path) -> Result<()> {
+    use pioneer_formats::setting::{FIELDS, MySettings};
+    let dir = if dir.join("PIONEER").is_dir() {
+        dir.join("PIONEER")
+    } else {
+        dir.to_path_buf()
+    };
+    let (s, found) = MySettings::read_dir(&dir);
+    for (f, p) in &found {
+        println!("{:<17} {} {}", f.file_name(), p.software, p.version);
+    }
+    for f in FIELDS {
+        let v = s.get(f.key).unwrap_or(0);
+        let label = f
+            .options
+            .iter()
+            .find(|(x, _)| *x == v)
+            .map_or("?", |(_, l)| l);
+        println!("  {:<28} {}", f.label, label);
+    }
+    Ok(())
+}
+
+fn format_disk(disk: &str, fs: &str, name: &str, confirm: &str) -> Result<()> {
+    use usb_tools::format::{self, Filesystem};
+    let fs = Filesystem::parse(fs).context("--fs is fat32 or exfat")?;
+    let name = format::volume_name(name, fs)?;
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mount = format::format(disk, fs, &name, confirm, &[PathBuf::from(home)], |l| {
+        println!("  {l}")
+    })?;
+    format::prepare(&mount, &name, "2026-10-14")?;
+    println!("ready: {}", mount.display());
+    Ok(())
+}
+
+fn engine_cmd(path: &Path) -> Result<()> {
+    let db = if path.is_dir() {
+        path.join(usb_tools::engine::DB_DIR).join("m.db")
+    } else {
+        path.to_path_buf()
+    };
+    let lib = engine_library::read(&db)?;
+    let (a, b, c) = lib.version;
+    println!(
+        "schema {a}.{b}.{c} ({}), uuid {}, {} tracks, {} playlists",
+        lib.schema
+            .map_or("unknown to this tool".to_string(), |s| format!(
+                "Engine OS {}+",
+                s.min_firmware()
+            )),
+        lib.uuid,
+        lib.tracks.len(),
+        lib.playlists.len()
+    );
+    fn tree(lib: &engine_library::ReadLibrary, parent: i64, depth: usize) {
+        for p in lib.children(parent) {
+            println!("{}{} ({})", "  ".repeat(depth + 1), p.title, p.tracks.len());
+            tree(lib, p.id, depth + 1);
+        }
+    }
+    tree(&lib, 0, 0);
+    for t in lib.tracks.iter().take(10) {
+        let sr = t.track_data.sample_rate.max(1.0);
+        let cues: Vec<String> = t
+            .cues
+            .cues
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.is_set())
+            .map(|(i, c)| {
+                format!(
+                    "{}:{:.1}s {}",
+                    (b'A' + i as u8) as char,
+                    c.sample_offset / sr,
+                    c.label
+                )
+            })
+            .collect();
+        let grid = &t.beats.default_grid;
+        let bpm = match (grid.first(), grid.last()) {
+            (Some(f), Some(l)) if l.beat_index > f.beat_index => {
+                sr * 60.0 * (l.beat_index - f.beat_index) as f64
+                    / (l.sample_offset - f.sample_offset)
+            }
+            _ => 0.0,
+        };
+        println!(
+            "  {} – {} | key {:?} | grid {} markers {:.2} BPM | overview {} | {}",
+            t.artist,
+            t.title,
+            t.key,
+            grid.len(),
+            bpm,
+            t.overview.as_ref().map_or(0, |o| o.points.len()),
+            cues.join(", ")
+        );
+        println!("    {}", t.path);
     }
     Ok(())
 }

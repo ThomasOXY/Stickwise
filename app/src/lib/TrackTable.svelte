@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { ChevronRight, ListMusic, ListPlus, Search, Sparkles, Trash } from "@lucide/svelte";
-  import { keyColor, plural, rgb, time } from "./format";
+  import { ArrowDown, ArrowUp, ArrowUpDown, AudioWaveform, ChevronRight, ListMusic, ListPlus, Search, Sparkles, Trash } from "@lucide/svelte";
+  import type { Track } from "./api";
+  import { date, keyColor, keyOrder, plural, rgb, time } from "./format";
   import { app } from "./state.svelte";
 
   const ROW = 28;
@@ -21,11 +22,63 @@
   const sets = $derived((app.data?.playlists ?? []).filter((p) => p.isSet));
   const plainLists = $derived((app.data?.playlists ?? []).filter((p) => !p.isSet && !p.isFolder));
 
-  const list = $derived(app.currentTracks);
+  type SortKey = "title" | "artist" | "bpm" | "key" | "time" | "format" | "added";
+  /** Column the table is sorted by; none = the playlist's own order. Kept between playlists. */
+  let sort = $state<{ key: SortKey; desc: boolean } | null>(JSON.parse(localStorage.getItem("track-sort") ?? "null"));
+  $effect(() => localStorage.setItem("track-sort", JSON.stringify(sort)));
+
+  const coll = new Intl.Collator("cs", { numeric: true, sensitivity: "base" });
+  /** Value to compare by; `null` (empty) always sorts last. */
+  const value: Record<SortKey, (t: Track) => string | number | null> = {
+    title: (t) => t.title || null,
+    artist: (t) => t.artist || null,
+    bpm: (t) => t.bpm || null,
+    key: (t) => (Number.isFinite(keyOrder(t.key)) ? keyOrder(t.key) : null),
+    time: (t) => t.duration || null,
+    format: (t) => app.formatOverride.get(t.id) ?? (t.format || null),
+    added: (t) => t.dateAdded || null,
+  };
+
+  /** Click: ascending, again descending, a third time back to the playlist order. */
+  function sortBy(key: SortKey) {
+    sort = sort?.key !== key ? { key, desc: false } : sort.desc ? null : { key, desc: true };
+  }
+
+  /** Row → position in the unsorted list (a track can be in a playlist twice). */
+  const order = $derived.by(() => {
+    const tracks = app.currentTracks;
+    const idx = tracks.map((_, i) => i);
+    if (!sort) return idx;
+    const { key, desc } = sort;
+    const vals = tracks.map(value[key]);
+    // Stable: equal values keep the playlist order.
+    return idx.sort((a, b) => {
+      const va = vals[a];
+      const vb = vals[b];
+      if (va === null || vb === null) return va === vb ? a - b : va === null ? 1 : -1;
+      const c = typeof va === "number" && typeof vb === "number" ? va - vb : coll.compare(String(va), String(vb));
+      return (desc ? -c : c) || a - b;
+    });
+  });
+  const list = $derived(order.map((i) => app.currentTracks[i]));
+
+  /** Make the sorted order the playlist's own. */
+  async function keepOrder() {
+    const p = app.currentPlaylist;
+    if (!p || app.trackFilter) return;
+    await app.setPlaylistTracks(p.id, list.map((t) => t.id));
+    sort = null;
+    app.notice = `Pořadí v „${p.name}“ uloženo.`;
+  }
   const aiTodo = $derived(app.currentTrackIds.filter((id) => !app.aiAnalyzed.has(id)).length);
   const total = $derived(list.reduce((s, t) => s + t.duration, 0));
+  const toAnalyze = $derived(app.isLibrary ? app.unanalyzed(app.currentTrackIds).length : 0);
+  const job = $derived(app.jobs.find((j) => j.id === app.analyzeJob));
   const bad = $derived(list.filter((t) => app.errorTracks.has(t.id)).length);
+  // Rows map to playlist positions only unfiltered; dragging rows into place only in its own order.
   const editable = $derived(app.isLibrary && app.selection?.kind === "playlist" && !app.trackFilter);
+  const reorderable = $derived(editable && !sort);
+  const canKeep = $derived(!!sort && app.isLibrary && !!app.currentPlaylist && !app.currentPlaylist.isFolder && !app.trackFilter);
 
   // Only the rows in view are rendered.
   const first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - 10));
@@ -115,7 +168,7 @@
 
   function removeSelected() {
     menu = null;
-    app.removeFromPlaylist([...selRows]);
+    app.removeFromPlaylist([...selRows].map((i) => order[i]));
     selRows = new Set();
   }
 
@@ -153,11 +206,11 @@
     const many = selRows.has(i) && selRows.size > 1;
     e.dataTransfer.effectAllowed = "copyMove";
     e.dataTransfer.setData("application/x-rbx-tracks", JSON.stringify(many ? selectedIds : [list[i].id]));
-    if (editable && !many) e.dataTransfer.setData("application/x-rbx-row", String(i));
+    if (reorderable && !many) e.dataTransfer.setData("application/x-rbx-row", String(i));
   }
 
   function dragOver(e: DragEvent, i: number) {
-    if (!editable || !e.dataTransfer?.types.includes("application/x-rbx-tracks")) return;
+    if (!reorderable || !e.dataTransfer?.types.includes("application/x-rbx-tracks")) return;
     e.preventDefault();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     dropAt = e.clientY > r.top + r.height / 2 ? i + 1 : i;
@@ -192,6 +245,17 @@
     {#if selRows.size > 1}
       <span class="picked"><span class="readout big">{selRows.size}</span> vybráno</span>
     {/if}
+    {#if app.isLibrary && toAnalyze > 0}
+      <button
+        class="btn small"
+        disabled={app.analyzeJob != null}
+        onclick={() => app.analyzeTracks(app.currentTrackIds)}
+        title="Waveform, beatgrid (Beat This!) a tónina pro skladby bez analýzy"
+      >
+        <AudioWaveform size={13} />
+        {#if app.analyzeJob != null && job}Analyzuju {job.filesDone}/{job.filesTotal}{:else}Analyzovat ({toAnalyze}){/if}
+      </button>
+    {/if}
     {#if app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
       <button class="btn small plan" onclick={() => (app.view = "planner")} disabled={list.length < 2} title="Seřadí skladby podle tóniny, tempa a energie a naplánuje přechody">
         <Sparkles size={13} /> Naplánovat set
@@ -220,21 +284,48 @@
         </div>
       {/if}
     </div>
+    {#if canKeep}
+      <button class="btn small" onclick={keepOrder} title="Uloží toto seřazení jako pořadí playlistu (půjde tak i na flashku)">
+        Uložit toto pořadí
+      </button>
+    {/if}
     <label class="search">
       <Search size={14} />
       <input type="search" placeholder={app.selection?.kind === "all" ? "Hledat v knihovně" : "Hledat v playlistu"} bind:value={app.trackFilter} />
     </label>
   </div>
 
+  {#snippet head(key: SortKey, label: string, cls: string)}
+    <button
+      class="sort {cls}"
+      class:on={sort?.key === key}
+      onclick={() => sortBy(key)}
+      title={sort?.key === key ? (sort.desc ? "Zpět na pořadí playlistu" : "Seřadit sestupně") : `Seřadit podle: ${label}`}
+    >
+      <span>{label}</span>
+      {#if sort?.key === key}
+        {#if sort.desc}<ArrowDown size={11} />{:else}<ArrowUp size={11} />{/if}
+      {/if}
+    </button>
+  {/snippet}
+
   <div class="cols">
-    <span class="c-no">#</span>
+    <button
+      class="sort c-no"
+      class:on={!sort}
+      onclick={() => (sort = null)}
+      title={app.selection?.kind === "playlist" ? "Pořadí playlistu" : "Výchozí pořadí"}
+    >
+      {#if sort}<ArrowUpDown size={11} />{:else}#{/if}
+    </button>
     <span class="c-st"></span>
-    <span class="c-title">Název</span>
-    <span class="c-artist">Interpret</span>
-    <span class="c-bpm r">BPM</span>
-    <span class="c-key">Tónina</span>
-    <span class="c-time r">Čas</span>
-    <span class="c-fmt">Formát</span>
+    {@render head("title", "Název", "c-title")}
+    {@render head("artist", "Interpret", "c-artist")}
+    {@render head("bpm", "BPM", "c-bpm r")}
+    {@render head("key", "Tónina", "c-key")}
+    {@render head("time", "Čas", "c-time r")}
+    {@render head("format", "Formát", "c-fmt")}
+    {@render head("added", "Přidáno", "c-date")}
     <span class="c-cue">Hot cue</span>
   </div>
 
@@ -286,6 +377,7 @@
           <span class="c-key"><i style:background={keyColor(t.key)}></i><span class="readout num">{t.key}</span></span>
           <span class="c-time r readout num">{time(t.duration)}</span>
           <span class="c-fmt" class:fault={sev === "error"} class:warn={sev === "warning"}>{fmt}</span>
+          <span class="c-date readout num">{date(t.dateAdded)}</span>
           <span class="c-cue">
             {#each Array(8) as _, s}
               {@const c = app.cues[t.id]?.[s]}
@@ -325,6 +417,12 @@
     <button role="menuitem" onmouseenter={() => menu && (menu.sub = null)} onclick={newSet}>
       <ListPlus size={13} /> Nový set z výběru
     </button>
+    {#if app.unanalyzed(selectedIds).length > 0}
+      {@const k = app.unanalyzed(selectedIds).length}
+      <button role="menuitem" onmouseenter={() => menu && (menu.sub = null)} onclick={() => ((menu = null), app.analyzeTracks(selectedIds))}>
+        <AudioWaveform size={13} /> Analyzovat ({k}) <span class="hint">waveform, grid, tónina</span>
+      </button>
+    {/if}
     {#if editable}
       <div class="sep"></div>
       <button role="menuitem" class="danger" onmouseenter={() => menu && (menu.sub = null)} onclick={removeSelected}>
@@ -418,6 +516,12 @@
     padding: 4px 10px 6px;
     font-size: 11px;
     color: var(--text-2);
+  }
+  .ctx .hint {
+    margin-left: auto;
+    padding-left: 10px;
+    font-size: 11px;
+    color: var(--text-3);
   }
   .ctx button {
     display: flex;
@@ -558,7 +662,7 @@
   .cols,
   .row {
     display: grid;
-    grid-template-columns: 24px 16px minmax(160px, 1fr) minmax(120px, 0.62fr) 52px 56px 40px 84px 110px;
+    grid-template-columns: 24px 16px minmax(160px, 1fr) minmax(120px, 0.62fr) 52px 56px 40px 84px 72px 110px;
     gap: 8px;
     align-items: center;
     padding: 0 16px;
@@ -569,6 +673,42 @@
     color: var(--text-2);
     border-top: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
+  }
+  .sort {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sort span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sort.r {
+    justify-content: flex-end;
+  }
+  .sort:hover {
+    color: var(--text);
+  }
+  .sort.on {
+    color: var(--cue);
+  }
+  .sort.c-no.on {
+    color: inherit;
+  }
+  .c-date {
+    font-size: 13px;
+    color: var(--text-2);
+    white-space: nowrap;
   }
   .rows {
     flex: 1;

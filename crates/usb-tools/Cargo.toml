@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 pioneer-formats.workspace = true
+engine-library.workspace = true
 thiserror.workspace = true
 unicode-normalization = "0.1"
 libc = "0.2"
@@ -15,3 +16,4 @@ serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+engine-library.workspace = true

@@ -3,14 +3,17 @@
   import Deck from "./lib/Deck.svelte";
   import EmptyState from "./lib/EmptyState.svelte";
   import ExportSheet from "./lib/ExportSheet.svelte";
+  import FormatSheet from "./lib/FormatSheet.svelte";
   import HealthReport from "./lib/HealthReport.svelte";
   import LibraryHeader from "./lib/LibraryHeader.svelte";
   import SetPlanner from "./lib/SetPlanner.svelte";
   import SyncSheet from "./lib/SyncSheet.svelte";
+  import PlayerSettingsSheet from "./lib/PlayerSettingsSheet.svelte";
   import PlaylistTree from "./lib/PlaylistTree.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import StickHeader from "./lib/StickHeader.svelte";
   import TrackDetail from "./lib/TrackDetail.svelte";
+  import ToolsLaunchpad from "./lib/ToolsLaunchpad.svelte";
   import TrackTable from "./lib/TrackTable.svelte";
   import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
@@ -22,8 +25,14 @@
   });
 
   function onKey(e: KeyboardEvent) {
+    // ⌘K or F4 (the Launchpad key) open the tools, anywhere.
+    if ((e.metaKey && e.key.toLowerCase() === "k") || e.key === "F4") {
+      e.preventDefault();
+      app.toolsOpen = !app.toolsOpen;
+      return;
+    }
     const typing = (e.target as HTMLElement)?.tagName === "INPUT";
-    if (typing || app.exportOpen || app.writeOpen || app.syncOpen) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -53,7 +62,6 @@
           {#if app.detailOpen}<TrackDetail />{/if}
         {/if}
       </div>
-      <Deck bind:this={deck} />
       {#if app.error}
         <button class="toast" onclick={() => (app.error = null)}>{app.error}</button>
       {:else if app.notice}
@@ -64,6 +72,8 @@
     {:else}
       <EmptyState />
     {/if}
+    <!-- Outside the source views: switching library / stick does not stop playback. -->
+    {#if app.data || app.deck}<Deck bind:this={deck} />{/if}
   </main>
 </div>
 
@@ -75,6 +85,15 @@
 {/if}
 {#if app.syncOpen}
   <SyncSheet />
+{/if}
+{#if app.settingsFor !== undefined}
+  <PlayerSettingsSheet stick={app.settingsFor} />
+{/if}
+{#if app.formatOpen}
+  <FormatSheet />
+{/if}
+{#if app.toolsOpen}
+  <ToolsLaunchpad />
 {/if}
 
 <style>

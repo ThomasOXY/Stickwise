@@ -10,7 +10,10 @@
 //! 4. stale `exportExt.pdb` / `exportLibrary.db` are moved aside;
 //! 5. **`export.pdb` is replaced last, atomically** — until that moment the
 //!    stick still holds its previous, complete library, so pulling it out
-//!    at any point leaves a working stick.
+//!    at any point leaves a working stick;
+//! 6. the DJ's player settings, if given, are written after it;
+//! 7. for a hybrid stick, the Denon library (`Engine Library`) is built over
+//!    the same audio files and swapped in the same way (see [`crate::engine`]).
 //!
 //! Files that are no longer part of the library stay on the stick; nothing
 //! of the DJ's is deleted.
@@ -25,6 +28,7 @@ use pioneer_formats::anlz::{AnlzFile, CuePoint, build_path, tag, write_cue_point
 use pioneer_formats::pdb::{
     self, Album, Artist, Database, Key, Named, PlaylistEntry, PlaylistNode, Track, WriteOptions,
 };
+use pioneer_formats::setting::MySettings;
 use serde::{Deserialize, Serialize};
 
 use crate::cue_write::replace_file;
@@ -79,6 +83,10 @@ pub struct SyncRequest {
     pub device_name: String,
     /// `YYYY-MM-DD`.
     pub date: String,
+    /// Player settings ("My Settings") to put on the stick as well.
+    pub settings: Option<MySettings>,
+    /// Also write a Denon / Engine DJ library in this schema.
+    pub engine: Option<engine_library::Schema>,
 }
 
 /// What a track needs on the stick.
@@ -306,8 +314,10 @@ pub fn plan(req: &SyncRequest) -> SyncPlan {
 
 #[derive(Debug, Clone, Default)]
 pub struct SyncProgress {
-    /// `copy`, `analysis`, `database`, `verify`.
+    /// `backup`, `copy`, `analysis`, `database`, `settings`, `engine`, `verify`.
     pub phase: &'static str,
+    /// The whole sync, 0 to 1.
+    pub fraction: f64,
     pub done: usize,
     pub total: usize,
     pub bytes_done: u64,
@@ -324,7 +334,11 @@ pub struct SyncReport {
     pub backup_dir: PathBuf,
     pub moved_aside: Vec<String>,
     pub warnings: Vec<String>,
+    /// Tracks left out because their file could not be copied.
+    pub skipped: Vec<String>,
     pub cancelled: bool,
+    pub settings_written: bool,
+    pub engine: Option<crate::engine::EngineReport>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -369,29 +383,33 @@ fn copy_file(
         .unwrap_or_default();
     let part = dst.with_file_name(format!(".{name}.rbx-part"));
     let mut input = File::open(src)?;
-    let mut out = File::create(&part)?;
-    let mut buf = vec![0u8; 1 << 20];
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            drop(out);
-            let _ = std::fs::remove_file(&part);
-            return Ok(false);
+    let result = (|| {
+        let mut out = File::create(&part)?;
+        let mut buf = vec![0u8; 1 << 20];
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                return Ok(false);
+            }
+            let n = input.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            out.write_all(&buf[..n])?;
+            progress(n as u64);
         }
-        let n = input.read(&mut buf)?;
-        if n == 0 {
-            break;
+        full_sync(&out);
+        drop(out);
+        if std::fs::metadata(&part)?.len() != std::fs::metadata(src)?.len() {
+            return Err(std::io::Error::other("copied size differs from the source"));
         }
-        out.write_all(&buf[..n])?;
-        progress(n as u64);
-    }
-    full_sync(&out);
-    drop(out);
-    if std::fs::metadata(&part)?.len() != std::fs::metadata(src)?.len() {
+        std::fs::rename(&part, dst)?;
+        Ok(true)
+    })();
+    // Cancelled or failed half way (a bad sector): no partial file stays.
+    if !matches!(result, Ok(true)) {
         let _ = std::fs::remove_file(&part);
-        return Err(std::io::Error::other("copied size differs from the source"));
     }
-    std::fs::rename(&part, dst)?;
-    Ok(true)
+    result
 }
 
 fn file_type(path: &str) -> u16 {
@@ -600,6 +618,46 @@ fn build_database(
     db
 }
 
+/// Rough share of the whole sync each phase takes, from the time it
+/// usually needs: copying runs at stick speed, the rest is per track.
+struct Weights {
+    starts: Vec<(&'static str, f64, f64)>,
+}
+
+impl Weights {
+    fn new(plan: &SyncPlan, settings: bool, engine: bool) -> Self {
+        let n = plan.tracks.len() as f64;
+        let phases = [
+            ("backup", 0.5),
+            ("copy", plan.copy_bytes as f64 / 20e6),
+            ("analysis", 0.02 * n),
+            ("database", 0.5 + 0.002 * n),
+            ("settings", if settings { 0.3 } else { 0.0 }),
+            ("engine", if engine { 0.5 + 0.01 * n } else { 0.0 }),
+            ("verify", 0.3 + 0.002 * n),
+        ];
+        let total: f64 = phases.iter().map(|p| p.1).sum::<f64>().max(f64::EPSILON);
+        let mut at = 0.0;
+        let starts = phases
+            .iter()
+            .map(|&(name, secs)| {
+                let start = at / total;
+                at += secs;
+                (name, start, secs / total)
+            })
+            .collect();
+        Self { starts }
+    }
+
+    /// `within`: how far the phase is, 0 to 1.
+    fn at(&self, phase: &str, within: f64) -> f64 {
+        self.starts
+            .iter()
+            .find(|p| p.0 == phase)
+            .map_or(0.0, |p| (p.1 + p.2 * within.clamp(0.0, 1.0)).min(1.0))
+    }
+}
+
 /// Carry out a plan. See the module docs for the order of operations.
 pub fn execute(
     req: &SyncRequest,
@@ -613,6 +671,7 @@ pub fn execute(
         backup_dir: backup_dir.to_path_buf(),
         ..Default::default()
     };
+    let w = Weights::new(plan, req.settings.is_some(), req.engine.is_some());
     if plan.copy_bytes + 64 * 1024 * 1024 > plan.free_bytes && plan.free_bytes > 0 {
         return Err(SyncError::NoSpace {
             need: plan.copy_bytes / 1_000_000 + 64,
@@ -621,6 +680,11 @@ pub fn execute(
     }
 
     // 1. Back up the stick's database files.
+    progress(&SyncProgress {
+        phase: "backup",
+        total: 1,
+        ..Default::default()
+    });
     std::fs::create_dir_all(backup_dir).map_err(io("záloha"))?;
     for f in [
         "PIONEER/rekordbox/export.pdb",
@@ -644,27 +708,53 @@ pub fn execute(
         bytes_total: plan.copy_bytes,
         ..Default::default()
     };
+    let copy_fraction = |done: u64| w.at("copy", done as f64 / plan.copy_bytes.max(1) as f64);
+    // A file that cannot be read (damaged, unplugged disk) is left out, as
+    // rekordbox does: the rest of the stick still gets written.
+    let mut skipped: HashSet<i64> = HashSet::new();
     for pt in plan.tracks.iter().filter(|t| t.copy) {
         let t = by_key[&pt.key];
         p.current = format!("{} – {}", t.artist, t.title);
+        p.fraction = copy_fraction(p.bytes_done);
         progress(&p);
         let mut last = std::time::Instant::now();
-        let ok = copy_file(&t.audio, &resolve(stick, &pt.device_path), cancel, |n| {
+        let mut copied = 0u64;
+        let result = copy_file(&t.audio, &resolve(stick, &pt.device_path), cancel, |n| {
+            copied += n;
             p.bytes_done += n;
+            p.fraction = copy_fraction(p.bytes_done);
             if last.elapsed().as_millis() > 120 {
                 last = std::time::Instant::now();
                 progress(&p);
             }
-        })
-        .map_err(io(&pt.device_path))?;
-        if !ok {
-            report.cancelled = true;
-            return Ok(report);
-        }
+        });
         p.done += 1;
-        report.copied += 1;
+        match result {
+            Ok(true) => report.copied += 1,
+            Ok(false) => {
+                report.cancelled = true;
+                return Ok(report);
+            }
+            Err(e) => {
+                // Keep the bar honest: the rest of this file will not come.
+                p.bytes_done += pt.size.saturating_sub(copied);
+                skipped.insert(pt.key);
+                report.skipped.push(format!("{} – {} ({e})", t.artist, t.title));
+            }
+        }
     }
     report.reused = plan.reuse_files;
+    // From here on only the tracks that made it onto the stick.
+    let kept;
+    let plan = if skipped.is_empty() {
+        plan
+    } else {
+        kept = SyncPlan {
+            tracks: plan.tracks.iter().filter(|t| !skipped.contains(&t.key)).cloned().collect(),
+            ..plan.clone()
+        };
+        &kept
+    };
 
     // 3. Analysis files, in folders the current library does not use.
     let mut anlz_paths: HashMap<i64, String> = HashMap::new();
@@ -681,6 +771,7 @@ pub fn execute(
         }
         let t = by_key[&pt.key];
         p.current = t.title.clone();
+        p.fraction = w.at("analysis", p.done as f64 / p.total.max(1) as f64);
         p.done += 1;
         progress(&p);
         let Some(files) = build_anlz(t, &pt.device_path) else {
@@ -688,10 +779,18 @@ pub fn execute(
         };
         let dir = anlz_dir_for(&pt.device_path);
         let abs = resolve(stick, &dir);
-        std::fs::create_dir_all(&abs).map_err(io(&dir))?;
-        for (ext, bytes) in files {
-            replace_file(&abs.join(format!("ANLZ0000.{ext}")), &bytes)
-                .map_err(io(format!("{dir}/ANLZ0000.{ext}")))?;
+        // Without its analysis files a track still plays (no waveform, grid
+        // or cues): a write error here costs that track, not the sync.
+        let written = std::fs::create_dir_all(&abs).and_then(|()| {
+            files
+                .iter()
+                .try_for_each(|(ext, bytes)| replace_file(&abs.join(format!("ANLZ0000.{ext}")), bytes))
+        });
+        if let Err(e) = written {
+            report
+                .warnings
+                .push(format!("{} – {}: analýza se nezapsala ({e})", t.artist, t.title));
+            continue;
         }
         anlz_paths.insert(pt.key, format!("{dir}/ANLZ0000.DAT"));
         anlz_dirs.push(dir);
@@ -701,6 +800,7 @@ pub fn execute(
     p = SyncProgress {
         phase: "database",
         total: 1,
+        fraction: w.at("database", 0.0),
         ..Default::default()
     };
     progress(&p);
@@ -766,10 +866,54 @@ pub fn execute(
     )
     .map_err(io(MANIFEST))?;
 
-    // 8. Read back what the players will read.
+    // 8. Player settings. The library is already in place, so a failure
+    //    here is only a warning.
+    if let Some(settings) = &req.settings {
+        progress(&SyncProgress {
+            phase: "settings",
+            total: 1,
+            fraction: w.at("settings", 0.0),
+            ..Default::default()
+        });
+        if let Err(e) = crate::settings::write(stick, settings, &backup_dir.join("PIONEER")) {
+            report
+                .warnings
+                .push(format!("Nastavení přehrávače se nezapsalo: {e}"));
+        } else {
+            report.settings_written = true;
+        }
+    }
+
+    // 9. The Denon library over the same files. The rekordbox library is in
+    //    place already, so a failure here leaves a working Pioneer stick.
+    if let Some(schema) = req.engine {
+        progress(&SyncProgress {
+            phase: "engine",
+            total: 1,
+            fraction: w.at("engine", 0.0),
+            ..Default::default()
+        });
+        match crate::engine::install(req, plan, schema, backup_dir) {
+            Ok(e) => {
+                report.warnings.extend(
+                    e.warnings
+                        .iter()
+                        .filter(|w| w.starts_with("Denon nenajde"))
+                        .cloned(),
+                );
+                report.engine = Some(e);
+            }
+            Err(e) => report
+                .warnings
+                .push(format!("Denon knihovna se nezapsala: {e}")),
+        }
+    }
+
+    // 10. Read back what the players will read.
     p = SyncProgress {
         phase: "verify",
         total: 1,
+        fraction: w.at("verify", 0.0),
         ..Default::default()
     };
     progress(&p);

@@ -3,6 +3,7 @@
 //! * [`pdb`] — the DeviceSQL `export.pdb` database every CDJ/XDJ reads.
 //! * [`anlz`] — the `ANLZ0000.DAT/.EXT/.2EX` analysis files (beat grid,
 //!   cues, loops, waveforms).
+//! * [`setting`] — the "My Settings" files players load from a stick.
 //!
 //! Layouts follow the reverse-engineering work of Deep Symmetry
 //! (crate-digger / djl-analysis), Henry Betts and Fabian Lesniak, and the
@@ -13,5 +14,6 @@ pub mod anlz;
 pub mod devicesql;
 mod error;
 pub mod pdb;
+pub mod setting;
 
 pub use error::{Error, Result};

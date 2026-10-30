@@ -122,6 +122,7 @@ pub async fn open_stick(path: String) -> CmdResult<dto::StickData> {
                 rating: t.rating,
                 file_size: t.file_size as u64,
                 artwork: artwork_path(&stick, t.artwork_id),
+                date_added: t.date_added.clone(),
             })
             .collect();
         let playlists = db
@@ -462,6 +463,37 @@ fn issue_text(
     }
 }
 
+/// Earlier health check results, kept in the app's data folder so a stick
+/// that is opened again only has its changed files read.
+pub struct VerifyCache {
+    path: PathBuf,
+    data: std::sync::Mutex<verify::VerifyCache>,
+}
+
+impl VerifyCache {
+    pub fn load(path: PathBuf) -> Self {
+        let data = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        VerifyCache {
+            path,
+            data: std::sync::Mutex::new(data),
+        }
+    }
+
+    /// Best effort: without the file the next check reads everything again.
+    fn save(&self, data: &verify::VerifyCache) {
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = self.path.with_extension("json.tmp");
+        if serde_json::to_vec(data).is_ok_and(|b| std::fs::write(&tmp, b).is_ok()) {
+            let _ = std::fs::rename(&tmp, &self.path);
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::VerifyResult> {
     blocking(move || {
@@ -469,12 +501,16 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
         let stick = Stick::open(&path).map_err(err)?;
         let cancel = AtomicBool::new(false);
         let mut last = Instant::now();
-        let r = verify::verify(&stick, &Player::ALL, &cancel, |done, total| {
+        let cached = app.state::<VerifyCache>();
+        let mut cache = cached.data.lock().unwrap();
+        let r = verify::verify_cached(&stick, &Player::ALL, &mut cache, &cancel, |done, total| {
             if last.elapsed() > Duration::from_millis(80) || done == total {
                 last = Instant::now();
                 let _ = app.emit("verify-progress", (done, total));
             }
         });
+        cached.save(&cache);
+        drop(cache);
 
         let fs = r.filesystem.clone().unwrap_or_default();
         let mut issues = Vec::new();
@@ -622,6 +658,7 @@ pub fn start_extract(
             current: String::new(),
             message: String::new(),
             dest: dest.display().to_string(),
+            ..Default::default()
         };
         let _ = app.emit("job", ev.clone());
         let mut last = Instant::now();
@@ -1031,7 +1068,7 @@ pub async fn ai_status(app: AppHandle, path: String, track_ids: Vec<u32>) -> Cmd
             })
             .collect();
         Ok(AiStatus {
-            installed: sc.installed(),
+            installed: sc.available(),
             analyzed,
         })
     })
@@ -1070,14 +1107,17 @@ pub fn ai_analyze(
             current: String::new(),
             message: String::new(),
             dest: String::new(),
+            ..Default::default()
         };
         let _ = app.emit("job", ev.clone());
-        let result = app.state::<Sidecar>().run(&todo, &cancel, |done, name| {
-            let mut e = ev.clone();
-            e.files_done = done;
-            e.bytes_done = done as u64;
-            e.current = name.to_string();
-            let _ = app.emit("job", e);
+        let result = crate::sidecar::ensure_installed(&app).and_then(|()| {
+            app.state::<Sidecar>().run(&todo, &cancel, |done, name| {
+                let mut e = ev.clone();
+                e.files_done = done;
+                e.bytes_done = done as u64;
+                e.current = name.to_string();
+                let _ = app.emit("job", e);
+            })
         });
         ev.files_done = total;
         ev.bytes_done = total as u64;

@@ -72,7 +72,7 @@
     <span class="sub">{list.length} míst, {chosen.length} vybráno</span>
     <button class="x" onclick={() => (app.smartOpen = false)} aria-label="Zavřít"><X size={14} /></button>
   </div>
-  {#if !hasAi && trackId != null}
+  {#if !hasAi && trackId != null && app.deckHere}
     <div class="ai">
       {#if running}
         <LoaderCircle size={14} class="spin" /> AI analýza běží…
@@ -80,7 +80,7 @@
         <span>Přesnější body z modelu natrénovaného na cue profi DJů.</span>
         <button class="btn small" onclick={() => app.aiAnalyze([trackId])}><BrainCircuit size={13} /> AI analýza</button>
       {:else}
-        <span class="sub">AI analýza (CUE-DETR) není nainstalovaná. V terminálu: cd sidecar && uv sync</span>
+        <span class="sub">AI analýza (CUE-DETR) není k dispozici: aplikaci chybí instalátor nástrojů (uv).</span>
       {/if}
     </div>
   {/if}

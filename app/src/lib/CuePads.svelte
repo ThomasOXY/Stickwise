@@ -95,7 +95,7 @@
 
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement;
-    if (el?.tagName === "INPUT" || app.exportOpen || app.writeOpen || !app.detail) return;
+    if (el?.tagName === "INPUT" || app.toolsOpen || app.exportOpen || app.writeOpen || !app.detail) return;
     if (e.key === "Escape") menu = null;
     const digit = /^Digit([1-8])$/.exec(e.code);
     if (digit && !e.metaKey && !e.ctrlKey) {

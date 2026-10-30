@@ -4,7 +4,9 @@
 use std::io::Read;
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Container {
     Wav,
     Aiff,
@@ -14,7 +16,7 @@ pub enum Container {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Codec {
     /// Integer PCM.
     Pcm,
@@ -29,7 +31,7 @@ pub enum Codec {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioInfo {
     pub container: Container,
     pub codec: Codec,

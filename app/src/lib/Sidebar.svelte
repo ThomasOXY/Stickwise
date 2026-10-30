@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Eject, LibraryBig } from "@lucide/svelte";
+  import { Download, Eject, LayoutGrid, LibraryBig } from "@lucide/svelte";
   import { api } from "./api";
   import { gb } from "./format";
   import { app } from "./state.svelte";
@@ -26,6 +26,12 @@
 <aside class="sidebar">
   <div class="drag" data-tauri-drag-region></div>
 
+  <button class="tools" onclick={() => (app.toolsOpen = true)} title="Všechny nástroje (⌘K)">
+    <span class="tile"><LayoutGrid size={14} /></span>
+    <span class="label">Nástroje</span>
+    <kbd>⌘K</kbd>
+  </button>
+
   <section>
     <h2>Knihovna</h2>
     <div
@@ -46,7 +52,12 @@
   </section>
 
   <section>
-    <h2>Flashky</h2>
+    <h2>
+      Flashky
+      <button class="fmt" title="Smazat a připravit flashku pro přehrávače" onclick={() => (app.formatOpen = true)}>
+        Formátovat…
+      </button>
+    </h2>
     {#if app.sticks.length === 0}
       <p class="empty">Žádná připojená flashka</p>
     {/if}
@@ -88,7 +99,9 @@
           <span class="label">{j.label}</span>
           <span class="readout count">{j.filesDone} / {j.filesTotal}</span>
         </div>
-        <div class="bar amber"><div style:width="{(j.bytesDone / Math.max(1, j.bytesTotal)) * 100}%"></div></div>
+        <div class="bar amber">
+          <div style:width="{(j.fraction ?? j.bytesDone / Math.max(1, j.bytesTotal)) * 100}%"></div>
+        </div>
       </div>
     {/each}
   </section>
@@ -111,6 +124,40 @@
   section {
     margin-bottom: 22px;
   }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 20px;
+    padding: 7px 10px 7px 7px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgb(255 255 255 / 0.03);
+    text-align: left;
+  }
+  .tools:hover {
+    border-color: rgb(242 163 58 / 0.5);
+    background: rgb(242 163 58 / 0.06);
+  }
+  .tools .tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: linear-gradient(160deg, #f2a33a, #c46a12);
+    color: #fff;
+  }
+  .tools .label {
+    flex: 1;
+    font-weight: 600;
+  }
+  .tools kbd {
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text-3);
+  }
   .jobs {
     margin-top: auto;
     margin-bottom: 0;
@@ -123,6 +170,18 @@
     font-size: 11px;
     font-weight: 600;
     color: var(--text-2);
+  }
+  .fmt {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 500;
+    color: var(--text-3);
+  }
+  .fmt:hover {
+    color: var(--text);
   }
   .badge {
     font-weight: 500;

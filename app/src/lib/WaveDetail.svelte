@@ -43,10 +43,12 @@
 
   function draw() {
     if (!canvas) return;
-    const t = getTime();
-    const t0 = t - span / 2;
-    const t1 = t + span / 2;
     const { w: W, h: H, dpr } = fit(canvas);
+    // Scroll in whole device pixels: every pixel then always covers the same
+    // waveform columns, so peaks do not flicker as the window slides.
+    const pxPerSec = W / span;
+    const t0 = Math.round((getTime() - span / 2) * pxPerSec) / pxPerSec;
+    const t1 = t0 + span;
     let ctx: CanvasRenderingContext2D;
     if (wave) {
       ctx = paint(canvas, wave, DETAIL_RATE, t0, t1);

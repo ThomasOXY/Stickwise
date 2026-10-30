@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use pioneer_formats::anlz::{AnlzFile, CuePoint, read_cue_points};
 use pioneer_formats::pdb::Database;
+use pioneer_formats::setting::MySettings;
 use usb_tools::sync::{SyncPlaylist, SyncRequest, SyncTrack, execute, plan};
 
 fn copy_dir(from: &Path, to: &Path) {
@@ -95,13 +96,74 @@ fn syncs_library_selection_to_a_stick() {
         playlists,
         device_name: "TEST".into(),
         date: "2026-10-14".into(),
+        engine: Some(engine_library::Schema::V3_0_1),
+        settings: Some({
+            let mut s = MySettings::default();
+            s.set("eject_lock", 0x81).unwrap();
+            s
+        }),
     };
 
     let p = plan(&req);
     assert_eq!((p.copy_files, p.reuse_files), (3, 0));
     assert_eq!(p.no_analysis.len(), 1);
-    let r = execute(&req, &p, backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    let mut fractions = Vec::new();
+    let r = execute(&req, &p, backup.path(), &AtomicBool::new(false), |e| {
+        fractions.push(e.fraction)
+    })
+    .unwrap();
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert!(
+        fractions.windows(2).all(|w| w[0] <= w[1])
+            && fractions.iter().all(|f| (0.0..=1.0).contains(f)),
+        "progress only moves forward: {fractions:?}"
+    );
+    assert!(r.settings_written);
+    let on_stick = usb_tools::settings::read(stick.path());
+    assert_eq!(on_stick.found.len(), 4);
+    assert_eq!(on_stick.settings.get("eject_lock"), Some(0x81));
+
+    // The Denon library points at the very same audio files.
+    let engine = r.engine.as_ref().expect("engine library written");
+    assert_eq!(engine.tracks, 3);
+    let edb = engine_library::read(&stick.path().join("Engine Library/Database2/m.db")).unwrap();
+    assert_eq!(edb.schema, Some(engine_library::Schema::V3_0_1));
+    let sety = edb.children(0)[0];
+    assert_eq!(sety.title, "Sety");
+    let klub = edb.children(sety.id)[0];
+    let titles: Vec<String> = klub
+        .tracks
+        .iter()
+        .map(|id| {
+            edb.tracks
+                .iter()
+                .find(|t| t.id == *id)
+                .unwrap()
+                .title
+                .clone()
+        })
+        .collect();
+    assert_eq!(titles[2], "Bez analýzy");
+    for t in &edb.tracks {
+        let rel = t
+            .path
+            .strip_prefix("../")
+            .expect("relative to Engine Library");
+        assert!(stick.path().join(rel).is_file(), "{}", t.path);
+    }
+    let analysed = edb
+        .tracks
+        .iter()
+        .find(|t| t.beats.is_set)
+        .expect("beat grid carried over");
+    assert_eq!(analysed.beats.default_grid[0].beat_index, -4);
+    assert_eq!(analysed.cues.cues[0].label, "Drop");
+    assert_eq!(
+        analysed.cues.cues[0].sample_offset,
+        30.0 * analysed.track_data.sample_rate
+    );
+    assert_eq!(analysed.key, Some(1));
+    let uuid = edb.uuid.clone();
     assert_eq!((r.tracks, r.playlists, r.copied), (3, 1, 3));
     assert_eq!(
         r.moved_aside,
@@ -169,4 +231,79 @@ fn syncs_library_selection_to_a_stick() {
     let p2 = plan(&req);
     assert_eq!((p2.copy_files, p2.reuse_files), (0, 3));
     execute(&req, &p2, backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    // The Denon library keeps its identity (play history stays linked).
+    let edb = engine_library::read(&stick.path().join("Engine Library/Database2/m.db")).unwrap();
+    assert_eq!(edb.uuid, uuid);
+    assert!(
+        backup
+            .path()
+            .join("Engine Library/Database2/m.db")
+            .is_file()
+    );
+}
+
+#[test]
+fn unreadable_track_is_left_out_not_the_sync() {
+    use std::os::unix::fs::PermissionsExt;
+    let mac = tempfile::tempdir().unwrap();
+    let stick = tempfile::tempdir().unwrap();
+    let backup = tempfile::tempdir().unwrap();
+    let mut tracks = Vec::new();
+    for (key, name) in [(1, "ok.mp3"), (2, "broken.mp3"), (3, "ok2.mp3")] {
+        let audio = mac.path().join(name);
+        std::fs::write(&audio, vec![key as u8; 3000]).unwrap();
+        tracks.push(SyncTrack {
+            key,
+            audio,
+            title: name.into(),
+            artist: "A".into(),
+            ..Default::default()
+        });
+    }
+    // Planned while readable, unreadable by the time it is copied.
+    let req = SyncRequest {
+        stick: stick.path().to_path_buf(),
+        tracks,
+        playlists: vec![SyncPlaylist {
+            key: 10,
+            parent: 0,
+            name: "Set".into(),
+            is_folder: false,
+            sort: 0,
+            tracks: vec![1, 2, 3],
+        }],
+        device_name: "TEST".into(),
+        date: "2026-10-31".into(),
+        engine: None,
+        settings: None,
+    };
+    let p = plan(&req);
+    let broken = mac.path().join("broken.mp3");
+    std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let r = execute(&req, &p, backup.path(), &AtomicBool::new(false), |_| {});
+    std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let r = r.unwrap();
+    assert_eq!(r.skipped.len(), 1, "{:?}", r.skipped);
+    assert!(r.skipped[0].contains("broken.mp3"));
+    assert_eq!((r.copied, r.tracks), (2, 2));
+    let db = Database::parse(&std::fs::read(stick.path().join("PIONEER/rekordbox/export.pdb")).unwrap()).unwrap();
+    let titles: Vec<_> = db.tracks.iter().map(|t| t.title.as_str()).collect();
+    assert_eq!(titles, vec!["ok.mp3", "ok2.mp3"]);
+    assert_eq!(db.playlist_entries.len(), 2);
+    // No half-copied file left behind.
+    let leftovers: Vec<_> = walk(stick.path()).into_iter().filter(|p| p.contains("rbx-part")).collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+fn walk(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            out.extend(walk(&p));
+        } else {
+            out.push(p.display().to_string());
+        }
+    }
+    out
 }

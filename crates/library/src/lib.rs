@@ -7,6 +7,7 @@
 //! playlists made here and cues edited here are never overwritten by an
 //! import.
 
+pub mod folders;
 mod import;
 
 use std::path::Path;
@@ -15,6 +16,7 @@ use pioneer_formats::anlz::CuePoint;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
+pub use folders::{FolderReport, Scan};
 pub use import::{ImportReport, RekordboxDump};
 
 #[derive(Debug, thiserror::Error)]
@@ -316,6 +318,32 @@ impl Library {
             tx.execute(
                 "UPDATE playlists SET sort_order = ?2 WHERE id = ?1",
                 params![s, i as i64],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Our own analysis of a track: its `ANLZ0000.DAT`, the grid's tempo,
+    /// the key (only where the tags gave none) and the length if unknown.
+    pub fn set_analysis(&mut self, id: i64, anlz: &str, bpm: Option<f64>, key: Option<&str>, duration: f64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET anlz = ?2, bpm = COALESCE(?3, bpm), \
+             key = CASE WHEN key = '' THEN COALESCE(?4, '') ELSE key END, \
+             duration = CASE WHEN duration = 0 THEN ?5 ELSE duration END WHERE id = ?1",
+            params![id, anlz, bpm, key, duration],
+        )?;
+        Ok(())
+    }
+
+    /// Give siblings their order: `ids[0]` first. Others under the same
+    /// parent keep their relative order after them.
+    pub fn order_playlists(&mut self, ids: &[i64]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for (i, id) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE playlists SET sort_order = ?2, source = 'local' WHERE id = ?1",
+                params![id, i as i64],
             )?;
         }
         tx.commit()?;

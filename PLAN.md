@@ -28,6 +28,10 @@ Datum plánu: 2026-10-13
 - ✅ **Knihovna v Macu** (SQLite) s importem z rekordboxu (pyrekordbox nad kopií master.db): 4 432 skladeb, 117 playlistů, 331 cue za 0,1 s; sety, playlisty, složky, drag & drop.
 - ✅ **Synchronizace na flashku**: záloha, kopie jen chybějícího (rekordbox soubory na flashce se znovu použijí), ANLZ s cestou na flashku a cue z knihovny, odsunutí starého exportExt/OneLibrary, `export.pdb` vyměněn atomicky jako poslední. Ověřeno na skutečných datech do zkušební složky (23 skladeb, 112 hot cue).
 - ⏳ Zatím neověřeno na skutečné flashce v CDJ/Denonu.
+- ✅ **Nastavení přehrávače (My Settings)**: čtení/zápis `MYSETTING.DAT`, `MYSETTING2.DAT`, `DJMMYSETTING.DAT`, `DEVSETTING.DAT` (CRC16-XMODEM, neznámé bajty se zachovají), profil v aplikaci (výchozí z rekordboxu), zápis při syncu i samostatně. Ověřeno rekordcratem a na souborech z rekordboxu 7 / CDJ-3000.
+- ✅ **Formátování flashky** FAT32 / exFAT (MBR) přes `diskutil`, jen USB/SD, nikdy disk s knihovnou/hudbou ani velký pevný disk, potvrzení názvem, záloha databáze předem, pak prázdná knihovna + nastavení. Ověřeno na disk image.
+- ✅ Sync: celkový průběh přes všechny fáze, kroky, rychlost, odhad zbývajícího času.
+- ✅ **Hybridní flashka Pioneer + Denon**: nativní Engine knihovna (`Engine Library/Database2/m.db`) nad stejnými soubory v `/Contents` (cesty `../Contents/…`, hudba jen jednou). Schéma podle nejstaršího Denonu: 2.21.0 (Engine OS 3.1+), 3.0.1 (4.3+, výchozí), 3.0.2 (5.0+). Playlisty a složky, beatgrid, tónina, 8 hot cue s barvami a názvy (memory cue na volné pady), smyčky, overview waveform; identita knihovny (uuid) se drží, stará `m.db` do zálohy, journaly stranou. Ověřeno: schéma bajt po bajtu proti Engine DJ, bloby z Engine DJ dekódovány a znovu zakódovány shodně, sync 30 skutečných skladeb do zkušební složky. ⏳ Neověřeno na Denonu.
 - ⏭ Další: **OneLibrary zápis** (bez něj CDJ-3000X / XDJ-AZ / OPUS-QUAD po synchronizaci knihovnu neuvidí), vlastní analýza nových skladeb (bez rekordboxu), Set Planner.
 
 ## 1. Co už existuje (rešerše GitHubu)
@@ -296,6 +300,7 @@ Hraješ na všech → bez toho flashka nepojede na CDJ-3000X / XDJ-AZ / OPUS-QUA
 - [ ] Export čte z vlastní knihovny místo XML.
 
 ### Fáze 4 — Analyzátor (3–4 týdny)
+> ✅ v1 (`crates/analyzer`): symphonia → waveformy PWAV/PWV2/PWV3/PWV5/PWV6/PWV7 (měřítka kalibrovaná na rekordbox), BPM + beatgrid + první doba, tónina (profily EDMA), zápis DAT/EXT/2EX. Spouští se sama po přetažení složek. Doby: Beat This! (plný model, ONNX přes `beat-this`/rten, přibalený k aplikaci) dá tempo a takt, fázi doladí onsety. Proti rekordboxu na 158 skladbách: tempo 79 %, grid ±15 ms 86 % (ze správných temp), takt 92 %, tónina 44 %. Skladby bez analýzy se analyzují samy před synchronizací. MP3 s LAME hlavičkou: rekordbox počítá o rámec víc → doplněno. ⏳ Chybí PWV4 (barevný náhled NXS2), PVBR (seek index VBR MP3), dynamický grid.
 - [ ] Dekódování: `symphonia` (MP3, AAC, FLAC, WAV, AIFF, ALAC). **Pozor na MP3 encoder delay / gapless offset** — musí sedět s tím, jak dekóduje CDJ, jinak se cue posunou o ~26–50 ms. Kalibrovat proti rekordbox gridu na golden datech.
 - [ ] BPM + beatgrid: onset envelope → tempogram/autokorelace, předpoklad konstantního tempa (elektronika), fáze gridu, první downbeat. Volitelně dynamický grid.
 - [ ] Tónina: chromagram (CQT) + key profily (Krumhansl/Temperley), výstup klasicky i Camelot.

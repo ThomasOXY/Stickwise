@@ -1,5 +1,15 @@
 <script lang="ts">
-  import { Copy, Eject, HardDriveDownload, LoaderCircle, RefreshCw, Save, ShieldCheck } from "@lucide/svelte";
+  import {
+    Copy,
+    Eject,
+    Eraser,
+    HardDriveDownload,
+    LoaderCircle,
+    RefreshCw,
+    Save,
+    ShieldCheck,
+    SlidersHorizontal,
+  } from "@lucide/svelte";
   import { api } from "./api";
   import { fsName, gb, plural } from "./format";
   import { app } from "./state.svelte";
@@ -73,7 +83,13 @@
         <button class="btn primary" onclick={check}><ShieldCheck size={14} /> Zkontrolovat flashku</button>
       {/if}
       <button class="btn" onclick={() => (app.exportOpen = true)}><HardDriveDownload size={14} /> Exportovat na disk</button>
+      <button class="btn" onclick={() => (app.settingsFor = info.path)} title="My Settings pro CDJ/XDJ a mixer na této flashce">
+        <SlidersHorizontal size={14} /> Nastavení přehrávače
+      </button>
       <button class="btn" disabled title="Brzy"><Copy size={14} /> Klonovat</button>
+      <button class="btn icon" title="Formátovat flashku (FAT32 / exFAT)" onclick={() => (app.formatOpen = true)}>
+        <Eraser size={14} />
+      </button>
       <button class="btn icon" title="Vysunout" onclick={eject}><Eject size={14} /></button>
     </div>
   </div>
@@ -207,13 +223,5 @@
     margin-left: 6px;
     font-size: 11px;
     color: var(--text-2);
-  }
-  :global(.spin) {
-    animation: spin 1s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 </style>

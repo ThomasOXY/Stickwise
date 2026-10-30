@@ -12,3 +12,4 @@ thiserror.workspace = true
 # Independent parser used to validate what our writer produces.
 rekordcrate = { git = "https://github.com/Holzhaus/rekordcrate", rev = "14d54eded7b0d2f6fe67c7871533dca35a73e5fa", default-features = false }
 fallible-iterator = "0.3"
+binrw = "0.15"

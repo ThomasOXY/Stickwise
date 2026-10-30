@@ -29,6 +29,18 @@ const CLASSIC: Record<string, string> = {
   "G#m": "1A",
 };
 
+/** Position on the Camelot wheel (1A, 1B, 2A, …) for sorting; unknown keys last. */
+export function keyOrder(key: string): number {
+  const camelot = /^\d{1,2}[AB]$/.test(key) ? key : CLASSIC[key];
+  return camelot ? parseInt(camelot, 10) * 2 + (camelot.endsWith("B") ? 1 : 0) : Infinity;
+}
+
+/** "2024-05-01" as "1. 5. 2024". */
+export function date(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${Number(m[3])}. ${Number(m[2])}. ${m[1]}` : "";
+}
+
 /** Swatch colour for a key on the Camelot wheel. */
 export function keyColor(key: string): string {
   const camelot = /^\d{1,2}[AB]$/.test(key) ? key : CLASSIC[key];

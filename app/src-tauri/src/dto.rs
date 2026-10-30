@@ -46,6 +46,8 @@ pub struct Track {
     pub file_size: u64,
     /// Absolute path of the artwork image, if the track has one.
     pub artwork: Option<String>,
+    /// `YYYY-MM-DD`, empty if unknown.
+    pub date_added: String,
 }
 
 #[derive(Serialize)]
@@ -196,7 +198,7 @@ pub struct ExtractRequest {
     pub duplicates: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct JobEvent {
     pub id: u32,
@@ -210,6 +212,10 @@ pub struct JobEvent {
     pub current: String,
     pub message: String,
     pub dest: String,
+    /// Step of a multi-step job (`copy`, `analysis`, …); empty otherwise.
+    pub phase: String,
+    /// The whole job, 0 to 1, when the job knows it.
+    pub fraction: Option<f64>,
 }
 
 #[derive(Serialize)]

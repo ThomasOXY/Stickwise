@@ -5,6 +5,7 @@ mod dto;
 mod edits;
 mod jobs;
 mod library_cmds;
+mod player_cmds;
 mod sidecar;
 
 fn main() {
@@ -15,9 +16,10 @@ fn main() {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
             app.manage(edits::Edits::load(dir.join("cue-edits.json")));
+            app.manage(commands::VerifyCache::load(dir.join("verify-cache.json")));
             let lib = library::Library::open(&dir.join("library.sqlite"))?;
             app.manage(library_cmds::LibState(std::sync::Mutex::new(lib)));
-            app.manage(sidecar::Sidecar::new(dir));
+            app.manage(sidecar::Sidecar::new(dir, app.path().resource_dir().ok()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -46,6 +48,9 @@ fn main() {
             library_cmds::library_rename_playlist,
             library_cmds::library_delete_playlist,
             library_cmds::library_move_playlist,
+            library_cmds::library_add_folders,
+            library_cmds::library_analyze,
+            library_cmds::library_order_playlists,
             library_cmds::library_set_tracks,
             library_cmds::library_track_detail,
             library_cmds::library_save_cues,
@@ -57,10 +62,17 @@ fn main() {
             library_cmds::sync_selection,
             library_cmds::sync_plan,
             library_cmds::sync_start,
+            library_cmds::engine_status,
             library_cmds::plan_set,
             library_cmds::apply_set_plan,
             library_cmds::set_cue_backups,
             library_cmds::restore_set_cues,
+            player_cmds::settings_schema,
+            player_cmds::settings_get,
+            player_cmds::settings_save,
+            player_cmds::settings_write,
+            player_cmds::list_disks,
+            player_cmds::format_start,
         ])
         .run(tauri::generate_context!())
         .expect("error while running RB-EXPORT");

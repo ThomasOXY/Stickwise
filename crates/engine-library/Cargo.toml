@@ -1,0 +1,15 @@
+[package]
+name = "engine-library"
+description = "Write and read the Denon / Engine DJ device library (Engine Library/Database2/m.db)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+pioneer-formats.workspace = true
+rusqlite = { version = "0.32", features = ["bundled"] }
+flate2 = "1"
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

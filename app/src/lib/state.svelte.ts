@@ -27,6 +27,14 @@ export type View = "tracks" | "health" | "planner";
 /** Where the app is working: the library on this Mac, or a stick. */
 export type Source = "library" | "stick";
 
+/** The track loaded on the deck and where it comes from. It stays loaded
+ *  (and keeps playing) when the app switches between library and stick. */
+export interface DeckTrack {
+  track: Track;
+  source: Source;
+  stickPath: string | null;
+}
+
 class AppState {
   source = $state<Source>("library");
   sticks = $state<StickInfo[]>([]);
@@ -49,13 +57,21 @@ class AppState {
   /** Memory cue count per track, for the table. */
   memCount = $state<Record<number, number>>({});
   selectedTrack = $state<number | null>(null);
+  deck = $state<DeckTrack | null>(null);
   detailOpen = $state(false);
   detail = $state<TrackDetail | null>(null);
 
   jobs = $state<JobEvent[]>([]);
   exportOpen = $state(false);
   syncOpen = $state(false);
+  /** Player settings sheet: `undefined` closed, `null` the DJ's profile, else a stick path. */
+  settingsFor = $state<string | null | undefined>(undefined);
+  formatOpen = $state(false);
+  /** Full-screen tool launcher. */
+  toolsOpen = $state(false);
   importing = $state(false);
+  /** Folders dropped from Finder being read into the library. */
+  addingFolders = $state(false);
   /** Playlist being renamed in the tree. */
   renaming = $state<number | null>(null);
 
@@ -71,10 +87,17 @@ class AppState {
   aiInstalled = $state(false);
   aiAnalyzed = $state<Set<number>>(new Set());
   aiJob = $state<number | null>(null);
+  /** Own analysis running, and tracks waiting for the next round. */
+  analyzeJob = $state<number | null>(null);
+  private analyzeQueue: { ids: number[]; again: boolean }[] = [];
   notice = $state<string | null>(null);
   private undoStack: { trackId: number; cues: Cue[] }[] = [];
 
   isLibrary = $derived(this.source === "library");
+  /** The deck's track comes from what is open now. */
+  deckHere = $derived(
+    !!this.deck && this.deck.source === this.source && (this.isLibrary || this.deck.stickPath === this.stickPath),
+  );
   trackById = $derived(new Map((this.data?.tracks ?? []).map((t) => [t.id, t])));
 
   /** Track id → "error" | "warning" from the last health check. */
@@ -136,6 +159,7 @@ class AppState {
       if (i >= 0) this.jobs[i] = e.payload;
       else this.jobs.push(e.payload);
       if (e.payload.id === this.aiJob && e.payload.state !== "running") this.aiFinished(e.payload);
+      if (e.payload.id === this.analyzeJob && e.payload.state !== "running") this.analyzeFinished(e.payload);
     });
     this.palette = await api.cuePalette();
     await this.openLibrary();
@@ -147,6 +171,8 @@ class AppState {
     try {
       const list = await api.listSticks();
       this.sticks = list;
+      const deckPath = this.deck?.stickPath;
+      if (deckPath && !list.some((s) => s.path === deckPath)) this.unloadDeck();
       if (this.source === "stick" && this.stickPath && !list.some((s) => s.path === this.stickPath)) {
         await this.openLibrary();
       }
@@ -160,14 +186,24 @@ class AppState {
     this.verify = null;
     this.selection = null;
     this.cues = {};
-    this.detail = null;
+    // The deck (its detail, Smart Cue and undo) stays loaded.
     this.detailOpen = false;
     this.selectedTrack = null;
+    this.aiAnalyzed = new Set();
+    this.view = "tracks";
+  }
+
+  /** After a source opened: the deck's track is selected again if it is from here. */
+  private reselectDeck() {
+    if (this.deckHere && this.deck) this.selectedTrack = this.deck.track.id;
+  }
+
+  private unloadDeck() {
+    this.deck = null;
+    this.detail = null;
     this.smart = null;
     this.smartOpen = false;
-    this.aiAnalyzed = new Set();
     this.undoStack = [];
-    this.view = "tracks";
   }
 
   /** The library as the same shape the stick views use. */
@@ -190,6 +226,7 @@ class AppState {
       await this.reloadLibrary();
       const firstSet = this.data?.playlists.find((p) => p.isSet);
       this.select(firstSet ? { kind: "playlist", id: firstSet.id } : { kind: "all" });
+      this.reselectDeck();
     } catch (e) {
       this.error = String(e);
     } finally {
@@ -220,6 +257,7 @@ class AppState {
       this.data = await api.openStick(path);
       const first = this.sortedChildren(0).find((p) => !p.isFolder) ?? this.data.playlists.find((p) => !p.isFolder);
       if (first) this.select({ kind: "playlist", id: first.id });
+      this.reselectDeck();
       this.loadPending();
       this.runVerify();
     } catch (e) {
@@ -246,6 +284,46 @@ class AppState {
       this.error = String(e);
     } finally {
       this.importing = false;
+    }
+  }
+
+  /**
+   * Folders (and audio files) dropped from Finder: each folder becomes a
+   * playlist of its name. Dropped on a folder they go inside it; loose
+   * files dropped on a playlist are added to it.
+   */
+  async addFolders(paths: string[], target: number | null) {
+    if (paths.length === 0 || this.addingFolders) return;
+    this.addingFolders = true;
+    try {
+      if (!this.isLibrary) await this.openLibrary();
+      const t = target != null ? this.library?.playlists.find((p) => p.id === target) : undefined;
+      const parent = t ? (t.isFolder ? t.id : t.parentId) : 0;
+      const playlist = t && !t.isFolder ? t.id : null;
+      const r = await libApi.addFolders(paths, parent, playlist);
+      await this.reloadLibrary();
+      const show = r.firstPlaylist ?? (r.loose.length && playlist != null ? playlist : null);
+      if (show != null) this.select({ kind: "playlist", id: show });
+      else if (r.loose.length) this.select({ kind: "all" });
+      const lists = r.playlistsCreated + r.playlistsUpdated;
+      const parts = [
+        lists ? `${r.playlistsCreated} nových playlistů` + (r.playlistsUpdated ? `, ${r.playlistsUpdated} doplněných` : "") : "",
+        `${r.tracksAdded} nových skladeb` + (r.tracksKnown ? ` (${r.tracksKnown} už v knihovně bylo)` : ""),
+      ].filter(Boolean);
+      if (lists === 0 && r.tracksAdded + r.tracksKnown === 0) {
+        this.error = `Ve složce není žádná hudba (MP3, WAV, AIFF, FLAC, M4A): ${r.ignored.join(", ")}`;
+        return;
+      }
+      this.notice =
+        `Ze složek: ${parts.join(", ")}.` +
+        (r.ignored.length ? ` Bez hudby, vynecháno: ${r.ignored.join(", ")}.` : "") +
+        (r.added.length ? " Analyzuju je na pozadí: waveform, beatgrid, tónina." : "");
+      // New tracks are analysed right away.
+      this.analyzeTracks(r.added);
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.addingFolders = false;
     }
   }
 
@@ -277,6 +355,49 @@ class AppState {
   async movePlaylist(id: number, parent: number, index: number) {
     await libApi.movePlaylist(id, parent, index).catch((e) => (this.error = String(e)));
     await this.reloadLibrary();
+  }
+
+  /** Siblings `node` moves among: sets with sets, the rest with the rest. */
+  private moveGroup(node: Playlist): Playlist[] {
+    return this.sortedChildren(node.parentId).filter((p) => p.isSet === node.isSet);
+  }
+
+  canShiftPlaylist(id: number, dir: -1 | 1): boolean {
+    const node = this.data?.playlists.find((p) => p.id === id);
+    if (!node || !this.isLibrary) return false;
+    const group = this.moveGroup(node);
+    const i = group.findIndex((p) => p.id === id);
+    return i + dir >= 0 && i + dir < group.length;
+  }
+
+  /** Move a playlist one place up (-1) or down (1) among its siblings. */
+  async shiftPlaylist(id: number, dir: -1 | 1) {
+    const node = this.data?.playlists.find((p) => p.id === id);
+    if (!node || !this.canShiftPlaylist(id, dir)) return;
+    const group = this.moveGroup(node);
+    const neighbour = group[group.findIndex((p) => p.id === id) + dir];
+    await this.placePlaylist(id, neighbour.id, dir > 0);
+  }
+
+  /** Move a playlist right before (or after) `target`, into its folder. */
+  async placePlaylist(id: number, target: number, after: boolean) {
+    const ps = this.data?.playlists ?? [];
+    const t = ps.find((p) => p.id === target);
+    if (!t || id === target) return;
+    // Not into itself or its own subfolders.
+    for (let p: Playlist | undefined = t; p; p = ps.find((x) => x.id === p!.parentId)) {
+      if (p.id === id) return;
+    }
+    const rest = this.sortedChildren(t.parentId).filter((p) => p.id !== id);
+    const index = rest.findIndex((p) => p.id === target) + (after ? 1 : 0);
+    // Shown at once; the library confirms on reload.
+    const order = [...rest.slice(0, index).map((p) => p.id), id, ...rest.slice(index).map((p) => p.id)];
+    for (const p of ps) {
+      const i = order.indexOf(p.id);
+      if (p.id === id) p.parentId = t.parentId;
+      if (i >= 0) p.sortOrder = i;
+    }
+    await this.movePlaylist(id, t.parentId, index);
   }
 
   async setPlaylistTracks(id: number, ids: number[]) {
@@ -335,21 +456,26 @@ class AppState {
   /** Replace the cues of the selected track: saved in the library, or kept until written to the stick. */
   async setCues(cues: Cue[], undoable = true) {
     const d = this.detail;
-    if (!d || (!this.isLibrary && !this.stickPath)) return;
+    const deck = this.deck;
+    if (!d || !deck) return;
+    const lib = deck.source === "library";
+    const here = this.deckHere;
     if (undoable) {
       this.undoStack.push({ trackId: d.trackId, cues: d.cues });
       if (this.undoStack.length > 100) this.undoStack.shift();
     }
     try {
-      const saved = this.isLibrary
+      const saved = lib
         ? await libApi.saveCues(d.trackId, cues)
-        : await api.saveCues(this.stickPath!, d.trackId, cues);
-      if (this.detail?.trackId === d.trackId) this.detail = { ...this.detail, cues: saved, edited: !this.isLibrary };
+        : await api.saveCues(deck.stickPath!, d.trackId, cues);
+      if (this.detail === d || this.detail?.trackId === d.trackId) this.detail = { ...this.detail!, cues: saved, edited: !lib };
+      // The table and pending list show the source that is open.
+      if (!here) return;
       const hot: CueSummary["hot"][number][] = Array(8).fill(null);
       for (const c of saved) if (c.slot >= 1 && c.slot <= 8) hot[c.slot - 1] = c.color;
       this.cues[d.trackId] = hot;
       this.memCount[d.trackId] = saved.filter((c) => c.slot === 0).length;
-      if (!this.isLibrary) this.pending = new Set([...this.pending, d.trackId]);
+      if (!lib) this.pending = new Set([...this.pending, d.trackId]);
     } catch (e) {
       this.error = String(e);
     }
@@ -367,13 +493,14 @@ class AppState {
   /** Throw away the stick edits of the selected track. */
   async revertCues() {
     const d = this.detail;
-    if (!d || !this.stickPath) return;
-    await api.revertCues(this.stickPath, d.trackId);
-    this.detail = null;
+    const path = this.deck?.stickPath;
+    if (!d || !path) return;
+    await api.revertCues(path, d.trackId);
+    await this.reloadDeck();
+    if (!this.deckHere) return;
     delete this.cues[d.trackId];
     this.pending.delete(d.trackId);
     this.pending = new Set(this.pending);
-    await this.selectTrack(d.trackId, true);
     this.loadCues([d.trackId]);
   }
 
@@ -386,18 +513,19 @@ class AppState {
           ? `Cue zapsány u ${r.written} skladeb. Záloha původních souborů: ${r.backupDir.replace(/^\/Users\/[^/]+/, "~")}`
           : `Zapsáno ${r.written}, nepovedlo se ${r.failed.length}: ${r.failed.join("; ")}`;
       await this.loadPending();
-      if (this.selectedTrack != null) await this.selectTrack(this.selectedTrack, true);
+      await this.reloadDeck();
     } catch (e) {
       this.error = String(e);
     }
   }
 
   async loadSmart() {
-    const id = this.selectedTrack;
-    if (id == null) return;
+    const deck = this.deck;
+    if (!deck) return;
+    const id = deck.track.id;
     try {
-      const s = this.isLibrary ? await libApi.smartCue(id) : await api.smartCue(this.stickPath!, id);
-      if (this.selectedTrack === id) {
+      const s = deck.source === "library" ? await libApi.smartCue(id) : await api.smartCue(deck.stickPath!, id);
+      if (this.deck === deck) {
         this.smart = s;
         this.smartOpen = true;
       }
@@ -417,7 +545,7 @@ class AppState {
       for (const id of ids) delete this.cues[id];
       await this.loadCues(ids);
       await this.loadPending();
-      if (this.selectedTrack != null) await this.selectTrack(this.selectedTrack, true);
+      if (this.deckHere) await this.reloadDeck();
       this.notice =
         `Smart Cue nastavil hot cue u ${r.applied} skladeb` +
         (r.skipped ? `, ${r.skipped} už hot cue měly a zůstaly beze změny` : "") +
@@ -470,6 +598,51 @@ class AppState {
     }
   }
 
+  /** Library tracks without analysis (and with their file), of `ids`. */
+  unanalyzed(ids: number[], again = false): number[] {
+    const byId = new Map((this.library?.tracks ?? []).map((t) => [t.id, t]));
+    return [...new Set(ids)].filter((id) => {
+      const t = byId.get(id);
+      return t && !t.missing && (t.analyzed === false || (again && t.ownAnalysis));
+    });
+  }
+
+  /** Tracks of a playlist, or of everything inside a folder. */
+  playlistTracks(id: number): number[] {
+    const ps = this.library?.playlists ?? [];
+    const p = ps.find((x) => x.id === id);
+    if (!p) return [];
+    return p.isFolder ? ps.filter((c) => c.parentId === id).flatMap((c) => this.playlistTracks(c.id)) : p.trackIds;
+  }
+
+  /** Analyse library tracks in the background: waveforms, beat grid, key. */
+  async analyzeTracks(ids: number[], again = false) {
+    const todo = this.unanalyzed(ids, again);
+    if (todo.length === 0) return;
+    if (this.analyzeJob != null) {
+      this.analyzeQueue.push({ ids: todo, again });
+      this.notice = `Ve frontě na analýzu: ${todo.length} skladeb`;
+      return;
+    }
+    try {
+      this.analyzeJob = await libApi.analyze(todo, again);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  private async analyzeFinished(job: JobEvent) {
+    this.analyzeJob = null;
+    await this.reloadLibrary();
+    if (this.deck?.source === "library") {
+      this.deck.track = this.library?.tracks.find((t) => t.id === this.deck!.track.id) ?? this.deck.track;
+      await this.reloadDeck();
+    }
+    if (job.state === "error") this.error = job.message;
+    else if (job.state === "done") this.notice = `${job.message}. Na flashku půjdou s waveformem i gridem.`;
+    for (const q of this.analyzeQueue.splice(0)) await this.analyzeTracks(q.ids, q.again);
+  }
+
   private async aiFinished(job: JobEvent) {
     this.aiJob = null;
     await this.loadAiStatus(this.currentTrackIds.concat(this.selectedTrack != null ? [this.selectedTrack] : []));
@@ -507,17 +680,30 @@ class AppState {
     }
   }
 
+  /** Select a row and load its track onto the deck. */
   async selectTrack(id: number, reload = false) {
-    if (id !== this.selectedTrack) {
+    const track = this.trackById.get(id);
+    if (!track || (!this.isLibrary && !this.stickPath)) return;
+    this.selectedTrack = id;
+    if (!this.deckHere || this.deck!.track.id !== id) {
+      this.deck = { track, source: this.source, stickPath: this.stickPath };
+      this.detail = null;
       this.smart = null;
       this.smartOpen = false;
+    } else if (!reload && this.detail?.trackId === id) {
+      return;
     }
-    this.selectedTrack = id;
-    if (!this.isLibrary && !this.stickPath) return;
-    if (this.detail?.trackId === id && !reload) return;
+    await this.reloadDeck();
+  }
+
+  /** Read the deck track's waveform and cues again from its source. */
+  async reloadDeck() {
+    const deck = this.deck;
+    if (!deck) return;
+    const id = deck.track.id;
     try {
-      const d = this.isLibrary ? await libApi.trackDetail(id) : await api.trackDetail(this.stickPath!, id);
-      if (this.selectedTrack === id) this.detail = d;
+      const d = deck.source === "library" ? await libApi.trackDetail(id) : await api.trackDetail(deck.stickPath!, id);
+      if (this.deck === deck) this.detail = d;
     } catch (e) {
       this.error = String(e);
     }

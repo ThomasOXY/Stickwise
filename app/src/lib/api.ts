@@ -36,6 +36,10 @@ export interface Track {
   rating: number;
   fileSize: number;
   artwork: string | null;
+  /** `YYYY-MM-DD`, empty if unknown. */
+  dateAdded: string;
+  /** Library only: analysed by this app, not by rekordbox. */
+  ownAnalysis?: boolean;
   /** Library only: audio file not found. */
   missing?: boolean;
   /** Library only: has rekordbox analysis. */
@@ -56,6 +60,18 @@ export interface ImportReport {
   cuesKept: number;
   playlists: number;
   playlistsKept: number;
+}
+
+export interface FolderReport {
+  playlistsCreated: number;
+  playlistsUpdated: number;
+  tracksAdded: number;
+  tracksKnown: number;
+  /** Ids of the tracks added now. */
+  added: number[];
+  firstPlaylist: number | null;
+  loose: number[];
+  ignored: string[];
 }
 
 export interface SyncPlan {
@@ -214,7 +230,57 @@ export interface JobEvent {
   current: string;
   message: string;
   dest: string;
+  /** Step of a multi-step job (`copy`, `analysis`, `erase`, …). */
+  phase: string;
+  /** The whole job, 0 to 1, when the job knows it. */
+  fraction: number | null;
 }
+
+export interface EngineStatus {
+  /** Schema of the Denon library on the stick, e.g. `3.0.2`. */
+  version: string | null;
+  minFirmware: string | null;
+  tracks: number;
+}
+
+export interface SettingField {
+  key: string;
+  /** `player`, `display`, `light`, `waveform`, `mixer`. */
+  group: string;
+  label: string;
+  options: { value: number; label: string }[];
+  default: number;
+}
+
+export type SettingValues = Record<string, number>;
+
+export interface PlayerSettings {
+  values: SettingValues;
+  /** `stick`, `profile` (saved in the app), `rekordbox`, `default`. */
+  source: "stick" | "profile" | "rekordbox" | "default";
+  profile: SettingValues;
+  playerSaved: string[];
+}
+
+export interface Disk {
+  id: string;
+  media: string;
+  size: number;
+  bus: string;
+  removable: boolean;
+  volumes: { name: string; mountPoint: string | null; content: string }[];
+  blocked: string | null;
+}
+
+export const playerApi = {
+  schema: () => invoke<SettingField[]>("settings_schema"),
+  get: (stick: string | null) => invoke<PlayerSettings>("settings_get", { stick }),
+  save: (values: SettingValues) => invoke<void>("settings_save", { values }),
+  write: (stick: string, values: SettingValues) => invoke<string>("settings_write", { stick, values }),
+  listDisks: () => invoke<Disk[]>("list_disks"),
+  formatStart: (disk: string, filesystem: "fat32" | "exfat", name: string, confirm: string, writeSettings: boolean) =>
+    invoke<number>("format_start", { disk, filesystem, name, confirm, writeSettings }),
+};
 
 export const libApi = {
   data: () => invoke<LibraryData>("library_data"),
@@ -226,6 +292,10 @@ export const libApi = {
   movePlaylist: (id: number, parent: number, index: number) =>
     invoke<void>("library_move_playlist", { id, parent, index }),
   setTracks: (id: number, trackIds: number[]) => invoke<void>("library_set_tracks", { id, trackIds }),
+  /** Each group: sibling playlists in their new order. */
+  orderPlaylists: (groups: number[][]) => invoke<void>("library_order_playlists", { groups }),
+  addFolders: (paths: string[], parent: number, playlist: number | null) =>
+    invoke<FolderReport>("library_add_folders", { paths, parent, playlist }),
   trackDetail: (id: number) => invoke<TrackDetail>("library_track_detail", { id }),
   saveCues: (id: number, cues: Cue[]) => invoke<Cue[]>("library_save_cues", { id, cues }),
   cueSummary: (trackIds: number[]) => invoke<CueSummary[]>("library_cue_summary", { trackIds }),
@@ -234,9 +304,13 @@ export const libApi = {
     invoke<SmartCueBatch>("library_smart_cue_apply", { trackIds, replace }),
   aiStatus: (trackIds: number[]) => invoke<AiStatus>("library_ai_status", { trackIds }),
   aiAnalyze: (trackIds: number[]) => invoke<number>("library_ai_analyze", { trackIds }),
+  /** Own analysis (waveforms, beat grid, key) of tracks rekordbox has not analysed. */
+  analyze: (trackIds: number[], again = false) => invoke<number>("library_analyze", { trackIds, again }),
   syncSelection: (stick: string) => invoke<number[]>("sync_selection", { stick }),
   syncPlan: (stick: string, playlistIds: number[]) => invoke<SyncPlan>("sync_plan", { stick, playlistIds }),
-  syncStart: (stick: string, playlistIds: number[]) => invoke<number>("sync_start", { stick, playlistIds }),
+  syncStart: (stick: string, playlistIds: number[], writeSettings: boolean, engine: string | null, flat: boolean) =>
+    invoke<number>("sync_start", { stick, playlistIds, writeSettings, engine, flat }),
+  engineStatus: (stick: string) => invoke<EngineStatus>("engine_status", { stick }),
 };
 
 export const api = {

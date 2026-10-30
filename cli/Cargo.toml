@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 pioneer-formats.workspace = true
 usb-tools.workspace = true
+engine-library.workspace = true
 analysis.workspace = true
 library.workspace = true
 anyhow.workspace = true

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, LoaderCircle, RefreshCw } from "@lucide/svelte";
+  import { Download, LoaderCircle, RefreshCw, SlidersHorizontal } from "@lucide/svelte";
   import { plural } from "./format";
   import { app } from "./state.svelte";
 
@@ -34,6 +34,9 @@
           {#if app.importing}<LoaderCircle size={14} class="spin" /> Načítám z rekordboxu…{:else if tracks > 0}<RefreshCw size={14} /> Aktualizovat z rekordboxu{:else}<Download size={14} /> Importovat z rekordboxu{/if}
         </button>
       {/if}
+      <button class="btn" onclick={() => (app.settingsFor = null)} title="Tvoje My Settings pro CDJ/XDJ a mixer">
+        <SlidersHorizontal size={14} /> Nastavení přehrávače
+      </button>
       <button class="btn primary" onclick={() => (app.syncOpen = true)} disabled={tracks === 0}>
         <RefreshCw size={14} /> Synchronizovat na flashku
       </button>

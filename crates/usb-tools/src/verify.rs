@@ -4,8 +4,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::UNIX_EPOCH;
 
 use pioneer_formats::anlz::AnlzFile;
+use serde::{Deserialize, Serialize};
 
 use crate::Stick;
 use crate::compat::{Player, can_mount, can_play};
@@ -71,6 +73,43 @@ pub struct VerifyReport {
     pub formats: BTreeMap<String, usize>,
 }
 
+/// Size and modification time of a file: when both match, its content is
+/// taken as unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct Stamp {
+    size: u64,
+    modified_ms: u64,
+}
+
+impl Stamp {
+    fn of(meta: &std::fs::Metadata) -> Self {
+        Stamp {
+            size: meta.len(),
+            modified_ms: meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_millis() as u64),
+        }
+    }
+}
+
+/// What reading a track's files found. Read errors are not kept, so a file
+/// that failed to read is read again next time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Checked {
+    audio: Option<(Stamp, AudioInfo)>,
+    /// The analysis file and its parse error, if any.
+    anlz: Option<(Stamp, Option<String>)>,
+}
+
+/// Results of earlier checks, keyed by the audio file's full path, so a
+/// check of a stick only reads the files that changed since.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct VerifyCache {
+    tracks: HashMap<String, Checked>,
+}
+
 #[cfg(target_os = "macos")]
 pub fn filesystem_type(path: &Path) -> Option<String> {
     use std::ffi::{CStr, CString};
@@ -126,9 +165,22 @@ pub fn verify(
     stick: &Stick,
     players: &[Player],
     cancel: &AtomicBool,
+    progress: impl FnMut(usize, usize),
+) -> VerifyReport {
+    verify_cached(stick, players, &mut VerifyCache::default(), cancel, progress)
+}
+
+/// [`verify`], reading only the files that changed since `cache` saw them.
+/// Entries of this stick's tracks that are gone are dropped from `cache`.
+pub fn verify_cached(
+    stick: &Stick,
+    players: &[Player],
+    cache: &mut VerifyCache,
+    cancel: &AtomicBool,
     mut progress: impl FnMut(usize, usize),
 ) -> VerifyReport {
     let db = &stick.db;
+    let mut fresh = HashMap::new();
     let mut r = VerifyReport {
         tracks: db.tracks.len(),
         playlists: db.playlists.iter().filter(|p| !p.is_folder).count(),
@@ -178,6 +230,10 @@ pub fn verify(
             issue(None, Problem::MissingAudio);
             continue;
         };
+        let key = path.display().to_string();
+        let audio_stamp = Stamp::of(&meta);
+        let prev = cache.tracks.get(&key).cloned().unwrap_or_default();
+        let mut checked = Checked::default();
         if t.file_size != 0 && meta.len() != t.file_size as u64 {
             issue(
                 None,
@@ -194,28 +250,41 @@ pub fn verify(
             );
         } else {
             let anlz = stick.resolve(&t.analyze_path);
-            match std::fs::read(&anlz) {
-                Err(_) => issue(
+            let stamp = std::fs::metadata(&anlz).ok().map(|m| Stamp::of(&m));
+            // None: unreadable; Some(err): read, with its parse error if any.
+            let parsed = match (stamp, prev.anlz) {
+                (Some(s), Some((was, err))) if s == was => Some(err),
+                (Some(_), _) => std::fs::read(&anlz)
+                    .ok()
+                    .map(|b| AnlzFile::parse(&b).err().map(|e| e.to_string())),
+                (None, _) => None,
+            };
+            checked.anlz = stamp.zip(parsed.clone());
+            match parsed {
+                None => issue(
                     None,
                     Problem::MissingAnalysis(format!("{} missing", t.analyze_path)),
                 ),
-                Ok(b) => {
-                    if let Err(e) = AnlzFile::parse(&b) {
-                        issue(
-                            None,
-                            Problem::MissingAnalysis(format!("{}: {e}", t.analyze_path)),
-                        );
-                    }
-                }
+                Some(Some(e)) => issue(
+                    None,
+                    Problem::MissingAnalysis(format!("{}: {e}", t.analyze_path)),
+                ),
+                Some(None) => {}
             }
         }
-        let info = match probe_file(&path) {
-            Ok(i) => i,
-            Err(e) => {
-                issue(None, Problem::Unreadable(e.to_string()));
-                continue;
-            }
+        let info = match prev.audio {
+            Some((was, info)) if was == audio_stamp => info,
+            _ => match probe_file(&path) {
+                Ok(i) => i,
+                Err(e) => {
+                    issue(None, Problem::Unreadable(e.to_string()));
+                    fresh.insert(key, checked);
+                    continue;
+                }
+            },
         };
+        checked.audio = Some((audio_stamp, info));
+        fresh.insert(key, checked);
         *r.formats.entry(info.describe()).or_default() += 1;
         if info.junk_after_tag > 0 {
             issue(
@@ -252,6 +321,13 @@ pub fn verify(
             issue(Some(info), Problem::Unsupported { players, reason });
         }
     }
+    // A finished check knows every track of the stick: forget the others.
+    if !cancel.load(Ordering::Relaxed) {
+        cache
+            .tracks
+            .retain(|k, _| !Path::new(k).starts_with(&stick.root));
+    }
+    cache.tracks.extend(fresh);
     progress(db.tracks.len(), db.tracks.len());
     r
 }

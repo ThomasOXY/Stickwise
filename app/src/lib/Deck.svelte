@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Minus, Pause, Play, Plus, Sparkles } from "@lucide/svelte";
+  import { Minus, Pause, Play, Plus, Sparkles, Volume1, Volume2, VolumeX } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { keyColor, time } from "./format";
   import { app } from "./state.svelte";
@@ -18,15 +18,24 @@
   let audioDuration = $state(0);
   let style = $state<Style>((localStorage.getItem("wave-style") as Style) || "three-band");
   let span = $state(Number(localStorage.getItem("wave-span")) || 8);
+  /** Volume fader 0..1; the gain follows its square, which sounds even across the travel. */
+  let fader = $state(Number(localStorage.getItem("volume") ?? 1));
+  let muted = $state(localStorage.getItem("muted") === "on");
   let resumeAfterScrub = false;
 
-  const track = $derived(app.selectedTrack != null ? app.trackById.get(app.selectedTrack) : undefined);
+  // The deck keeps its track while the app switches between library and stick.
+  const track = $derived(app.deck?.track);
   const detail = $derived(app.detail?.trackId === track?.id ? app.detail : null);
   const duration = $derived(audioDuration || track?.duration || 0);
   const issue = $derived(
-    track ? app.verify?.issues.find((i) => i.trackId === track.id && i.severity === "error") : undefined,
+    track && app.deckHere ? app.verify?.issues.find((i) => i.trackId === track.id && i.severity === "error") : undefined,
   );
   const cues = $derived(detail?.cues ?? []);
+  const from = $derived(
+    app.deck?.source === "library"
+      ? "Hraje z knihovny"
+      : `Hraje z flashky ${app.sticks.find((s) => s.path === app.deck?.stickPath)?.name ?? ""}`,
+  );
   const ghosts = $derived(
     app.smartOpen && app.smart
       ? app.smart.map((s) => ({ timeMs: s.timeMs, label: s.label, color: `rgb(${s.color[0]} ${s.color[1]} ${s.color[2]})` }))
@@ -44,32 +53,73 @@
 
   $effect(() => localStorage.setItem("wave-style", style));
   $effect(() => localStorage.setItem("wave-span", String(span)));
+  $effect(() => localStorage.setItem("volume", String(fader)));
+  $effect(() => localStorage.setItem("muted", muted ? "on" : "off"));
+  $effect(() => {
+    if (!audio) return;
+    audio.volume = fader * fader;
+    audio.muted = muted;
+  });
+
+  function setFader(v: number) {
+    fader = Math.min(1, Math.max(0, v));
+    muted = fader === 0;
+  }
+
+  function onVolumeWheel(e: WheelEvent) {
+    e.preventDefault();
+    setFader((muted ? 0 : fader) - Math.sign(e.deltaY || -e.deltaX) * 0.05);
+  }
 
   // A newly selected track is loaded paused, like loading a deck.
   $effect(() => {
-    void track?.id;
+    void app.deck;
     position = 0;
     playing = false;
     audioDuration = 0;
   });
 
+  // WebKit moves `currentTime` in coarse steps: run our own clock from the
+  // frame time and only pull it gently towards the audio, so the waveform
+  // scrolls evenly instead of jerking.
+  let clock = { media: 0, at: 0 };
+  let last = { at: -1, t: 0 };
+
+  function resync() {
+    clock = { media: audio?.currentTime ?? position, at: performance.now() };
+    last.at = -1;
+  }
+
+  function smoothTime(): number {
+    if (!audio) return position;
+    const now = performance.now();
+    if (now - last.at < 4) return last.t;
+    const est = clock.media + ((now - clock.at) / 1000) * audio.playbackRate;
+    const real = audio.currentTime;
+    clock = Math.abs(real - est) > 0.15 ? { media: real, at: now } : { media: est + (real - est) * 0.05, at: now };
+    last = { at: now, t: clock.media };
+    return clock.media;
+  }
+
   // Follow the audio clock smoothly while playing.
   $effect(() => {
     if (!playing) return;
+    resync();
     let raf = 0;
     const tick = () => {
-      if (audio) position = audio.currentTime;
+      position = smoothTime();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   });
 
-  const getTime = () => (playing && audio ? audio.currentTime : position);
+  const getTime = () => (playing && audio ? smoothTime() : position);
 
   function setTime(t: number) {
     position = t;
     if (audio) audio.currentTime = t;
+    resync();
   }
 
   export function toggle() {
@@ -100,7 +150,8 @@
       src={convertFileSrc(track.absPath)}
       preload="auto"
       ontimeupdate={() => !playing && (position = audio!.currentTime)}
-      onplay={() => (playing = true)}
+      onplay={() => (resync(), (playing = true))}
+      onseeked={resync}
       onpause={() => (playing = false)}
       onended={() => (playing = false)}
       onloadedmetadata={() => (audioDuration = audio!.duration || 0)}
@@ -114,12 +165,37 @@
         <div class="t">{track.title}</div>
         <div class="a">{track.artist}</div>
       </div>
+      {#if !app.deckHere}
+        <span class="from" title="Skladba zůstala na decku po přepnutí zdroje">{from}</span>
+      {/if}
       {#if issue}
         <span class="pill"><span class="dot fault"></span>{app.formatOverride.get(track.id) ?? track.format}, na CDJ nepůjde</span>
       {/if}
       {#if detail?.edited}
         <span class="edited">Cue upravené, zatím jen v aplikaci <button onclick={() => app.revertCues()}>Vrátit</button></span>
       {/if}
+
+      <div class="volume" onwheel={onVolumeWheel}>
+        <button
+          class="btn icon"
+          onclick={() => (muted && fader === 0 ? setFader(0.7) : (muted = !muted))}
+          aria-label={muted ? "Zapnout zvuk" : "Ztlumit"}
+          title={muted ? "Zapnout zvuk" : "Ztlumit"}
+        >
+          {#if muted || fader === 0}<VolumeX size={14} />{:else if fader < 0.5}<Volume1 size={14} />{:else}<Volume2 size={14} />{/if}
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={muted ? 0 : fader}
+          oninput={(e) => setFader(Number(e.currentTarget.value))}
+          style:--fill="{(muted ? 0 : fader) * 100}%"
+          aria-label="Hlasitost"
+          title="Hlasitost {Math.round((muted ? 0 : fader) * 100)} %"
+        />
+      </div>
 
       <div class="tools">
         <button
@@ -248,6 +324,43 @@
     color: #f2a3a5;
     font-size: 12px;
     white-space: nowrap;
+  }
+  .from {
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    color: var(--text-2);
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+  .volume {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .volume .btn.icon {
+    width: 26px;
+    height: 26px;
+  }
+  .volume input {
+    width: 92px;
+    height: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    appearance: none;
+    background: linear-gradient(to right, var(--cue) var(--fill), var(--line) var(--fill));
+    cursor: pointer;
+  }
+  .volume input::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
   }
   .tools {
     display: flex;
