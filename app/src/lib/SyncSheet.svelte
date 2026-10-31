@@ -111,6 +111,7 @@
     failed = null;
     try {
       started = performance.now();
+      await app.flushGrid();
       jobId = await libApi.syncStart(stick, [...picked], writeSettings, engine, flat);
     } catch (e) {
       failed = String(e);

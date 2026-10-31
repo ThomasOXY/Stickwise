@@ -49,6 +49,8 @@ fn main() {
             library_cmds::library_delete_playlist,
             library_cmds::library_move_playlist,
             library_cmds::library_add_folders,
+            library_cmds::library_set_grid,
+            library_cmds::library_reset_grid,
             library_cmds::library_analyze,
             library_cmds::library_order_playlists,
             library_cmds::library_set_tracks,

@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { gridBeats, normalize, type Grid } from "./grid";
 import {
   api,
   libApi,
@@ -83,6 +84,11 @@ class AppState {
   /** Smart Cue suggestions for the selected track, shown on the waveform. */
   smart = $state<SmartCue[] | null>(null);
   smartOpen = $state(false);
+  /** Beat grid edit mode on the deck, and its click track. */
+  gridOpen = $state(false);
+  metronome = $state(false);
+  private gridUndo: { trackId: number; grid: Grid }[] = [];
+  private gridSave: ReturnType<typeof setTimeout> | undefined;
   /** CUE-DETR sidecar installed, and which tracks it has analysed. */
   aiInstalled = $state(false);
   aiAnalyzed = $state<Set<number>>(new Set());
@@ -686,6 +692,7 @@ class AppState {
     if (!track || (!this.isLibrary && !this.stickPath)) return;
     this.selectedTrack = id;
     if (!this.deckHere || this.deck!.track.id !== id) {
+      this.flushGrid();
       this.deck = { track, source: this.source, stickPath: this.stickPath };
       this.detail = null;
       this.smart = null;
@@ -697,6 +704,83 @@ class AppState {
   }
 
   /** Read the deck track's waveform and cues again from its source. */
+  /** The deck's grid can be edited: a library track with a grid. */
+  get gridEditable(): boolean {
+    return this.deck?.source === "library" && !!this.detail?.grid;
+  }
+
+  /** Change the deck's beat grid: shown at once, saved a moment later. */
+  setGrid(next: Grid, undoable = true) {
+    const d = this.detail;
+    const deck = this.deck;
+    if (!d?.grid || !deck || deck.source !== "library" || !(next.bpm >= 20 && next.bpm <= 400)) return;
+    if (undoable) {
+      this.gridUndo.push({ trackId: d.trackId, grid: { bpm: d.grid.bpm, anchorMs: d.grid.anchorMs } });
+      if (this.gridUndo.length > 200) this.gridUndo.shift();
+    }
+    const g = normalize(next);
+    const durationMs = (deck.track.duration + 2) * 1000;
+    this.detail = { ...d, beats: gridBeats(g, durationMs), grid: { ...g, edited: true } };
+    // The tempo shown everywhere follows the grid.
+    const bpm = Math.round(g.bpm * 100) / 100;
+    deck.track.bpm = bpm;
+    const row = this.library?.tracks.find((t) => t.id === d.trackId);
+    if (row) row.bpm = bpm;
+    const id = d.trackId;
+    clearTimeout(this.gridSave);
+    this.gridSave = setTimeout(async () => {
+      this.gridSave = undefined;
+      try {
+        await libApi.setGrid(id, g.bpm, g.anchorMs);
+        if (this.smartOpen && this.deck?.track.id === id) await this.loadSmart();
+      } catch (e) {
+        this.error = String(e);
+      }
+    }, 300);
+  }
+
+  /** Save a pending grid change now. */
+  async flushGrid() {
+    if (this.gridSave === undefined) return;
+    clearTimeout(this.gridSave);
+    this.gridSave = undefined;
+    const d = this.detail;
+    if (d?.grid?.edited) await libApi.setGrid(d.trackId, d.grid.bpm, d.grid.anchorMs).catch((e) => (this.error = String(e)));
+  }
+
+  undoGrid() {
+    const last = this.gridUndo.pop();
+    if (!last || last.trackId !== this.detail?.trackId) {
+      if (last) this.gridUndo.push(last);
+      return;
+    }
+    this.setGrid(last.grid, false);
+  }
+
+  get canUndoGrid(): boolean {
+    const last = this.gridUndo[this.gridUndo.length - 1];
+    return !!last && last.trackId === this.detail?.trackId;
+  }
+
+  /** Back to the analysed grid. */
+  async resetGrid() {
+    const d = this.detail;
+    if (!d || this.deck?.source !== "library") return;
+    clearTimeout(this.gridSave);
+    this.gridSave = undefined;
+    if (d.grid) this.gridUndo.push({ trackId: d.trackId, grid: { bpm: d.grid.bpm, anchorMs: d.grid.anchorMs } });
+    try {
+      await libApi.resetGrid(d.trackId);
+      await this.reloadLibrary();
+      const t = this.library?.tracks.find((x) => x.id === d.trackId);
+      if (t && this.deck) this.deck.track.bpm = t.bpm;
+      await this.reloadDeck();
+      if (this.smartOpen) await this.loadSmart();
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
   async reloadDeck() {
     const deck = this.deck;
     if (!deck) return;

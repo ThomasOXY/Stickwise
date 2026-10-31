@@ -82,12 +82,15 @@ pub fn library(req: &SyncRequest, plan: &SyncPlan) -> (Library, usize) {
             .anlz_dat
             .as_ref()
             .and_then(|p| read_anlz(&p.with_extension("2EX")));
-        let grid = dat
-            .as_ref()
-            .and_then(|d| d.beat_grid())
-            .and_then(Result::ok)
-            .map(|g| convert::beat_grid(&g.beats, sr, samples))
-            .unwrap_or_default();
+        let grid = match &t.grid {
+            Some(beats) => convert::beat_grid(beats, sr, samples),
+            None => dat
+                .as_ref()
+                .and_then(|d| d.beat_grid())
+                .and_then(Result::ok)
+                .map(|g| convert::beat_grid(&g.beats, sr, samples))
+                .unwrap_or_default(),
+        };
         let overview = two
             .as_ref()
             .and_then(|f| f.section(tag::WAVE_3BAND_PREVIEW))

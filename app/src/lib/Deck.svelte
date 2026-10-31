@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { Minus, Pause, Play, Plus, Sparkles, Volume1, Volume2, VolumeX } from "@lucide/svelte";
+  import { Grid3x3, Minus, Pause, Play, Plus, Sparkles, Volume1, Volume2, VolumeX } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { keyColor, time } from "./format";
   import { app } from "./state.svelte";
   import CuePads from "./CuePads.svelte";
+  import GridPanel from "./GridPanel.svelte";
+  import type { Grid } from "./grid";
   import SmartCuePanel from "./SmartCuePanel.svelte";
   import WaveDetail from "./WaveDetail.svelte";
   import WaveOverview from "./WaveOverview.svelte";
@@ -141,6 +143,65 @@
     if (resumeAfterScrub) audio?.play();
     resumeAfterScrub = false;
   }
+
+  // Alt + drag in the waveform moves the grid (in grid mode).
+  let dragBase: Grid | null = null;
+  let dragMoved = false;
+  function gridDrag(deltaMs: number, phase: "start" | "move" | "end") {
+    const g = app.detail?.grid;
+    if (!g || !app.gridEditable) return;
+    if (phase === "start") {
+      dragBase = { bpm: g.bpm, anchorMs: g.anchorMs };
+      dragMoved = false;
+      return;
+    }
+    if (!dragBase) return;
+    if (deltaMs !== 0) {
+      // One undo step for the whole drag.
+      app.setGrid({ bpm: dragBase.bpm, anchorMs: dragBase.anchorMs + deltaMs }, !dragMoved);
+      dragMoved = true;
+    }
+    if (phase === "end") dragBase = null;
+  }
+
+  // Metronome: a click on every beat (higher on bar ones), scheduled a
+  // little ahead on the Web Audio clock.
+  let clickCtx: AudioContext | null = null;
+  function click(delay: number, accent: boolean) {
+    const ctx = clickCtx!;
+    const t = ctx.currentTime + delay;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = accent ? 1760 : 1175;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.5, t + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  }
+  $effect(() => {
+    if (!playing || !app.metronome) return;
+    clickCtx ??= new AudioContext();
+    void clickCtx.resume();
+    let done = getTime() * 1000;
+    let raf = 0;
+    const loop = () => {
+      const now = getTime() * 1000;
+      // After a jump, start clicking from where the music is.
+      if (now < done - 250 || now > done + 1000) done = now;
+      const rate = audio?.playbackRate || 1;
+      for (const [ms, n] of app.detail?.beats ?? []) {
+        if (ms <= done) continue;
+        if (ms > now + 120) break;
+        click(Math.max(0, (ms - now) / 1000 / rate), n === 1);
+        done = ms;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  });
 </script>
 
 <footer class="deck">
@@ -206,6 +267,14 @@
         >
           <Sparkles size={13} /> Smart Cue
         </button>
+        <button
+          class="btn small smart"
+          class:on={app.gridOpen}
+          onclick={() => (app.gridOpen = !app.gridOpen)}
+          title="Úprava beatgridu: tempo, posun, první doba taktu, metronom"
+        >
+          <Grid3x3 size={13} /> Grid
+        </button>
         {#if styles.length > 1}
           <div class="seg" role="radiogroup" aria-label="Styl waveformu">
             {#each styles as s}
@@ -245,12 +314,16 @@
         onZoom={zoom}
         onScrubStart={scrubStart}
         onScrubEnd={scrubEnd}
+        gridMode={app.gridOpen && app.gridEditable}
+        onGridDrag={gridDrag}
       />
     </div>
 
     <WaveOverview wave={overview.wave} isDetail={overview.isDetail} {cues} {ghosts} {duration} {position} {span} onSeek={setTime} />
 
-    {#if detail}
+    {#if app.gridOpen}
+      <GridPanel {getTime} />
+    {:else if detail}
       <CuePads {getTime} {setTime} beats={detail.beats} bpm={track.bpm} />
     {/if}
     {#if app.smartOpen && app.smart}

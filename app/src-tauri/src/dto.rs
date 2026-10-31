@@ -140,8 +140,19 @@ pub struct TrackDetail {
     pub edited: bool,
     /// Beat times in ms with their bar position (1 = downbeat).
     pub beats: Vec<(u32, u16)>,
+    /// The grid as tempo and one bar one, for editing.
+    pub grid: Option<GridInfo>,
     pub audio: Option<AudioInfo>,
     pub file_size: u64,
+}
+
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct GridInfo {
+    pub bpm: f64,
+    pub anchor_ms: f64,
+    /// Edited by the DJ (else as analysed).
+    pub edited: bool,
 }
 
 #[derive(Serialize)]

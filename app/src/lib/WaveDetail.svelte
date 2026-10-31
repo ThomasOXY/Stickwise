@@ -17,10 +17,28 @@
     onZoom: (factor: number) => void;
     onScrubStart: () => void;
     onScrubEnd: () => void;
+    /** Grid edit mode: beats drawn stronger, Alt + drag moves the grid. */
+    gridMode?: boolean;
+    onGridDrag?: (deltaMs: number, phase: "start" | "move" | "end") => void;
   }
 
-  let { wave, beats, cues, ghosts, duration, span, playing, getTime, setTime, onZoom, onScrubStart, onScrubEnd }: Props =
-    $props();
+  let {
+    wave,
+    beats,
+    cues,
+    ghosts,
+    duration,
+    span,
+    playing,
+    getTime,
+    setTime,
+    onZoom,
+    onScrubStart,
+    onScrubEnd,
+    gridMode = false,
+    onGridDrag,
+  }: Props = $props();
+  let gridDragX: number | null = null;
 
   let canvas = $state<HTMLCanvasElement>();
   let dirty = true;
@@ -37,7 +55,7 @@
 
   $effect(() => {
     // Any input change forces a repaint on the next frame.
-    void [wave, beats, cues, ghosts, span, duration];
+    void [wave, beats, cues, ghosts, span, duration, gridMode];
     dirty = true;
   });
 
@@ -64,17 +82,31 @@
     if (t1 > duration && duration > 0) ctx.fillRect(X(duration), 0, W - X(duration), H);
 
     // Beat grid: every beat faint, bar starts bright with a tick on top.
-    const showBeats = span <= 24;
+    // In grid mode every beat shows, stronger, with its number in the bar.
+    const showBeats = gridMode || span <= 24;
+    ctx.font = `700 ${9 * dpr}px Inter, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
     for (const [ms, n] of beats) {
       const s = ms / 1000;
       if (s < t0 || s > t1) continue;
       if (n !== 1 && !showBeats) continue;
       const x = Math.round(X(s)) + 0.5;
-      ctx.fillStyle = n === 1 ? "rgb(255 255 255 / 0.42)" : "rgb(255 255 255 / 0.14)";
+      ctx.fillStyle = gridMode
+        ? n === 1
+          ? "rgb(255 255 255 / 0.75)"
+          : "rgb(255 255 255 / 0.35)"
+        : n === 1
+          ? "rgb(255 255 255 / 0.42)"
+          : "rgb(255 255 255 / 0.14)";
       ctx.fillRect(x - 0.5, 0, Math.max(1, dpr * (n === 1 ? 1 : 0.5)), H);
       if (n === 1) {
         ctx.fillStyle = "#e5484d";
         ctx.fillRect(x - 2 * dpr, 0, 4 * dpr, 3 * dpr);
+      }
+      if (gridMode && span <= 32) {
+        ctx.fillStyle = n === 1 ? "#e5484d" : "rgb(255 255 255 / 0.6)";
+        ctx.fillText(String(n), x, 5 * dpr);
       }
     }
 
@@ -160,17 +192,33 @@
   function onPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (gridMode && e.altKey && onGridDrag) {
+      gridDragX = e.clientX;
+      onGridDrag(0, "start");
+      return;
+    }
     drag = { x: e.clientX, t: getTime() };
     onScrubStart();
   }
 
+  const gridDelta = (e: PointerEvent) => ((e.clientX - gridDragX!) / canvas!.clientWidth) * span * 1000;
+
   function onPointerMove(e: PointerEvent) {
+    if (gridDragX != null && canvas) {
+      onGridDrag?.(gridDelta(e), "move");
+      return;
+    }
     if (!drag || !canvas) return;
     const dt = ((drag.x - e.clientX) / canvas.clientWidth) * span;
     setTime(clamp(drag.t + dt));
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: PointerEvent) {
+    if (gridDragX != null && canvas) {
+      onGridDrag?.(gridDelta(e), "end");
+      gridDragX = null;
+      return;
+    }
     if (!drag) return;
     drag = null;
     onScrubEnd();

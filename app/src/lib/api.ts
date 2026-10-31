@@ -174,6 +174,8 @@ export interface TrackDetail {
   cues: Cue[];
   edited: boolean;
   beats: [number, number][];
+  /** The grid as tempo and one bar one; `edited` when the DJ changed it. */
+  grid: { bpm: number; anchorMs: number; edited: boolean } | null;
   audio: AudioInfo | null;
   fileSize: number;
 }
@@ -294,6 +296,8 @@ export const libApi = {
   setTracks: (id: number, trackIds: number[]) => invoke<void>("library_set_tracks", { id, trackIds }),
   /** Each group: sibling playlists in their new order. */
   orderPlaylists: (groups: number[][]) => invoke<void>("library_order_playlists", { groups }),
+  setGrid: (id: number, bpm: number, anchorMs: number) => invoke<void>("library_set_grid", { id, bpm, anchorMs }),
+  resetGrid: (id: number) => invoke<void>("library_reset_grid", { id }),
   addFolders: (paths: string[], parent: number, playlist: number | null) =>
     invoke<FolderReport>("library_add_folders", { paths, parent, playlist }),
   trackDetail: (id: number) => invoke<TrackDetail>("library_track_detail", { id }),

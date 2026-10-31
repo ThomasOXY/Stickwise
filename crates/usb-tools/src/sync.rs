@@ -61,6 +61,8 @@ pub struct SyncTrack {
     /// The track's `ANLZ0000.DAT` (with `.EXT` / `.2EX` beside it), if analysed.
     pub anlz_dat: Option<PathBuf>,
     pub cues: Vec<CuePoint>,
+    /// A beat grid the DJ edited, written over the analysed one.
+    pub grid: Option<Vec<pioneer_formats::anlz::Beat>>,
 }
 
 #[derive(Debug, Clone)]
@@ -446,6 +448,14 @@ fn build_anlz(t: &SyncTrack, device_path: &str) -> Option<Vec<(&'static str, Vec
         }
     }
     write_cue_points(&mut dat, ext.as_mut(), &t.cues);
+    if let Some(beats) = &t.grid {
+        dat.set(pioneer_formats::anlz::BeatGrid::new(beats.clone()).to_section());
+        // PQT2 holds the analysed grid again for newer players: without it
+        // they read the edited PQTZ.
+        if let Some(e) = ext.as_mut() {
+            e.sections.retain(|s| s.tag != tag::BEAT_GRID_2);
+        }
+    }
     let mut out = vec![("DAT", dat.to_bytes())];
     if let Some(e) = ext {
         out.push(("EXT", e.to_bytes()));
@@ -934,4 +944,35 @@ pub fn execute(
     report.tracks = back.tracks.len();
     report.playlists = back.playlists.iter().filter(|p| !p.is_folder).count();
     Ok(report)
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+    use pioneer_formats::anlz::{Beat, BeatGrid, Section};
+
+    #[test]
+    fn edited_grid_replaces_the_analysed_one() {
+        let d = tempfile::tempdir().unwrap();
+        let beat = |t, n| Beat { beat_number: n, tempo: 12000, time_ms: t };
+        let mut dat = AnlzFile::default();
+        dat.sections.push(BeatGrid::new(vec![beat(100, 1), beat(600, 2)]).to_section());
+        let mut ext = AnlzFile::default();
+        ext.sections.push(Section::new(tag::BEAT_GRID_2, vec![0; 44], vec![1, 2, 3]));
+        std::fs::write(d.path().join("ANLZ0000.DAT"), dat.to_bytes()).unwrap();
+        std::fs::write(d.path().join("ANLZ0000.EXT"), ext.to_bytes()).unwrap();
+        let edited = vec![
+            Beat { beat_number: 1, tempo: 12500, time_ms: 120 },
+            Beat { beat_number: 2, tempo: 12500, time_ms: 600 },
+        ];
+        let t = SyncTrack {
+            anlz_dat: Some(d.path().join("ANLZ0000.DAT")),
+            grid: Some(edited.clone()),
+            ..Default::default()
+        };
+        let files = build_anlz(&t, "/Contents/a.mp3").unwrap();
+        let get = |ext: &str| AnlzFile::parse(&files.iter().find(|f| f.0 == ext).unwrap().1).unwrap();
+        assert_eq!(get("DAT").beat_grid().unwrap().unwrap().beats, edited);
+        assert!(get("EXT").section(tag::BEAT_GRID_2).is_none());
+    }
 }

@@ -122,6 +122,12 @@ CREATE TABLE IF NOT EXISTS playlist_items (
 );
 CREATE INDEX IF NOT EXISTS items_playlist ON playlist_items(playlist_id, position);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+-- Beat grids edited by the DJ: tempo and one bar one (ms), over the analysis.
+CREATE TABLE IF NOT EXISTS grids (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  bpm REAL NOT NULL,
+  anchor_ms REAL NOT NULL
+);
 -- Cues a track had before a set plan replaced them (restorable).
 CREATE TABLE IF NOT EXISTS cue_backups (track_id INTEGER PRIMARY KEY, cues TEXT NOT NULL, saved TEXT NOT NULL);
 ";
@@ -324,6 +330,40 @@ impl Library {
         Ok(())
     }
 
+    /// The DJ's edited beat grid of a track: (bpm, anchor ms of a bar one).
+    pub fn grid(&self, track_id: i64) -> Result<Option<(f64, f64)>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT bpm, anchor_ms FROM grids WHERE track_id = ?1",
+                [track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// Keep an edited grid; the track's tempo follows it.
+    pub fn set_grid(&mut self, track_id: i64, bpm: f64, anchor_ms: f64) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO grids(track_id, bpm, anchor_ms) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(track_id) DO UPDATE SET bpm = ?2, anchor_ms = ?3",
+            params![track_id, bpm, anchor_ms],
+        )?;
+        tx.execute("UPDATE tracks SET bpm = ?2 WHERE id = ?1", params![track_id, (bpm * 100.0).round() / 100.0])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Back to the analysed grid, with its tempo.
+    pub fn clear_grid(&mut self, track_id: i64, bpm: Option<f64>) -> Result<()> {
+        self.conn.execute("DELETE FROM grids WHERE track_id = ?1", [track_id])?;
+        if let Some(b) = bpm {
+            self.conn.execute("UPDATE tracks SET bpm = ?2 WHERE id = ?1", params![track_id, b])?;
+        }
+        Ok(())
+    }
+
     /// Our own analysis of a track: its `ANLZ0000.DAT`, the grid's tempo,
     /// the key (only where the tags gave none) and the length if unknown.
     pub fn set_analysis(&mut self, id: i64, anlz: &str, bpm: Option<f64>, key: Option<&str>, duration: f64) -> Result<()> {
@@ -333,6 +373,8 @@ impl Library {
              duration = CASE WHEN duration = 0 THEN ?5 ELSE duration END WHERE id = ?1",
             params![id, anlz, bpm, key, duration],
         )?;
+        // A new analysis is asked for: its grid replaces an edited one.
+        self.conn.execute("DELETE FROM grids WHERE track_id = ?1", [id])?;
         Ok(())
     }
 

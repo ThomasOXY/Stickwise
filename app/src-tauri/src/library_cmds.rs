@@ -14,7 +14,7 @@ use usb_tools::sync::{self, SyncPlaylist, SyncRequest, SyncTrack};
 
 use crate::commands::{
     CmdResult, blocking, build_detail, cue_dto, cue_point, display_color, err, plan_cues,
-    smart_dto, suggestions_for, timestamp,
+    read_anlz, smart_dto, suggestions_for, timestamp,
 };
 use crate::dto;
 use crate::jobs::Jobs;
@@ -254,19 +254,70 @@ fn ai_key(t: &library::Track) -> String {
     Sidecar::key("library", &t.path, size)
 }
 
+/// The DJ's edited grid of a track, if any.
+fn edited_grid(app: &AppHandle, id: i64) -> Option<analysis::grid::Grid> {
+    lib(app, |l| l.grid(id))
+        .ok()
+        .flatten()
+        .map(|(bpm, anchor_ms)| analysis::grid::Grid { bpm, anchor_ms })
+}
+
+/// Beats of an edited grid over the whole track.
+fn edited_beats(app: &AppHandle, t: &library::Track) -> Option<Vec<(u32, u16)>> {
+    let g = edited_grid(app, t.id)?;
+    Some(g.beats(track_ms(t)))
+}
+
+/// Length of a track for laying a grid over it.
+fn track_ms(t: &library::Track) -> f64 {
+    if t.duration > 0.0 { t.duration * 1000.0 } else { 3_600_000.0 }
+}
+
 #[tauri::command]
 pub async fn library_track_detail(app: AppHandle, id: i64) -> CmdResult<dto::TrackDetail> {
     blocking(move || {
         let t = track(&app, id)?;
         let cues = lib(&app, |l| l.cues(id))?;
         let dat = (!t.anlz.is_empty()).then(|| PathBuf::from(&t.anlz));
-        Ok(build_detail(
-            id as u32,
-            dat.as_deref(),
-            Path::new(&t.path),
-            &cues,
-            false,
-        ))
+        let mut d = build_detail(id as u32, dat.as_deref(), Path::new(&t.path), &cues, false);
+        if let Some(g) = edited_grid(&app, id) {
+            d.beats = g.beats(track_ms(&t));
+            d.grid = Some(dto::GridInfo {
+                bpm: g.bpm,
+                anchor_ms: g.anchor_ms,
+                edited: true,
+            });
+        }
+        Ok(d)
+    })
+    .await
+}
+
+/// Keep an edited beat grid (tempo and one bar one in ms).
+#[tauri::command]
+pub fn library_set_grid(app: AppHandle, id: i64, bpm: f64, anchor_ms: f64) -> CmdResult<()> {
+    if !(20.0..=400.0).contains(&bpm) || !anchor_ms.is_finite() {
+        return Err(format!("Neplatný grid: {bpm} BPM"));
+    }
+    lib(&app, |l| l.set_grid(id, bpm, anchor_ms))
+}
+
+/// Back to the analysed grid and its tempo.
+#[tauri::command]
+pub async fn library_reset_grid(app: AppHandle, id: i64) -> CmdResult<()> {
+    blocking(move || {
+        let t = track(&app, id)?;
+        let bpm = (!t.anlz.is_empty())
+            .then(|| read_anlz(Path::new(&t.anlz)))
+            .flatten()
+            .and_then(|d| d.beat_grid())
+            .and_then(|g| g.ok())
+            .and_then(|g| {
+                let beats: Vec<(u32, u16)> = g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect();
+                analysis::grid::Grid::from_beats(&beats)
+            })
+            .map(|g| (g.bpm * 100.0).round() / 100.0);
+        lib(&app, |l| l.clear_grid(id, bpm))
     })
     .await
 }
@@ -315,7 +366,7 @@ pub async fn library_cue_summary(
 pub async fn library_smart_cue(app: AppHandle, id: i64) -> CmdResult<Vec<dto::SmartCue>> {
     blocking(move || {
         let t = track(&app, id)?;
-        let s = suggestions_for(&app, Path::new(&t.anlz), t.bpm as f32, &ai_key(&t))
+        let s = suggestions_for(&app, Path::new(&t.anlz), t.bpm as f32, &ai_key(&t), edited_beats(&app, &t).as_deref())
             .ok_or("Skladba nemá analýzu z rekordboxu, Smart Cue ji zatím neumí rozebrat.")?;
         Ok(smart_dto(&s))
     })
@@ -341,7 +392,7 @@ pub async fn library_smart_cue_apply(
                 r.skipped += 1;
                 continue;
             }
-            let Some(s) = suggestions_for(&app, Path::new(&t.anlz), t.bpm as f32, &ai_key(&t))
+            let Some(s) = suggestions_for(&app, Path::new(&t.anlz), t.bpm as f32, &ai_key(&t), edited_beats(&app, &t).as_deref())
             else {
                 r.failed += 1;
                 continue;
@@ -631,7 +682,15 @@ fn sync_request(
     let mut sync_tracks = Vec::new();
     for t in tracks.into_iter().filter(|t| wanted.contains(&t.id)) {
         let cues = lib(app, |l| l.cues(t.id))?;
+        let grid = edited_grid(app, t.id).map(|g| {
+            let tempo = (g.bpm * 100.0).round() as u16;
+            g.beats(track_ms(&t))
+                .into_iter()
+                .map(|(time_ms, beat_number)| pioneer_formats::anlz::Beat { beat_number, tempo, time_ms })
+                .collect()
+        });
         sync_tracks.push(SyncTrack {
+            grid,
             key: t.id,
             audio: PathBuf::from(&t.path),
             title: t.title,
@@ -1044,7 +1103,7 @@ fn plan_track(app: &AppHandle, t: &library::Track) -> analysis::set_planner::Pla
     let (mut drops, mut breaks, mut builds) = (Vec::new(), Vec::new(), Vec::new());
     if !t.anlz.is_empty() {
         let dat = Path::new(&t.anlz);
-        if let Some(s) = suggestions_for(app, dat, t.bpm as f32, &ai_key(t)) {
+        if let Some(s) = suggestions_for(app, dat, t.bpm as f32, &ai_key(t), edited_beats(app, t).as_deref()) {
             let at = |k: Kind| {
                 s.iter()
                     .filter(|x| x.kind == k)

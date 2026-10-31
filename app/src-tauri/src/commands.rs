@@ -407,8 +407,13 @@ pub(crate) fn build_detail(
         .as_ref()
         .and_then(|d| d.beat_grid())
         .and_then(|g| g.ok())
-        .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
+        .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect::<Vec<_>>())
         .unwrap_or_default();
+    let grid = analysis::grid::Grid::from_beats(&beats).map(|g| dto::GridInfo {
+        bpm: g.bpm,
+        anchor_ms: g.anchor_ms,
+        edited: false,
+    });
     dto::TrackDetail {
         track_id,
         previews,
@@ -416,6 +421,7 @@ pub(crate) fn build_detail(
         cues,
         edited,
         beats,
+        grid,
         audio: probe::probe_file(audio_path).ok().map(|i| audio_dto(&i)),
         file_size: std::fs::metadata(audio_path).map(|m| m.len()).unwrap_or(0),
     }
@@ -903,7 +909,7 @@ fn suggestions(
     t: &pioneer_formats::pdb::Track,
 ) -> Option<Vec<analysis::smart_cue::Suggestion>> {
     let dat = stick.resolve(&t.analyze_path);
-    suggestions_for(app, &dat, t.bpm() as f32, &ai_key(stick, t))
+    suggestions_for(app, &dat, t.bpm() as f32, &ai_key(stick, t), None)
 }
 
 pub(crate) fn suggestions_for(
@@ -911,6 +917,7 @@ pub(crate) fn suggestions_for(
     dat_path: &Path,
     bpm: f32,
     ai_cache_key: &str,
+    edited_beats: Option<&[(u32, u16)]>,
 ) -> Option<Vec<analysis::smart_cue::Suggestion>> {
     use analysis::smart_cue::{
         AI_THRESHOLD, AiCandidate, Input, analyze, bands_from_color, bands_from_three_band, with_ai,
@@ -924,11 +931,14 @@ pub(crate) fn suggestions_for(
         let ext = read_anlz(&sibling(dat_path, "EXT"))?;
         bands_from_color(&ext.section(tag::WAVE_COLOR_SCROLL)?.body)
     };
-    let beats: Vec<(u32, u16)> = dat
-        .beat_grid()
-        .and_then(|g| g.ok())
-        .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
-        .unwrap_or_default();
+    let beats: Vec<(u32, u16)> = match edited_beats {
+        Some(b) => b.to_vec(),
+        None => dat
+            .beat_grid()
+            .and_then(|g| g.ok())
+            .map(|g| g.beats.iter().map(|b| (b.time_ms, b.beat_number)).collect())
+            .unwrap_or_default(),
+    };
     let input = Input {
         beats: &beats,
         columns: &columns,

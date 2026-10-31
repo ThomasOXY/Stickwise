@@ -828,6 +828,16 @@ fn sync_cmd(db: &Path, stick: &Path, names: &[String], engine: Option<&str>) -> 
         .collect();
     let mut tracks = Vec::new();
     for t in lib.tracks()?.into_iter().filter(|t| wanted.contains(&t.id)) {
+        // A grid edited in the app goes over the analysed one.
+        let grid = lib.grid(t.id)?.map(|(bpm, anchor_ms)| {
+            let tempo = (bpm * 100.0).round() as u16;
+            let end = if t.duration > 0.0 { t.duration * 1000.0 } else { 3_600_000.0 };
+            analysis::grid::Grid { bpm, anchor_ms }
+                .beats(end)
+                .into_iter()
+                .map(|(time_ms, beat_number)| pioneer_formats::anlz::Beat { beat_number, tempo, time_ms })
+                .collect()
+        });
         tracks.push(SyncTrack {
             key: t.id,
             audio: PathBuf::from(&t.path),
@@ -851,6 +861,7 @@ fn sync_cmd(db: &Path, stick: &Path, names: &[String], engine: Option<&str>) -> 
             track_number: t.track_number,
             date_added: t.date_added,
             anlz_dat: (!t.anlz.is_empty()).then(|| PathBuf::from(t.anlz)),
+            grid,
         });
     }
     let req = SyncRequest {

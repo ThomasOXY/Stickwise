@@ -419,6 +419,13 @@ mod tests {
         lib.set_analysis(id, "/a/ANLZ0000.DAT", Some(126.0), Some("Fm"), 200.0).unwrap();
         let t = lib.track(id).unwrap().unwrap();
         assert_eq!((t.anlz.as_str(), t.bpm, t.key.as_str(), t.duration), ("/a/ANLZ0000.DAT", 126.0, "8A", 200.0));
+
+        // An edited grid sets the tempo; a new analysis replaces it.
+        lib.set_grid(id, 125.995, 640.0).unwrap();
+        assert_eq!(lib.grid(id).unwrap(), Some((125.995, 640.0)));
+        assert_eq!(lib.track(id).unwrap().unwrap().bpm, 126.0);
+        lib.set_analysis(id, "/a/ANLZ0000.DAT", Some(127.0), None, 200.0).unwrap();
+        assert_eq!(lib.grid(id).unwrap(), None);
         let ps = lib.playlists().unwrap();
         let folder = ps.iter().find(|p| p.is_folder && p.name == "Techno").unwrap();
         let peak = ps.iter().find(|p| p.name == "Peak").unwrap();
