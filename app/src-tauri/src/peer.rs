@@ -4,11 +4,12 @@
 //! wherever their files lie.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use libsync::{Host, MirrorChoice, MirrorOutcome, MirrorPreview, Outcome, Progress, Summary};
+use library::peer::Unreadable;
 use library::transfer::ApplyReport;
 use peerlink::{Event, Node, Peer};
 use serde::Serialize;
@@ -33,6 +34,10 @@ pub struct PeerSettings {
     pub default_music_dir: bool,
     pub fingerprinted: usize,
     pub total: usize,
+    /// Tracks without a fingerprint whose file can't be read.
+    pub skipped: usize,
+    /// Tracks without a fingerprint whose file is not there.
+    pub waiting: usize,
     /// Mirror with paired Macs by itself when they come on the network.
     pub auto_mirror: bool,
 }
@@ -42,6 +47,23 @@ pub struct PeerSettings {
 struct FingerprintProgress {
     fingerprinted: usize,
     total: usize,
+    skipped: usize,
+    waiting: usize,
+}
+
+/// Of the tracks without a fingerprint, as the last pass found them: files
+/// that could not be read and are skipped, and files not there (a drive not
+/// plugged in).
+#[derive(Default)]
+pub struct FingerprintGaps {
+    skipped: AtomicUsize,
+    waiting: AtomicUsize,
+}
+
+impl FingerprintGaps {
+    fn get(&self) -> (usize, usize) {
+        (self.skipped.load(Ordering::Relaxed), self.waiting.load(Ordering::Relaxed))
+    }
 }
 
 fn default_music_dir() -> PathBuf {
@@ -63,6 +85,8 @@ fn settings(app: &AppHandle) -> CmdResult<PeerSettings> {
         music_dir: dir.unwrap_or_else(|| default_music_dir().display().to_string()),
         fingerprinted,
         total,
+        skipped: app.state::<FingerprintGaps>().get().0,
+        waiting: app.state::<FingerprintGaps>().get().1,
         auto_mirror: auto_mirror_on(app),
     })
 }
@@ -95,8 +119,9 @@ pub fn start_fingerprints(app: AppHandle) {
         .name("fingerprints".into())
         .spawn(move || {
             let mut all = true;
+            let mut unreadable = Unreadable::default();
             loop {
-                fingerprint_pass(&app, all);
+                fingerprint_pass(&app, all, &mut unreadable);
                 all = false;
                 std::thread::sleep(RESCAN);
             }
@@ -112,24 +137,53 @@ fn mtime(m: &std::fs::Metadata) -> i64 {
 
 /// One look over the tracks: hash those never hashed and, with `all`, those
 /// whose file changed since. Files that are not there (a drive not plugged
-/// in) wait for a later pass.
-fn fingerprint_pass(app: &AppHandle, all: bool) {
+/// in) wait for a later pass; files that can't be read are skipped (see
+/// [`Unreadable`]).
+fn fingerprint_pass(app: &AppHandle, all: bool, unreadable: &mut Unreadable) {
     let Ok(stamps) = lib(app, |l| l.file_stamps()) else { return };
     let mut last_emit = Instant::now();
     let mut changed = false;
+    let (mut skipped, mut waiting) = (0, 0);
     for s in stamps.iter().filter(|s| all || s.fingerprint.is_empty()) {
-        let Ok(m) = std::fs::metadata(&s.path) else { continue };
-        if !s.stale(m.len(), mtime(&m)) {
+        let new = s.fingerprint.is_empty() as usize;
+        let m = match std::fs::metadata(&s.path) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                waiting += new;
+                continue;
+            }
+            Err(e) => {
+                if !unreadable.skipped(s.id, 0, 0) {
+                    unreadable.failed(s.id, 0, 0, &e);
+                }
+                skipped += new * unreadable.skipped(s.id, 0, 0) as usize;
+                continue;
+            }
+        };
+        let (size, mt) = (m.len(), mtime(&m));
+        if !s.stale(size, mt) {
+            continue;
+        }
+        if unreadable.skipped(s.id, size, mt) {
+            skipped += new;
             continue;
         }
         // Hashing reads the whole file: done without holding the library.
-        let Ok(fp) = library::peer::fingerprint_file(Path::new(&s.path)) else { continue };
+        let fp = match library::peer::fingerprint_file(Path::new(&s.path)) {
+            Ok(fp) => fp,
+            Err(e) => {
+                unreadable.failed(s.id, size, mt, &e);
+                skipped += new * unreadable.skipped(s.id, size, mt) as usize;
+                continue;
+            }
+        };
+        unreadable.read(s.id);
         // Changed while being read: the next pass gets it right.
         let Ok(after) = std::fs::metadata(&s.path) else { continue };
-        if after.len() != m.len() || mtime(&after) != mtime(&m) {
+        if after.len() != size || mtime(&after) != mt {
             continue;
         }
-        if lib(app, |l| l.set_fingerprint(s.id, &fp, m.len(), mtime(&m))).is_err() {
+        if lib(app, |l| l.set_fingerprint(s.id, &fp, size, mt)).is_err() {
             continue;
         }
         changed = true;
@@ -138,14 +192,18 @@ fn fingerprint_pass(app: &AppHandle, all: bool) {
             last_emit = Instant::now();
         }
     }
-    if changed {
+    let gaps = app.state::<FingerprintGaps>();
+    if changed || gaps.get() != (skipped, waiting) {
+        gaps.skipped.store(skipped, Ordering::Relaxed);
+        gaps.waiting.store(waiting, Ordering::Relaxed);
         emit_progress(app);
     }
 }
 
 fn emit_progress(app: &AppHandle) {
     if let Ok((fingerprinted, total)) = lib(app, |l| l.fingerprint_progress()) {
-        let _ = app.emit("peer-fingerprints", FingerprintProgress { fingerprinted, total });
+        let (skipped, waiting) = app.state::<FingerprintGaps>().get();
+        let _ = app.emit("peer-fingerprints", FingerprintProgress { fingerprinted, total, skipped, waiting });
     }
 }
 

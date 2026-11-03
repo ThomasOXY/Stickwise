@@ -108,8 +108,9 @@
   }
 
   const home = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
-  const ready = $derived(!!s && s.fingerprinted >= s.total);
-  const pct = $derived(s && s.total ? (s.fingerprinted / s.total) * 100 : 0);
+  /** Nothing left to fingerprint now: the rest is skipped or on a drive not plugged in. */
+  const ready = $derived(!!s && s.fingerprinted + s.skipped + s.waiting >= s.total);
+  const pct = $derived(s && s.total ? ((s.fingerprinted + s.skipped) / s.total) * 100 : 0);
 
   /** Playlists chosen from a playlist's menu, kept until a Mac is picked. */
   const preset = app.peerSendPreset;
@@ -133,7 +134,7 @@
     peerApi.settings().then((v) => (s = v), (e) => (error = String(e)));
     refresh();
     const offs = [
-      listen<{ fingerprinted: number; total: number }>("peer-fingerprints", (e) => {
+      listen<{ fingerprinted: number; total: number; skipped: number; waiting: number }>("peer-fingerprints", (e) => {
         if (s) s = { ...s, ...e.payload };
       }),
       listen("peer-peers", refresh),
@@ -262,8 +263,10 @@
       <section>
         <div class="eyebrow">Příprava knihovny</div>
         {#if s}
-          {#if ready}
+          {#if ready && s.fingerprinted >= s.total}
             <p class="ok"><CircleCheck size={16} />Všech {s.total} {plural(s.total, "skladba má", "skladby mají", "skladeb má")} otisk, knihovna je připravená.</p>
+          {:else if ready}
+            <p class="ok"><CircleCheck size={16} />Knihovna je připravená, otisk má {s.fingerprinted} z {s.total} skladeb.</p>
           {:else}
             <div class="progress">
               <div class="bar"><span style:width="{pct}%"></span></div>
@@ -272,6 +275,17 @@
             <p class="hint">
               <LoaderCircle size={13} class="spin" />Počítají se otisky skladeb. Podle nich druhý Mac pozná stejnou skladbu, i když leží
               jinde. Běží na pozadí, skladby na odpojeném disku přijdou na řadu po připojení.
+            </p>
+          {/if}
+          {#if s.skipped}
+            <p class="hint">
+              {s.skipped} {plural(s.skipped, "skladba se nedá přečíst a je přeskočená", "skladby se nedají přečíst a jsou přeskočené", "skladeb se nedá přečíst a jsou přeskočené")}.
+              Zkusí se znovu, když se soubor změní nebo po restartu.
+            </p>
+          {/if}
+          {#if s.waiting}
+            <p class="hint">
+              {s.waiting} {plural(s.waiting, "skladba čeká", "skladby čekají", "skladeb čeká")} na připojení disku.
             </p>
           {/if}
         {/if}

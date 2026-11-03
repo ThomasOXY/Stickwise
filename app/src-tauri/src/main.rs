@@ -18,6 +18,7 @@ fn main() {
         .manage(peer::OfferAsk::default())
         .manage(peer::MirrorAsk::default())
         .manage(peer::AutoMirror::default())
+        .manage(peer::FingerprintGaps::default())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;

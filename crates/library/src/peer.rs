@@ -10,6 +10,9 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -106,6 +109,77 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 
 /// BLAKE3 of a whole file, hex.
 pub fn fingerprint_file(path: &Path) -> std::io::Result<String> {
+    fingerprint_file_within(path, STALL)
+}
+
+/// How long reading a file may make no progress before it is given up.
+const STALL: Duration = Duration::from_secs(30);
+
+/// [`fingerprint_file`], failing with `TimedOut` once reading has moved no
+/// byte for `stall`: a sleeping or failing disk, a cloud file that never
+/// downloads. Reading can't be interrupted, so its thread is left blocked.
+pub fn fingerprint_file_within(path: &Path, stall: Duration) -> std::io::Result<String> {
+    let read = Arc::new(AtomicU64::new(0));
+    let (tx, rx) = mpsc::channel();
+    let (p, r) = (path.to_path_buf(), read.clone());
+    std::thread::Builder::new()
+        .name("fingerprint-read".into())
+        .spawn(move || {
+            let _ = tx.send(hash_file(&p, &r));
+        })?;
+    let (mut seen, mut since) = (0, Instant::now());
+    loop {
+        match rx.recv_timeout(stall.min(Duration::from_millis(250))) {
+            Ok(res) => return res,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(std::io::Error::other("fingerprinting stopped"));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let now = read.load(Ordering::Relaxed);
+                if now != seen {
+                    (seen, since) = (now, Instant::now());
+                } else if since.elapsed() >= stall {
+                    return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "reading the file stalled"));
+                }
+            }
+        }
+    }
+}
+
+/// Failed reads before a file is skipped.
+pub const UNREADABLE_TRIES: u32 = 3;
+
+/// Files that could not be fingerprinted, so a background pass stops trying
+/// them: after [`UNREADABLE_TRIES`] failures, or one stalled read (whose
+/// thread stays blocked; trying again would block another). The file
+/// changing (size, mtime) gives it another go; nothing is kept on disk, so
+/// the next start does too.
+#[derive(Default)]
+pub struct Unreadable {
+    /// Track id → (size, mtime, failures).
+    files: HashMap<i64, (u64, i64, u32)>,
+}
+
+impl Unreadable {
+    pub fn skipped(&self, id: i64, size: u64, mtime: i64) -> bool {
+        matches!(self.files.get(&id), Some(&(s, m, n)) if s == size && m == mtime && n >= UNREADABLE_TRIES)
+    }
+
+    pub fn failed(&mut self, id: i64, size: u64, mtime: i64, e: &std::io::Error) {
+        let f = self.files.entry(id).or_insert((size, mtime, 0));
+        if (f.0, f.1) != (size, mtime) {
+            *f = (size, mtime, 0);
+        }
+        f.2 = if e.kind() == std::io::ErrorKind::TimedOut { UNREADABLE_TRIES } else { f.2 + 1 };
+    }
+
+    pub fn read(&mut self, id: i64) {
+        self.files.remove(&id);
+    }
+}
+
+/// BLAKE3 of the file, counting the bytes read into `read`.
+fn hash_file(path: &Path, read: &AtomicU64) -> std::io::Result<String> {
     let mut f = std::fs::File::open(path)?;
     let mut h = blake3::Hasher::new();
     let mut buf = vec![0u8; 1 << 20];
@@ -115,6 +189,7 @@ pub fn fingerprint_file(path: &Path) -> std::io::Result<String> {
             break;
         }
         h.update(&buf[..n]);
+        read.fetch_add(n as u64, Ordering::Relaxed);
     }
     Ok(h.finalize().to_hex().to_string())
 }
@@ -461,5 +536,53 @@ mod tests {
         let s = FileStamp { id: 1, path: String::new(), fingerprint: "x".into(), size: 3, mtime: 9 };
         assert!(!s.stale(3, 9));
         assert!(s.stale(4, 9));
+    }
+
+    #[test]
+    fn gives_up_on_a_stalled_read() {
+        // Opening a FIFO nobody writes to blocks, as a dead disk does.
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("stuck.mp3");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let start = std::time::Instant::now();
+        let e = fingerprint_file_within(&fifo, std::time::Duration::from_millis(300)).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn unreadable_files_are_skipped_after_tries() {
+        let mut u = Unreadable::default();
+        let failed = std::io::Error::other("I/O error");
+        for _ in 1..UNREADABLE_TRIES {
+            u.failed(7, 100, 5, &failed);
+            assert!(!u.skipped(7, 100, 5));
+        }
+        u.failed(7, 100, 5, &failed);
+        assert!(u.skipped(7, 100, 5));
+        // A changed file gets another go.
+        assert!(!u.skipped(7, 101, 5));
+        u.failed(7, 101, 5, &failed);
+        assert!(!u.skipped(7, 101, 5));
+        u.read(7);
+        assert!(!u.skipped(7, 101, 5));
+    }
+
+    #[test]
+    fn a_stalled_file_is_skipped_at_once() {
+        let mut u = Unreadable::default();
+        u.failed(3, 10, 1, &std::io::Error::from(std::io::ErrorKind::TimedOut));
+        assert!(u.skipped(3, 10, 1));
+    }
+
+    #[test]
+    fn a_slow_read_that_moves_is_not_stalled() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.mp3");
+        std::fs::write(&a, b"abc").unwrap();
+        assert_eq!(
+            fingerprint_file_within(&a, std::time::Duration::from_millis(300)).unwrap(),
+            fingerprint_file(&a).unwrap()
+        );
     }
 }

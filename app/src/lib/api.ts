@@ -290,6 +290,10 @@ export interface PeerSettings {
   defaultMusicDir: boolean;
   fingerprinted: number;
   total: number;
+  /** Tracks without a fingerprint whose file can't be read: skipped. */
+  skipped: number;
+  /** Tracks without a fingerprint whose file is not there (a drive not plugged in). */
+  waiting: number;
   /** Mirror with paired Macs by itself when they come on the network. */
   autoMirror: boolean;
 }
