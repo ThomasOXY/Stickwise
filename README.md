@@ -29,14 +29,24 @@ novější úprava; smazání playlistu se propíše jen po potvrzení. Podrobno
 
 ## Vydání a aktualizace
 ```sh
-scripts/release.sh 0.2.0              # poznámky z feat/fix commitů od minulé verze
-scripts/release.sh 0.2.0 notes.md     # poznámky z vlastního souboru (Markdown)
+scripts/release.sh 0.3.2              # poznámky z feat/fix commitů od minulé verze
+scripts/release.sh 0.3.2 notes.md     # poznámky z vlastního souboru (Markdown)
+scripts/release.sh --ci 0.3.2         # postavit v GitHub Actions místo na Macu
 ```
-Skript zvedne verzi, commitne, pushne tag `v0.2.0` a GitHub Actions postaví DMG a release.
+Skript zvedne verzi, postaví a podepíše appku na tomhle Macu, zkontroluje podpis,
+commitne, pushne tag `v0.3.2` a vydá GitHub release s DMG, updatem a `latest.json`.
+Když build selže, nezůstane po něm commit ani tag.
 Appka si `latest.json` z posledního releasu kontroluje při startu a každé 4 h, nabídne
-novou verzi i s poznámkami a po stažení se restartuje. Update je podepsaný klíčem
-`~/.tauri/rb-export.key` (v repu secret `TAURI_SIGNING_PRIVATE_KEY`); bez něj appka
-update odmítne, takže klíč neztrať.
+novou verzi i s poznámkami a po stažení se restartuje.
+
+Klíče v `~/.tauri/` (zálohuj, bez nich nejde vydat update):
+- `rb-export.key`: podpis updatu (v repu secret `TAURI_SIGNING_PRIVATE_KEY`), bez něj appka
+  update odmítne.
+- `stickwise-signing.p12` (heslo v `.p12.pass`): vlastní certifikát, kterým je appka
+  podepsaná. Díky němu ji macOS po updatu pozná a nechá jí povolený přístup k disku, flashkám
+  a síti. Pro build na Macu musí být jednou v keychain:
+  `security import ~/.tauri/stickwise-signing.p12 -k ~/Library/Keychains/login.keychain-db -P "$(cat ~/.tauri/stickwise-signing.p12.pass)" -T /usr/bin/codesign`.
+  V CI ho dávají secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` a `APPLE_SIGNING_IDENTITY`.
 
 Appka není podepsaná Apple certifikátem: při **první** instalaci z DMG ji macOS zablokuje,
 povol ji v Nastavení → Soukromí a zabezpečení → „Přesto otevřít“

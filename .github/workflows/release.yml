@@ -1,11 +1,10 @@
-# Push a tag vX.Y.Z (scripts/release.sh does it) and this builds the macOS app,
-# signs the update with TAURI_SIGNING_PRIVATE_KEY and publishes a GitHub release
-# with the DMG, the updater bundle and latest.json, which running apps poll.
+# Builds the macOS app in GitHub Actions, signs it and the update and publishes
+# a GitHub release with the DMG, the updater bundle and latest.json, which
+# running apps poll. Releases are built on the Mac by scripts/release.sh; this
+# is the fallback (scripts/release.sh --ci X.Y.Z, or run it by hand for a tag).
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -23,7 +22,7 @@ jobs:
   macos:
     runs-on: macos-latest # Apple Silicon
     env:
-      TAG: ${{ inputs.tag || github.ref_name }}
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
