@@ -65,12 +65,26 @@ jobs:
       # The app ships uv (scripts/fetch-uv.sh copies it into the bundle).
       - uses: astral-sh/setup-uv@v6
 
-      # Without the certificate the build is ad-hoc signed and every update
-      # would make macOS ask for its permissions again.
-      - name: Check signing certificate
+      # The self-signed code signing certificate (~/.tauri/stickwise-signing.p12).
+      # Every build signed by it is the same app to macOS, so Full Disk Access and
+      # the other privacy grants survive updates; ad-hoc builds lose them. Imported
+      # here, not by tauri: tauri only picks up certificates named like Apple's.
+      - name: Import signing certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-        run: '[ -n "$APPLE_CERTIFICATE" ] || { echo "::error::Secret APPLE_CERTIFICATE is missing"; exit 1; }'
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          [ -n "$APPLE_CERTIFICATE" ] || { echo "::error::Secret APPLE_CERTIFICATE is missing"; exit 1; }
+          kc=$RUNNER_TEMP/signing.keychain-db
+          pw=$(openssl rand -hex 16)
+          echo "$APPLE_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -t 3600 -u "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
 
       - run: npm ci
         working-directory: app
@@ -80,11 +94,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Self-signed code signing certificate (~/.tauri/stickwise-signing.p12).
-          # Every build signed by it is the same app to macOS, so Full Disk Access
-          # and the other privacy grants survive updates; ad-hoc builds lose them.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # Signs with the certificate imported above.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           projectPath: app
