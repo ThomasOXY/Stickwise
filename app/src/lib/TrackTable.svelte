@@ -1,10 +1,30 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, ArrowUpDown, AudioWaveform, ChevronRight, ListMusic, ListPlus, Search, Sparkles, Trash } from "@lucide/svelte";
+  import {
+    ArrowDown,
+    ArrowUp,
+    ArrowUpDown,
+    AudioLines,
+    AudioWaveform,
+    ChevronRight,
+    CircleAlert,
+    ListMusic,
+    ListPlus,
+    Music,
+    Search,
+    Sparkles,
+    Trash,
+  } from "@lucide/svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { untrack } from "svelte";
   import type { Track } from "./api";
   import { date, keyColor, keyOrder, plural, rgb, time } from "./format";
+  import SetFlow from "./SetFlow.svelte";
   import { app } from "./state.svelte";
 
-  const ROW = 28;
+  const ROW = 46;
+  /** Quick filter chip over the list. */
+  type Chip = "all" | "nocue" | "noanalysis" | "bad";
+  let chip = $state<Chip>("all");
   let smartMenu = $state(false);
   let scrollTop = $state(0);
   let viewport = $state(600);
@@ -44,10 +64,30 @@
     sort = sort?.key !== key ? { key, desc: false } : sort.desc ? null : { key, desc: true };
   }
 
+  /** Cue summary known and no hot cue at all. */
+  const noCue = (id: number) => id in app.cues && !app.cues[id].some((c) => c);
+  const chipTest: Record<Chip, (t: Track) => boolean> = {
+    all: () => true,
+    nocue: (t) => noCue(t.id),
+    noanalysis: (t) => !t.missing && t.analyzed === false,
+    bad: (t) => app.errorTracks.has(t.id),
+  };
+  const counts = $derived.by(() => {
+    const ts = app.currentTracks;
+    const cuesKnown = ts.every((t) => t.id in app.cues);
+    return {
+      all: ts.length,
+      nocue: cuesKnown ? ts.filter((t) => noCue(t.id)).length : null,
+      noanalysis: ts.filter(chipTest.noanalysis).length,
+      bad: ts.filter(chipTest.bad).length,
+    };
+  });
+
   /** Row → position in the unsorted list (a track can be in a playlist twice). */
   const order = $derived.by(() => {
     const tracks = app.currentTracks;
-    const idx = tracks.map((_, i) => i);
+    const test = chipTest[chip];
+    const idx = tracks.map((_, i) => i).filter((i) => chip === "all" || test(tracks[i]));
     if (!sort) return idx;
     const { key, desc } = sort;
     const vals = tracks.map(value[key]);
@@ -77,8 +117,16 @@
   const bad = $derived(list.filter((t) => app.errorTracks.has(t.id)).length);
   // Rows map to playlist positions only unfiltered; dragging rows into place only in its own order.
   const editable = $derived(app.isLibrary && app.selection?.kind === "playlist" && !app.trackFilter);
-  const reorderable = $derived(editable && !sort);
-  const canKeep = $derived(!!sort && app.isLibrary && !!app.currentPlaylist && !app.currentPlaylist.isFolder && !app.trackFilter);
+  const reorderable = $derived(editable && !sort && chip === "all");
+  const canKeep = $derived(
+    !!sort && chip === "all" && app.isLibrary && !!app.currentPlaylist && !app.currentPlaylist.isFolder && !app.trackFilter,
+  );
+  const isSet = $derived(app.isLibrary && !!app.currentPlaylist?.isSet);
+  /** The set in its own order, for the flow strip (not the search or sort). */
+  const setTracks = $derived(
+    isSet ? (app.currentPlaylist?.trackIds ?? []).map((id) => app.trackById.get(id)).filter((t): t is Track => !!t) : [],
+  );
+  const deckId = $derived(app.deckHere ? app.deck?.track.id : undefined);
 
   // Only the rows in view are rendered.
   const first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - 10));
@@ -91,8 +139,20 @@
     return () => clearTimeout(timer);
   });
 
+  // Short lists get their cue summary up front, so "Bez cue" can be counted.
+  $effect(() => {
+    const ids = app.currentTrackIds;
+    if (ids.length <= 600) untrack(() => app.loadCues(ids));
+  });
+
+  function pickChip(c: Chip) {
+    chip = chip === c && c !== "all" ? "all" : c;
+    if (chip === "nocue") app.loadCues(app.currentTrackIds);
+  }
+
   $effect(() => {
     void app.selection;
+    chip = "all";
     selRows = new Set();
     anchor = null;
     if (rowsEl) rowsEl.scrollTop = 0;
@@ -235,64 +295,97 @@
 </script>
 
 <section class="table">
-  <div class="title">
-    <h2>{app.currentTitle}</h2>
-    <span><span class="readout big">{list.length}</span> {plural(list.length, "skladba", "skladby", "skladeb")}</span>
-    <span><span class="readout big">{time(total)}</span> celkem</span>
-    {#if bad > 0}
-      <span><span class="readout big fault">{bad}</span> {plural(bad, "nepůjde", "nepůjdou", "nepůjde")}</span>
-    {/if}
-    {#if selRows.size > 1}
-      <span class="picked"><span class="readout big">{selRows.size}</span> vybráno</span>
-    {/if}
-    {#if app.isLibrary && toAnalyze > 0}
-      <button
-        class="btn small"
-        disabled={app.analyzeJob != null}
-        onclick={() => app.analyzeTracks(app.currentTrackIds)}
-        title="Waveform, beatgrid (Beat This!) a tónina pro skladby bez analýzy"
-      >
-        <AudioWaveform size={13} />
-        {#if app.analyzeJob != null && job}Analyzuju {job.filesDone}/{job.filesTotal}{:else}Analyzovat ({toAnalyze}){/if}
-      </button>
-    {/if}
-    {#if app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
-      <button class="btn small plan" onclick={() => (app.view = "planner")} disabled={list.length < 2} title="Seřadí skladby podle tóniny, tempa a energie a naplánuje přechody">
-        <Sparkles size={13} /> Naplánovat set
-      </button>
-    {/if}
-    <div class="smart-wrap">
-      <button class="btn small" onclick={() => (smartMenu = !smartMenu)} disabled={list.length === 0 || app.selection?.kind === "all"}>
-        <Sparkles size={13} /> Smart Cue pro playlist
-      </button>
-      {#if smartMenu}
-        <div class="smart-menu" role="menu">
-          {#if app.aiInstalled && aiTodo > 0}
-            <button role="menuitem" disabled={app.aiJob != null} onclick={() => ((smartMenu = false), app.aiAnalyze(app.currentTrackIds))}>
-              <span>{app.aiJob != null ? "AI analýza běží…" : `Nejdřív AI analýza (${aiTodo} skladeb)`}</span>
-              <span class="sub">CUE-DETR, asi 5 s na skladbu. Pak Smart Cue trefuje přesněji.</span>
-            </button>
-          {/if}
-          <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(false))}>
-            <span>Jen skladby bez hot cue</span>
-            <span class="sub">Tvoje cue zůstanou, jak jsou.</span>
-          </button>
-          <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(true))}>
-            <span>Všechny skladby, přepsat hot cue</span>
-            <span class="sub">Memory cue zůstanou.</span>
-          </button>
-        </div>
+  {#if !app.isLibrary}
+    <div class="subhead">
+      <h2>{app.currentTitle}</h2>
+      <span><b class="readout">{list.length}</b> {plural(list.length, "skladba", "skladby", "skladeb")}</span>
+      <span><b class="readout">{time(total)}</b> celkem</span>
+      {#if bad > 0}
+        <span class="fault"><b class="readout">{bad}</b> {plural(bad, "nepůjde", "nepůjdou", "nepůjde")}</span>
       {/if}
     </div>
-    {#if canKeep}
-      <button class="btn small" onclick={keepOrder} title="Uloží toto seřazení jako pořadí playlistu (půjde tak i na flashku)">
-        Uložit toto pořadí
-      </button>
-    {/if}
+  {/if}
+
+  {#if isSet && setTracks.length > 0}
+    <SetFlow tracks={setTracks} />
+  {/if}
+
+  <div class="toolbar">
     <label class="search">
       <Search size={14} />
-      <input type="search" placeholder={app.selection?.kind === "all" ? "Hledat v knihovně" : "Hledat v playlistu"} bind:value={app.trackFilter} />
+      <input
+        type="search"
+        placeholder={app.selection?.kind === "all" ? "Hledat v knihovně · název, interpret, žánr" : isSet ? "Hledat v setu" : app.isLibrary ? "Hledat v playlistu" : "Hledat na flashce"}
+        bind:value={app.trackFilter}
+      />
     </label>
+    <div class="chips">
+      <button class="chip" class:on={chip === "all"} onclick={() => pickChip("all")}>
+        Vše <span class="readout">{counts.all.toLocaleString("cs")}</span>
+      </button>
+      <button class="chip" class:on={chip === "nocue"} onclick={() => pickChip("nocue")} title="Skladby bez jediné hot cue">
+        Bez cue {#if counts.nocue != null}<span class="readout">{counts.nocue}</span>{/if}
+      </button>
+      {#if app.isLibrary}
+        <button class="chip" class:on={chip === "noanalysis"} onclick={() => pickChip("noanalysis")} title="Bez analýzy: na CDJ bez waveformu a beatgridu">
+          Bez analýzy <span class="readout">{counts.noanalysis}</span>
+        </button>
+      {:else if app.verify}
+        <button class="chip" class:on={chip === "bad"} onclick={() => pickChip("bad")} title="Skladby, které na některém přehrávači nepůjdou">
+          Nepůjde přehrát <span class="readout">{counts.bad}</span>
+        </button>
+      {/if}
+    </div>
+    {#if selRows.size > 1}
+      <span class="picked"><b class="readout">{selRows.size}</b> vybráno</span>
+    {/if}
+
+    <div class="tools">
+      {#if app.isLibrary && toAnalyze > 0}
+        <button
+          class="btn ghost"
+          disabled={app.analyzeJob != null}
+          onclick={() => app.analyzeTracks(app.currentTrackIds)}
+          title="Waveform, beatgrid (Beat This!) a tónina pro skladby bez analýzy"
+        >
+          <AudioWaveform size={14} />
+          {#if app.analyzeJob != null && job}Analyzuju {job.filesDone}/{job.filesTotal}{:else}Analyzovat ({toAnalyze}){/if}
+        </button>
+      {/if}
+      {#if canKeep}
+        <button class="btn ghost" onclick={keepOrder} title="Uloží toto seřazení jako pořadí playlistu (půjde tak i na flashku)">
+          Uložit toto pořadí
+        </button>
+      {/if}
+      <div class="smart-wrap">
+        <button class="btn ghost" onclick={() => (smartMenu = !smartMenu)} disabled={list.length === 0 || app.selection?.kind === "all"}>
+          <Sparkles size={14} /> Smart Cue pro playlist
+        </button>
+        {#if smartMenu}
+          <div class="smart-menu" role="menu">
+            {#if app.aiInstalled && aiTodo > 0}
+              <button role="menuitem" disabled={app.aiJob != null} onclick={() => ((smartMenu = false), app.aiAnalyze(app.currentTrackIds))}>
+                <span>{app.aiJob != null ? "AI analýza běží…" : `Nejdřív AI analýza (${aiTodo} skladeb)`}</span>
+                <span class="desc">CUE-DETR, asi 5 s na skladbu. Pak Smart Cue trefuje přesněji.</span>
+              </button>
+            {/if}
+            <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(false))}>
+              <span>Jen skladby bez hot cue</span>
+              <span class="desc">Tvoje cue zůstanou, jak jsou.</span>
+            </button>
+            <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(true))}>
+              <span>Všechny skladby, přepsat hot cue</span>
+              <span class="desc">Memory cue zůstanou.</span>
+            </button>
+          </div>
+        {/if}
+      </div>
+      {#if app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
+        <button class="btn" onclick={() => (app.view = "planner")} disabled={list.length < 2} title="Seřadí skladby podle tóniny, tempa a energie a naplánuje přechody">
+          <ListMusic size={14} /> Naplánovat set
+        </button>
+      {/if}
+    </div>
   </div>
 
   {#snippet head(key: SortKey, label: string, cls: string)}
@@ -318,15 +411,17 @@
     >
       {#if sort}<ArrowUpDown size={11} />{:else}#{/if}
     </button>
-    <span class="c-st"></span>
-    {@render head("title", "Název", "c-title")}
-    {@render head("artist", "Interpret", "c-artist")}
+    <span class="c-track">
+      {@render head("title", "Skladba", "")}
+      <span class="slash">/</span>
+      {@render head("artist", "Interpret", "")}
+    </span>
     {@render head("bpm", "BPM", "c-bpm r")}
     {@render head("key", "Tónina", "c-key")}
-    {@render head("time", "Čas", "c-time r")}
-    {@render head("format", "Formát", "c-fmt")}
-    {@render head("added", "Přidáno", "c-date")}
-    <span class="c-cue">Hot cue</span>
+    {@render head("time", "Délka", "c-time r")}
+    <span class="c-cue">Cue</span>
+    {@render head("format", "Soubor", "c-fmt")}
+    {@render head("added", "Přidáno", "c-date r")}
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -348,9 +443,11 @@
         {@const st = statusClass(t.id)}
         {@const fmt = app.formatOverride.get(t.id) ?? t.format}
         {@const sev = app.status.get(t.id)}
+        {@const hot = app.cues[t.id]}
         <div
           class="row"
           class:selected={selRows.has(i) || (selRows.size === 0 && t.id === app.selectedTrack)}
+          class:deck={t.id === deckId}
           class:drop-before={dropAt === i}
           class:drop-after={dropAt === i + 1 && i === list.length - 1}
           class:missing={t.missing}
@@ -369,30 +466,47 @@
           }}
           onkeydown={() => {}}
         >
-          <span class="c-no readout" class:cur={t.id === app.selectedTrack}>{i + 1}</span>
-          <span class="c-st" title={statusTitle(t.id)}><span class="dot {st}"></span></span>
-          <span class="c-title">{t.title}{#if app.pending.has(t.id)}<i class="edited" title="Cue upravené, zatím jen v aplikaci"></i>{/if}</span>
-          <span class="c-artist">{t.artist}</span>
-          <span class="c-bpm r readout num">{t.bpm.toFixed(2)}</span>
-          <span class="c-key"><i style:background={keyColor(t.key)}></i><span class="readout num">{t.key}</span></span>
-          <span class="c-time r readout num">{time(t.duration)}</span>
-          <span class="c-fmt" class:fault={sev === "error"} class:warn={sev === "warning"}>{fmt}</span>
-          <span class="c-date readout num">{date(t.dateAdded)}</span>
+          <span class="c-no readout">
+            {#if t.id === deckId}<AudioLines size={14} />{:else}{i + 1}{/if}
+          </span>
+          <span class="c-track">
+            <span class="thumb" style:--k={keyColor(t.key)}>
+              <Music size={13} />
+              {#if t.artwork}
+                <img src={convertFileSrc(t.artwork)} alt="" loading="lazy" onerror={(e) => ((e.currentTarget as HTMLElement).style.display = "none")} />
+              {/if}
+              {#if st === "fault" || st === "warn"}<i class="st dot {st}" title={statusTitle(t.id)}></i>{/if}
+            </span>
+            <span class="names">
+              <span class="t">{t.title}{#if app.pending.has(t.id)}<i class="edited" title="Cue upravené, zatím jen v aplikaci"></i>{/if}</span>
+              <span class="a">{t.artist}</span>
+            </span>
+          </span>
+          <span class="c-bpm r readout">{t.bpm ? t.bpm.toFixed(2) : "–"}</span>
+          <span class="c-key">{#if t.key}<span class="keypill" style:--k={keyColor(t.key)}>{t.key}</span>{/if}</span>
+          <span class="c-time r readout">{time(t.duration)}</span>
           <span class="c-cue">
-            {#each Array(8) as _, s}
-              {@const c = app.cues[t.id]?.[s]}
-              <i class:off={!c} style:background={c ? rgb(c, s + 1) : undefined}></i>
-            {/each}
+            {#if hot && !hot.some((c) => c)}
+              <span class="nocue"><CircleAlert size={13} /> bez cue</span>
+            {:else}
+              {#each Array(8) as _, s}
+                {@const c = hot?.[s]}
+                <i class:off={!c} style:background={c ? rgb(c, s + 1) : undefined}></i>
+              {/each}
+            {/if}
             {#if app.memCount[t.id]}
               <b class="mem" title="{app.memCount[t.id]} memory cue">▾{app.memCount[t.id]}</b>
             {/if}
           </span>
+          <span class="c-fmt" class:fault={sev === "error"} class:warn={sev === "warning"}>{fmt}</span>
+          <span class="c-date r readout">{date(t.dateAdded)}</span>
         </div>
       {/each}
     </div>
     {#if list.length === 0}
       <p class="empty">
-        {#if app.selection?.kind === "player"}Na tomhle přehrávači půjde všechno.
+        {#if chip !== "all" && app.currentTracks.length > 0}V tomhle výběru nic není.
+        {:else if app.selection?.kind === "player"}Na tomhle přehrávači půjde všechno.
         {:else if app.isLibrary && app.selection?.kind === "playlist"}Prázdný. Přetáhni sem skladby z Celé knihovny nebo z jiného playlistu.
         {:else if app.isLibrary && (app.data?.tracks.length ?? 0) === 0}Knihovna je prázdná. Importuj ji z rekordboxu tlačítkem nahoře.
         {:else}Nic tu není.{/if}
@@ -460,159 +574,131 @@
 
 <style>
   .table {
+    container-type: inline-size;
     flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
   }
-  .title {
+  .subhead {
     display: flex;
     align-items: baseline;
-    gap: 14px;
-    padding: 14px 16px 12px;
-    color: var(--text-2);
-    font-size: 12px;
+    gap: 16px;
+    padding: 2px 28px 14px;
+    font-size: 12.5px;
+    color: var(--text-3);
   }
   h2 {
     margin: 0;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--text);
   }
-  .big {
+  .subhead b {
     font-size: 16px;
     color: var(--text);
   }
-  .big.fault {
-    color: var(--fault);
+  .subhead .fault b {
+    color: var(--danger);
   }
-  .btn.plan {
-    margin-left: auto;
-    align-self: center;
-    border-color: var(--cue);
-    color: var(--cue);
-  }
-  .btn.plan + .smart-wrap {
-    margin-left: 0;
-  }
-  .picked {
-    color: var(--cue);
-  }
-  .picked .big {
-    color: var(--cue);
-  }
-  .ctx {
-    position: fixed;
-    width: 240px;
-    padding: 6px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
-    z-index: 30;
-  }
-  .ctx-head {
-    padding: 4px 10px 6px;
-    font-size: 11px;
-    color: var(--text-2);
-  }
-  .ctx .hint {
-    margin-left: auto;
-    padding-left: 10px;
-    font-size: 11px;
-    color: var(--text-3);
-  }
-  .ctx button {
+
+  /* Toolbar: search, filter chips, playlist actions */
+  .toolbar {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
-    padding: 6px 10px;
+    padding: 0 28px 12px;
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 300px;
+    flex: 0 1 300px;
+    min-width: 160px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: var(--r-control);
+    background: var(--surface-2);
+    color: var(--text-3);
+    border: 1px solid transparent;
+  }
+  .search:focus-within {
+    border-color: var(--accent);
+  }
+  .search input {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    padding: 0;
     border: 0;
-    border-radius: 5px;
-    background: none;
-    text-align: left;
+    background: transparent;
     font-size: 13px;
-    color: var(--text);
   }
-  .ctx button:hover:not(:disabled),
-  .ctx button.open {
-    background: var(--panel-2);
-  }
-  .ctx button:disabled {
+  .search input::placeholder {
     color: var(--text-3);
   }
-  .ctx :global(.chev) {
-    margin-left: auto;
+  .chips {
+    display: flex;
+    gap: 6px;
+    margin-left: 4px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: none;
     color: var(--text-2);
-  }
-  .ctx .danger {
-    color: #f2a3a5;
-  }
-  .sep {
-    height: 1px;
-    margin: 4px 6px;
-    background: var(--line);
-  }
-  .sub {
-    position: absolute;
-    top: 0;
-    left: calc(100% + 4px);
-    width: 260px;
-    padding: 6px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
-  }
-  .sub.left {
-    left: auto;
-    right: calc(100% + 4px);
-  }
-  .sub input {
-    width: 100%;
-    margin-bottom: 4px;
-  }
-  .sub-list {
-    max-height: 300px;
-    overflow-y: auto;
-  }
-  .pn {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 12.5px;
+    font-weight: 500;
     white-space: nowrap;
   }
-  .cnt {
+  .chip .readout {
     font-size: 12px;
-    color: var(--text-2);
-  }
-  .none {
-    margin: 6px 10px;
-    font-size: 12px;
+    font-weight: 500;
     color: var(--text-3);
+  }
+  .chip:hover {
+    color: var(--text);
+  }
+  .chip.on {
+    border-color: transparent;
+    background: var(--surface-3);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .picked {
+    margin-left: 8px;
+    font-size: 12.5px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .picked b {
+    font-size: 15px;
+  }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
   }
   .smart-wrap {
     position: relative;
-    margin-left: auto;
-    align-self: center;
-  }
-  .btn.small {
-    height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
   }
   .smart-menu {
     position: absolute;
     right: 0;
     top: calc(100% + 6px);
-    width: 280px;
+    width: 290px;
     padding: 6px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+    background: var(--surface-2);
+    border-radius: var(--r-panel);
+    box-shadow: var(--shadow-pop);
     z-index: 25;
   }
   .smart-menu button {
@@ -623,61 +709,55 @@
     width: 100%;
     padding: 8px 10px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-control);
     background: none;
     text-align: left;
     color: var(--text);
     font-size: 13px;
   }
   .smart-menu button:hover {
-    background: var(--panel-2);
+    background: var(--surface-3);
   }
-  .smart-menu .sub {
-    font-size: 11px;
-    color: var(--text-2);
+  .smart-menu .desc {
+    font-size: 11.5px;
+    color: var(--text-3);
   }
-  .search {
-    align-self: center;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 200px;
-    padding: 0 10px;
-    height: 28px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    color: var(--text-2);
-  }
-  .search:focus-within {
-    border-color: var(--cue);
-  }
-  .search input {
-    border: 0;
-    height: 26px;
-    padding: 0;
-    flex: 1;
-    min-width: 0;
-    background: transparent;
-  }
+
+  /* Table */
   .cols,
   .row {
     display: grid;
-    grid-template-columns: 24px 16px minmax(160px, 1fr) minmax(120px, 0.62fr) 52px 56px 40px 84px 72px 110px;
-    gap: 8px;
+    grid-template-columns: 30px minmax(180px, 1fr) 64px 62px 58px 128px 76px 82px;
+    gap: 12px;
     align-items: center;
-    padding: 0 16px;
+    padding: 0 12px 0 8px;
   }
   .cols {
-    height: 30px;
+    height: 34px;
+    margin: 0 28px;
+    border-bottom: 1px solid var(--hairline);
     font-size: 11px;
-    color: var(--text-2);
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .cols .c-track {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 44px;
+  }
+  .cols .c-cue {
+    padding-left: 0;
+  }
+  .slash {
+    opacity: 0.5;
   }
   .sort {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     min-width: 0;
     height: 100%;
     padding: 0;
@@ -685,6 +765,8 @@
     background: none;
     color: inherit;
     font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
     text-align: left;
     cursor: pointer;
   }
@@ -697,23 +779,22 @@
     justify-content: flex-end;
   }
   .sort:hover {
-    color: var(--text);
+    color: var(--text-2);
   }
   .sort.on {
-    color: var(--cue);
+    color: var(--text);
+  }
+  .sort.c-no {
+    justify-content: center;
   }
   .sort.c-no.on {
     color: inherit;
-  }
-  .c-date {
-    font-size: 13px;
-    color: var(--text-2);
-    white-space: nowrap;
   }
   .rows {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    padding: 4px 28px 12px;
     outline: none;
   }
   .space {
@@ -723,51 +804,95 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 28px;
-    border-bottom: 1px solid var(--line);
+    height: 46px;
+    border-radius: 10px;
     font-size: 13px;
   }
   .row:hover {
-    background: rgb(255 255 255 / 0.025);
+    background: var(--surface-2);
   }
   .row.selected {
-    background: var(--panel-2);
+    background: var(--surface-3);
   }
-  .row.missing .c-title,
-  .row.missing .c-artist {
-    color: var(--text-3);
+  .row.deck {
+    background: var(--accent-soft);
+  }
+  .row.deck .c-no {
+    color: var(--accent);
+  }
+  .row.missing .names {
+    opacity: 0.45;
   }
   .row.drop-before {
-    box-shadow: inset 0 2px 0 var(--cue);
+    box-shadow: inset 0 2px 0 var(--accent);
   }
   .row.drop-after {
-    box-shadow: inset 0 -2px 0 var(--cue);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   .r {
     text-align: right;
   }
   .c-no {
-    text-align: right;
-    color: var(--text-2);
-  }
-  .c-no.cur {
-    color: var(--cue);
-  }
-  .c-st {
     display: flex;
     justify-content: center;
-  }
-  .c-title {
+    font-size: 13px;
     font-weight: 500;
+    color: var(--text-3);
   }
-  .c-title,
-  .c-artist {
+  .c-track {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .thumb {
+    position: relative;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--k) 22%, var(--surface-3));
+    color: color-mix(in srgb, var(--k) 40%, var(--text-2));
+  }
+  .thumb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 7px;
+    object-fit: cover;
+  }
+  .thumb .st {
+    position: absolute;
+    right: -2px;
+    top: -2px;
+    width: 9px;
+    height: 9px;
+    box-shadow: 0 0 0 2px var(--surface-1);
+  }
+  .names {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+  }
+  .names .t,
+  .names .a {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .c-artist {
-    color: var(--text-2);
+  .names .t {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .names .a {
+    font-size: 12px;
+    color: var(--text-3);
   }
   .edited {
     display: inline-block;
@@ -775,57 +900,174 @@
     height: 6px;
     margin-left: 7px;
     border-radius: 50%;
-    background: var(--cue);
+    background: var(--accent);
     vertical-align: middle;
   }
-  .num {
+  .row .c-bpm,
+  .row .c-time {
     font-size: 15px;
   }
   .c-key {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    padding-left: 12px;
+    justify-content: center;
   }
-  .c-key i {
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
-    flex: none;
-  }
-  .c-fmt {
-    padding-left: 16px;
-    font-size: 12px;
-    color: var(--text-2);
-    white-space: nowrap;
-  }
-  .c-fmt.fault {
-    color: var(--fault);
-  }
-  .c-fmt.warn {
-    color: var(--warn);
+  .cols .c-key {
+    justify-content: center;
   }
   .c-cue {
     display: flex;
+    align-items: center;
     gap: 3px;
+    padding-left: 8px;
   }
   .c-cue i {
-    width: 7px;
-    height: 7px;
-    border-radius: 1px;
-  }
-  .c-cue .mem {
-    margin-left: 4px;
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 7px;
-    color: var(--fault);
+    width: 8px;
+    height: 14px;
+    border-radius: 2px;
   }
   .c-cue i.off {
-    background: var(--line);
+    background: var(--surface-3);
+  }
+  .c-cue .mem {
+    margin-left: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--danger);
+  }
+  .nocue {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--warning);
+  }
+  .c-fmt {
+    font-size: 12px;
+    color: var(--text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .c-fmt.fault {
+    color: var(--danger);
+  }
+  .c-fmt.warn {
+    color: var(--warning);
+  }
+  .row .c-date {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+  /* Narrow (detail panel open): file and date columns go. */
+  @container (max-width: 980px) {
+    .cols,
+    .row {
+      grid-template-columns: 30px minmax(160px, 1fr) 64px 62px 58px 128px;
+    }
+    .c-fmt,
+    .c-date {
+      display: none;
+    }
   }
   .empty {
-    padding: 24px 16px;
+    padding: 24px 12px;
+    color: var(--text-3);
+  }
+
+  /* Context menu */
+  .ctx {
+    position: fixed;
+    width: 240px;
+    padding: 6px;
+    background: var(--surface-2);
+    border-radius: var(--r-panel);
+    box-shadow: var(--shadow-pop);
+    z-index: 30;
+  }
+  .ctx-head {
+    padding: 4px 10px 6px;
+    font-size: 11.5px;
+    color: var(--text-3);
+  }
+  .ctx .hint {
+    margin-left: auto;
+    padding-left: 10px;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .ctx button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .ctx button :global(svg) {
     color: var(--text-2);
+  }
+  .ctx button:hover:not(:disabled),
+  .ctx button.open {
+    background: var(--surface-3);
+  }
+  .ctx button:disabled {
+    color: var(--text-3);
+  }
+  .ctx :global(.chev) {
+    margin-left: auto;
+  }
+  .ctx .danger,
+  .ctx .danger :global(svg) {
+    color: var(--danger);
+  }
+  .sep {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--hairline);
+  }
+  .sub {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 4px);
+    width: 260px;
+    padding: 6px;
+    background: var(--surface-2);
+    border-radius: var(--r-panel);
+    box-shadow: var(--shadow-pop);
+  }
+  .sub.left {
+    left: auto;
+    right: calc(100% + 4px);
+  }
+  .sub input {
+    width: 100%;
+    margin-bottom: 4px;
+    background: var(--surface-3);
+  }
+  .sub-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .pn {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cnt {
+    font-size: 12.5px;
+    color: var(--text-3);
+  }
+  .none {
+    margin: 6px 10px;
+    font-size: 12px;
+    color: var(--text-3);
   }
 </style>

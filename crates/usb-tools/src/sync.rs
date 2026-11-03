@@ -99,6 +99,9 @@ pub struct PlannedTrack {
     pub size: u64,
     /// Copy the audio (false: an identical file is already there).
     pub copy: bool,
+    /// `ANLZ0000.DAT` a rekordbox export left on the stick for this file
+    /// (device path): used when the library has no analysis of its own.
+    pub stick_anlz: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -130,6 +133,9 @@ struct ManifestTrack {
     size: u64,
     /// Source file modification time (seconds) when it was copied.
     mtime: u64,
+    /// Fingerprint of the analysis files last written for it.
+    #[serde(default)]
+    anlz: Option<u64>,
 }
 
 const MANIFEST: &str = ".rbx/manifest.json";
@@ -151,12 +157,22 @@ fn load_manifest(stick: &Path) -> Manifest {
 }
 
 fn fnv(s: &str) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.bytes() {
+    fnv_bytes(0xcbf2_9ce4_8422_2325, s.as_bytes())
+}
+
+fn fnv_bytes(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
     h
+}
+
+/// Fingerprint of a track's analysis files, as they would be written.
+fn anlz_fingerprint(files: &[(&str, Vec<u8>)]) -> u64 {
+    files.iter().fold(0xcbf2_9ce4_8422_2325, |h, (ext, bytes)| {
+        fnv_bytes(fnv_bytes(h, ext.as_bytes()), bytes)
+    })
 }
 
 /// FAT/exFAT-safe path component (also forbids characters macOS allows).
@@ -232,8 +248,10 @@ fn free_space(path: &Path) -> u64 {
 /// Work out what has to be copied. Reads the stick, writes nothing.
 pub fn plan(req: &SyncRequest) -> SyncPlan {
     let manifest = load_manifest(&req.stick);
-    // Audio a previous rekordbox export left on the stick, by file name and size.
+    // Audio a previous rekordbox export left on the stick, by file name and
+    // size, and the analysis the stick's library has for each audio file.
     let mut existing: HashMap<(String, u64), String> = HashMap::new();
+    let mut stick_anlz: HashMap<String, String> = HashMap::new();
     if let Ok(b) = std::fs::read(req.stick.join("PIONEER/rekordbox/export.pdb"))
         && let Ok(db) = Database::parse(&b)
     {
@@ -243,6 +261,9 @@ pub fn plan(req: &SyncRequest) -> SyncPlan {
                 .map(|n| n.to_string_lossy().to_lowercase());
             if let Some(f) = file {
                 existing.insert((f, t.file_size as u64), t.file_path.clone());
+            }
+            if !t.analyze_path.is_empty() {
+                stick_anlz.insert(t.file_path.to_lowercase(), t.analyze_path.clone());
             }
         }
     }
@@ -263,9 +284,6 @@ pub fn plan(req: &SyncRequest) -> SyncPlan {
             continue;
         };
         let size = meta.len();
-        if t.anlz_dat.as_ref().is_none_or(|p| !p.is_file()) {
-            out.no_analysis.push(format!("{} – {}", t.artist, t.title));
-        }
         let on_stick = |device: &str| {
             std::fs::metadata(resolve(&req.stick, device)).is_ok_and(|m| m.len() == size)
         };
@@ -298,6 +316,16 @@ pub fn plan(req: &SyncRequest) -> SyncPlan {
             }
         };
         used.insert(device_path.to_lowercase());
+        // Analysed in the library, or on the stick already (only for a file
+        // that is there, not one about to be copied over it).
+        let stick_anlz = (t.anlz_dat.as_ref().is_none_or(|p| !p.is_file()) && !copy)
+            .then(|| stick_anlz.get(&device_path.to_lowercase()))
+            .flatten()
+            .filter(|a| resolve(&req.stick, a).is_file())
+            .cloned();
+        if t.anlz_dat.as_ref().is_none_or(|p| !p.is_file()) && stick_anlz.is_none() {
+            out.no_analysis.push(format!("{} – {}", t.artist, t.title));
+        }
         if copy {
             out.copy_files += 1;
             out.copy_bytes += size;
@@ -309,6 +337,7 @@ pub fn plan(req: &SyncRequest) -> SyncPlan {
             device_path,
             size,
             copy,
+            stick_anlz,
         });
     }
     out
@@ -333,6 +362,10 @@ pub struct SyncReport {
     pub playlists: usize,
     pub copied: usize,
     pub reused: usize,
+    /// Tracks whose analysis files were written (new or changed).
+    pub anlz_written: usize,
+    /// Tracks whose analysis files on the stick were already up to date.
+    pub anlz_unchanged: usize,
     pub backup_dir: PathBuf,
     pub moved_aside: Vec<String>,
     pub warnings: Vec<String>,
@@ -429,10 +462,20 @@ fn file_type(path: &str) -> u16 {
     }
 }
 
-/// Build the analysis files for a track: rekordbox's analysis with the path
-/// pointing at the stick and the library's cues.
-fn build_anlz(t: &SyncTrack, device_path: &str) -> Option<Vec<(&'static str, Vec<u8>)>> {
-    let dat_path = t.anlz_dat.as_ref()?;
+/// The track's `ANLZ0000.DAT` to build from: the library's, else the one
+/// already on the stick.
+pub(crate) fn anlz_source(t: &SyncTrack, pt: &PlannedTrack, stick: &Path) -> Option<PathBuf> {
+    t.anlz_dat
+        .clone()
+        .filter(|p| p.is_file())
+        .or_else(|| pt.stick_anlz.as_ref().map(|a| resolve(stick, a)))
+}
+
+/// Build the analysis files for a track from `dat_path`: the analysis with
+/// the path pointing at the stick and the library's cues. Analysis taken
+/// from the stick keeps its own cues while the library has none.
+fn build_anlz(t: &SyncTrack, dat_path: &Path, device_path: &str) -> Option<Vec<(&'static str, Vec<u8>)>> {
+    let from_library = t.anlz_dat.as_deref() == Some(dat_path);
     let read = |p: &Path| std::fs::read(p).ok().and_then(|b| AnlzFile::parse(&b).ok());
     let mut dat = read(dat_path)?;
     let mut ext = read(&dat_path.with_extension("EXT"));
@@ -447,7 +490,18 @@ fn build_anlz(t: &SyncTrack, device_path: &str) -> Option<Vec<(&'static str, Vec
             f.sections.insert(0, build_path(device_path));
         }
     }
-    write_cue_points(&mut dat, ext.as_mut(), &t.cues);
+    // Analysis from this app's analyser written before it added the
+    // sections rekordbox needs gets them now.
+    let mp3 = t.audio.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp3"));
+    let samples = if mp3 {
+        ((t.duration.max(0.0) * t.sample_rate as f64 / 1152.0).round() * 1152.0) as u32
+    } else {
+        0
+    };
+    pioneer_formats::anlz::complete(&mut dat, ext.as_mut(), two.as_mut(), samples);
+    if from_library || !t.cues.is_empty() {
+        write_cue_points(&mut dat, ext.as_mut(), &t.cues);
+    }
     if let Some(beats) = &t.grid {
         dat.set(pioneer_formats::anlz::BeatGrid::new(beats.clone()).to_section());
         // PQT2 holds the analysed grid again for newer players: without it
@@ -767,7 +821,11 @@ pub fn execute(
     };
 
     // 3. Analysis files, in folders the current library does not use.
+    //    Files the last sync wrote and that would come out the same stay
+    //    as they are: rewriting thousands of them is most of a re-sync.
+    let old = load_manifest(stick);
     let mut anlz_paths: HashMap<i64, String> = HashMap::new();
+    let mut anlz_hashes: HashMap<i64, u64> = HashMap::new();
     let mut anlz_dirs: Vec<String> = Vec::new();
     p = SyncProgress {
         phase: "analysis",
@@ -784,24 +842,40 @@ pub fn execute(
         p.fraction = w.at("analysis", p.done as f64 / p.total.max(1) as f64);
         p.done += 1;
         progress(&p);
-        let Some(files) = build_anlz(t, &pt.device_path) else {
+        let Some(files) = anlz_source(t, pt, stick).and_then(|src| build_anlz(t, &src, &pt.device_path)) else {
             continue;
         };
         let dir = anlz_dir_for(&pt.device_path);
         let abs = resolve(stick, &dir);
-        // Without its analysis files a track still plays (no waveform, grid
-        // or cues): a write error here costs that track, not the sync.
-        let written = std::fs::create_dir_all(&abs).and_then(|()| {
-            files
-                .iter()
-                .try_for_each(|(ext, bytes)| replace_file(&abs.join(format!("ANLZ0000.{ext}")), bytes))
+        let hash = anlz_fingerprint(&files);
+        let file = |ext: &str| abs.join(format!("ANLZ0000.{ext}"));
+        // Without the fingerprint (older manifest, cancelled sync) the files
+        // on the stick are compared instead: reading them back is far
+        // cheaper than writing and flushing them again.
+        let known = old.tracks.get(&pt.key).is_some_and(|m| m.anlz == Some(hash));
+        let up_to_date = files.iter().all(|(ext, bytes)| {
+            if known {
+                std::fs::metadata(file(ext)).is_ok_and(|m| m.len() == bytes.len() as u64)
+            } else {
+                std::fs::read(file(ext)).is_ok_and(|b| b == *bytes)
+            }
         });
-        if let Err(e) = written {
-            report
-                .warnings
-                .push(format!("{} – {}: analýza se nezapsala ({e})", t.artist, t.title));
-            continue;
+        if up_to_date {
+            report.anlz_unchanged += 1;
+        } else {
+            // Without its analysis files a track still plays (no waveform,
+            // grid or cues): a write error here costs that track, not the sync.
+            let written = std::fs::create_dir_all(&abs)
+                .and_then(|()| files.iter().try_for_each(|(ext, bytes)| replace_file(&file(ext), bytes)));
+            if let Err(e) = written {
+                report
+                    .warnings
+                    .push(format!("{} – {}: analýza se nezapsala ({e})", t.artist, t.title));
+                continue;
+            }
+            report.anlz_written += 1;
         }
+        anlz_hashes.insert(pt.key, hash);
         anlz_paths.insert(pt.key, format!("{dir}/ANLZ0000.DAT"));
         anlz_dirs.push(dir);
     }
@@ -848,7 +922,6 @@ pub fn execute(
     replace_file(&rb.join("export.pdb"), &bytes).map_err(io("export.pdb"))?;
 
     // 7. Remember where everything went; drop our analysis folders no longer used.
-    let old = load_manifest(stick);
     let mut manifest = Manifest {
         version: 1,
         ..Default::default()
@@ -860,6 +933,7 @@ pub fn execute(
                 device_path: pt.device_path.clone(),
                 size: pt.size,
                 mtime: mtime(&by_key[&pt.key].audio),
+                anlz: anlz_hashes.get(&pt.key).copied(),
             },
         );
     }
@@ -970,7 +1044,7 @@ mod grid_tests {
             grid: Some(edited.clone()),
             ..Default::default()
         };
-        let files = build_anlz(&t, "/Contents/a.mp3").unwrap();
+        let files = build_anlz(&t, &d.path().join("ANLZ0000.DAT"), "/Contents/a.mp3").unwrap();
         let get = |ext: &str| AnlzFile::parse(&files.iter().find(|f| f.0 == ext).unwrap().1).unwrap();
         assert_eq!(get("DAT").beat_grid().unwrap().unwrap().beats, edited);
         assert!(get("EXT").section(tag::BEAT_GRID_2).is_none());

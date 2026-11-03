@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Crosshair, Flag, Hand, Metronome, RotateCcw, Undo2 } from "@lucide/svelte";
+  import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Crosshair, Flag, Grid3x3, Hand, Minus, Plus, RotateCcw, Undo2 } from "@lucide/svelte";
   import { nearestBeat, periodMs, withTempo, type Grid } from "./grid";
   import { app } from "./state.svelte";
 
@@ -83,57 +83,73 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="grid-panel">
+  <span class="title" title="Alt + tažení ve waveformu posouvá grid"><Grid3x3 size={15} /> Úprava gridu</span>
   {#if !app.detail?.grid}
     <p class="note">Skladba nemá beatgrid. Nejdřív ji analyzuj.</p>
   {:else if !editable}
     <p class="note">Beatgrid se upravuje v knihovně (Tento Mac). Na flashku se dostane synchronizací.</p>
   {:else if grid}
-    <div class="group">
-      <span class="lbl">BPM</span>
-      <button class="btn small" onclick={() => tempo(grid.bpm - 0.1)} title="−0,1 BPM">−.1</button>
-      <button class="btn small" onclick={() => tempo(grid.bpm - 0.01)} title="−0,01 BPM">−.01</button>
-      <input
-        class="bpm readout"
-        bind:value={bpmText}
-        onchange={typed}
-        onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        aria-label="Tempo gridu"
-      />
-      <button class="btn small" onclick={() => tempo(grid.bpm + 0.01)} title="+0,01 BPM">+.01</button>
-      <button class="btn small" onclick={() => tempo(grid.bpm + 0.1)} title="+0,1 BPM">+.1</button>
-      <button class="btn small" onclick={() => tempo(grid.bpm / 2)} title="Poloviční tempo">÷2</button>
-      <button class="btn small" onclick={() => tempo(grid.bpm * 2)} title="Dvojnásobné tempo">×2</button>
-      <button class="btn small" onclick={tap} title="Ťukej do rytmu (aspoň 4×)">
-        <Hand size={12} /> TAP{#if tapCount > 0 && tapCount < 4}<span class="n">{tapCount}</span>{/if}
+    <div class="pill">
+      <button class="g icon" onclick={(e) => tempo(grid.bpm - (e.shiftKey ? 0.1 : 0.01))} title="−0,01 BPM (se Shiftem −0,1)" aria-label="Pomalejší">
+        <Minus size={14} />
+      </button>
+      <label class="bpm">
+        <input
+          class="readout"
+          bind:value={bpmText}
+          onchange={typed}
+          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+          aria-label="Tempo gridu"
+        />
+        <span>BPM</span>
+      </label>
+      <button class="g icon" onclick={(e) => tempo(grid.bpm + (e.shiftKey ? 0.1 : 0.01))} title="+0,01 BPM (se Shiftem +0,1)" aria-label="Rychlejší">
+        <Plus size={14} />
       </button>
     </div>
 
-    <div class="group">
-      <span class="lbl">Posun</span>
-      <button class="btn small icon" onclick={() => shift(-10)} title="Grid o 10 ms dřív"><ChevronsLeft size={13} /></button>
-      <button class="btn small icon" onclick={() => shift(-1)} title="Grid o 1 ms dřív"><ChevronLeft size={13} /></button>
-      <button class="btn small icon" onclick={() => shift(1)} title="Grid o 1 ms později"><ChevronRight size={13} /></button>
-      <button class="btn small icon" onclick={() => shift(10)} title="Grid o 10 ms později"><ChevronsRight size={13} /></button>
-    </div>
-
-    <div class="group">
-      <button class="btn small" onclick={beatHere} title="Nejbližší doba přesně na playhead"><Crosshair size={12} /> Doba sem</button>
-      <button class="btn small" onclick={downbeatHere} title="Doba na playheadu bude první doba taktu"><Flag size={12} /> 1. doba sem</button>
-      <button class="btn small icon" onclick={() => moveBar(-1)} title="První doba taktu o dobu dřív"><ChevronLeft size={13} /></button>
-      <span class="lbl bar">Takt</span>
-      <button class="btn small icon" onclick={() => moveBar(1)} title="První doba taktu o dobu později"><ChevronRight size={13} /></button>
-    </div>
-
-    <div class="group end">
-      <button class="btn small" class:on={app.metronome} onclick={() => (app.metronome = !app.metronome)} title="Klik na každou dobu při přehrávání">
-        <Metronome size={12} /> Metronom
+    <div class="pill">
+      <button class="g" onclick={() => tempo(grid.bpm / 2)} title="Poloviční tempo">÷2</button>
+      <button class="g" onclick={() => tempo(grid.bpm * 2)} title="Dvojnásobné tempo">×2</button>
+      <button class="g" onclick={tap} title="Ťukej do rytmu (aspoň 4×)">
+        <Hand size={13} /> TAP{#if tapCount > 0 && tapCount < 4}<span class="n">{tapCount}</span>{/if}
       </button>
-      <button class="btn small icon" disabled={!app.canUndoGrid} onclick={() => app.undoGrid()} title="Vrátit poslední úpravu gridu (⌘Z)"><Undo2 size={13} /></button>
-      {#if grid.edited}
-        <button class="btn small" onclick={() => app.resetGrid()} title="Zahodit úpravy a vrátit grid z analýzy"><RotateCcw size={12} /> Z analýzy</button>
-      {/if}
     </div>
-    <span class="hint">Alt + tažení ve waveformu posouvá grid</span>
+
+    <div class="pill">
+      <button class="g icon" onclick={() => shift(-10)} title="Grid o 10 ms dřív" aria-label="Grid o 10 ms dřív"><ChevronsLeft size={14} /></button>
+      <button class="g icon" onclick={() => shift(-1)} title="Grid o 1 ms dřív" aria-label="Grid o 1 ms dřív"><ChevronLeft size={14} /></button>
+      <span class="lbl">posun</span>
+      <button class="g icon" onclick={() => shift(1)} title="Grid o 1 ms později" aria-label="Grid o 1 ms později"><ChevronRight size={14} /></button>
+      <button class="g icon" onclick={() => shift(10)} title="Grid o 10 ms později" aria-label="Grid o 10 ms později"><ChevronsRight size={14} /></button>
+    </div>
+
+    <div class="pill">
+      <button class="g icon" onclick={beatHere} title="Doba sem: nejbližší doba přesně na playhead" aria-label="Doba sem"><Crosshair size={14} /></button>
+      <button class="g" onclick={downbeatHere} title="Doba na playheadu bude první doba taktu"><Flag size={13} /> Tady je 1. doba</button>
+      <button class="g icon" onclick={() => moveBar(-1)} title="První doba taktu o dobu dřív" aria-label="Takt o dobu dřív"><ChevronLeft size={14} /></button>
+      <button class="g icon" onclick={() => moveBar(1)} title="První doba taktu o dobu později" aria-label="Takt o dobu později"><ChevronRight size={14} /></button>
+    </div>
+
+    <span class="spacer"></span>
+
+    <button
+      class="switch"
+      class:on={app.metronome}
+      role="switch"
+      aria-checked={app.metronome}
+      onclick={() => (app.metronome = !app.metronome)}
+      title="Klik na každou dobu při přehrávání"
+    >
+      <span class="knob"></span> Metronom
+    </button>
+    {#if grid.edited}
+      <span class="badge" title="Grid se liší od analýzy">upraveno</span>
+      <button class="g text" onclick={() => app.resetGrid()} title="Zahodit úpravy a vrátit grid z analýzy"><RotateCcw size={13} /> Vrátit analýzu</button>
+    {/if}
+    <button class="g icon" disabled={!app.canUndoGrid} onclick={() => app.undoGrid()} title="Vrátit poslední úpravu gridu (⌘Z)" aria-label="Vrátit úpravu gridu">
+      <Undo2 size={14} />
+    </button>
   {/if}
 </div>
 
@@ -141,60 +157,166 @@
   .grid-panel {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 6px 16px;
-    min-height: 30px;
+    gap: 8px;
+    min-height: 52px;
+    padding: 8px 10px 8px 14px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface-1));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+    min-width: 0;
+    overflow-x: auto;
   }
-  .group {
+  .title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 8px;
+    color: var(--accent);
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .pill {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
+    flex: none;
+    height: 36px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--surface-1);
   }
-  .group.end {
-    margin-left: auto;
+  .g {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    flex: none;
+  }
+  .g :global(svg) {
+    color: var(--text-2);
+  }
+  .g:hover {
+    background: var(--surface-3);
+  }
+  .g:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .g.icon {
+    width: 28px;
+    padding: 0;
+  }
+  .g.text {
+    color: var(--text);
   }
   .lbl {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
-    margin-right: 2px;
-  }
-  .lbl.bar {
-    margin: 0 2px;
-  }
-  .btn.small {
-    height: 26px;
-    padding: 0 8px;
     font-size: 12px;
-    gap: 4px;
-  }
-  .btn.small.icon {
-    width: 26px;
-    padding: 0;
-    justify-content: center;
-  }
-  .btn.on {
-    border-color: var(--cue);
-    color: var(--cue);
+    color: var(--text-3);
+    padding: 0 4px;
   }
   .bpm {
-    width: 74px;
-    height: 26px;
-    text-align: center;
-    font-size: 17px;
-    padding: 0 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: var(--surface-3);
+  }
+  .bpm input {
+    width: 54px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font-size: 18px;
+    text-align: right;
+    outline: none;
+  }
+  .bpm span {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-3);
   }
   .n {
     font-size: 10px;
-    color: var(--cue);
+    color: var(--accent);
+  }
+  .spacer {
+    flex: 1;
+  }
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font-size: 12.5px;
+    white-space: nowrap;
+    flex: none;
+  }
+  .knob {
+    position: relative;
+    width: 34px;
+    height: 20px;
+    border-radius: 10px;
+    background: var(--surface-3);
+    transition: background 0.15s;
+  }
+  .knob::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-2);
+    transition: transform 0.15s;
+  }
+  .switch.on .knob {
+    background: var(--accent);
+  }
+  .switch.on .knob::after {
+    transform: translateX(14px);
+    background: var(--on-accent);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 11px;
+    background: var(--surface-1);
+    color: var(--text-2);
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+  .badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .note {
     margin: 0;
-    font-size: 12px;
+    font-size: 12.5px;
     color: var(--text-2);
-  }
-  .hint {
-    font-size: 11px;
-    color: var(--text-3);
   }
 </style>

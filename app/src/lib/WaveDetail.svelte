@@ -133,10 +133,22 @@
       ctx.fillStyle = color(c);
       ctx.fillRect(x, 0, Math.max(1, dpr), H);
       if (c.slot > 0) {
-        const tw = 13 * dpr;
-        ctx.fillRect(x, H - 13 * dpr, tw, 13 * dpr);
-        ctx.fillStyle = "#14161b";
-        ctx.fillText(String.fromCharCode(64 + c.slot), x + tw / 2, H - 6.5 * dpr);
+        // Tab with the letter and, if there is room, the cue's name.
+        const th = 14 * dpr;
+        const letter = String.fromCharCode(64 + c.slot);
+        const name = H >= 40 * dpr ? c.comment : "";
+        ctx.font = `700 ${9 * dpr}px Inter, sans-serif`;
+        ctx.textAlign = "left";
+        const tw = (name ? ctx.measureText(name).width + 18 * dpr : 0) + 13 * dpr;
+        ctx.beginPath();
+        ctx.roundRect(x, H - th - 2 * dpr, tw, th, [0, 3 * dpr, 3 * dpr, 0]);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.fillText(letter, x + 4 * dpr, H - th / 2 - 2 * dpr);
+        if (name) {
+          ctx.font = `500 ${9 * dpr}px Inter, sans-serif`;
+          ctx.fillText(name, x + 14 * dpr, H - th / 2 - 2 * dpr);
+        }
       } else {
         ctx.beginPath();
         ctx.moveTo(x - 5 * dpr, H);
@@ -161,8 +173,20 @@
     }
 
     // Fixed playhead in the centre, like rekordbox.
-    ctx.fillStyle = "#f2a33a";
-    ctx.fillRect(Math.round(W / 2) - dpr, 0, 2 * dpr, H);
+    const px = Math.round(W / 2);
+    ctx.fillStyle = "#f4f4f5";
+    ctx.fillRect(px - dpr, 0, 2 * dpr, H);
+    ctx.beginPath();
+    ctx.moveTo(px - 5 * dpr, 0);
+    ctx.lineTo(px + 5 * dpr, 0);
+    ctx.lineTo(px, 6 * dpr);
+    ctx.fill();
+    ctx.fillStyle = "#e5484d";
+    ctx.beginPath();
+    ctx.moveTo(px - 5 * dpr, H);
+    ctx.lineTo(px + 5 * dpr, H);
+    ctx.lineTo(px, H - 6 * dpr);
+    ctx.fill();
   }
 
   $effect(() => {
@@ -254,8 +278,7 @@
     height: 100%;
     cursor: grab;
     touch-action: none;
-    background: #0f1115;
-    border-radius: 4px;
+    background: #0a0b0d;
   }
   canvas.dragging {
     cursor: grabbing;

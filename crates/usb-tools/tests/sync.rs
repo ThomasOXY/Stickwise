@@ -230,7 +230,21 @@ fn syncs_library_selection_to_a_stick() {
     // Second sync: nothing to copy.
     let p2 = plan(&req);
     assert_eq!((p2.copy_files, p2.reuse_files), (0, 3));
-    execute(&req, &p2, backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    let r2 = execute(&req, &p2, backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    assert!(r2.warnings.is_empty(), "{:?}", r2.warnings);
+    // Nor are the analysis files written again: they did not change.
+    assert_eq!((r.anlz_written, r.anlz_unchanged), (2, 0));
+    assert_eq!((r2.anlz_written, r2.anlz_unchanged), (0, 2));
+    // Nor when the manifest has no fingerprints (written by an older version):
+    // the files on the stick are compared.
+    let mpath = stick.path().join(".rbx/manifest.json");
+    let mut m: serde_json::Value = serde_json::from_slice(&std::fs::read(&mpath).unwrap()).unwrap();
+    for t in m["tracks"].as_object_mut().unwrap().values_mut() {
+        t.as_object_mut().unwrap().remove("anlz");
+    }
+    std::fs::write(&mpath, serde_json::to_vec(&m).unwrap()).unwrap();
+    let r2b = execute(&req, &plan(&req), backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    assert_eq!((r2b.anlz_written, r2b.anlz_unchanged), (0, 2));
     // The Denon library keeps its identity (play history stays linked).
     let edb = engine_library::read(&stick.path().join("Engine Library/Database2/m.db")).unwrap();
     assert_eq!(edb.uuid, uuid);
@@ -240,6 +254,92 @@ fn syncs_library_selection_to_a_stick() {
             .join("Engine Library/Database2/m.db")
             .is_file()
     );
+
+    // A cue edited in the library: only that track's analysis is rewritten.
+    let mut req = req;
+    req.tracks[0].cues[0].comment = "Break".into();
+    let r3 = execute(&req, &plan(&req), backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    assert_eq!((r3.anlz_written, r3.anlz_unchanged), (1, 1));
+    let db =
+        Database::parse(&std::fs::read(stick.path().join("PIONEER/rekordbox/export.pdb")).unwrap())
+            .unwrap();
+    let t = db.tracks.iter().find(|t| t.title == req.tracks[0].title).unwrap();
+    let anlz = stick.path().join(t.analyze_path.trim_start_matches('/'));
+    let dat = AnlzFile::parse(&std::fs::read(&anlz).unwrap()).unwrap();
+    let ext = AnlzFile::parse(&std::fs::read(anlz.with_extension("EXT")).unwrap()).unwrap();
+    assert_eq!(read_cue_points(&dat, Some(&ext)).unwrap()[0].comment, "Break");
+
+    // The same song in the library twice, from another folder: it shares the
+    // file on the stick, and the Denon library still gets written.
+    let dup = mac.path().join("Jinde").join(req.tracks[0].audio.file_name().unwrap());
+    std::fs::create_dir_all(dup.parent().unwrap()).unwrap();
+    std::fs::copy(&req.tracks[0].audio, &dup).unwrap();
+    req.tracks.push(SyncTrack {
+        key: 300,
+        audio: dup,
+        ..req.tracks[0].clone()
+    });
+    req.playlists[1].tracks.push(300);
+    let p4 = plan(&req);
+    assert_eq!(p4.copy_files, 0);
+    let r4 = execute(&req, &p4, backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    assert!(r4.warnings.is_empty(), "{:?}", r4.warnings);
+    assert_eq!(r4.engine.as_ref().expect("engine library written").tracks, 3);
+}
+
+#[test]
+fn analysis_damaged_on_the_stick_is_written_again() {
+    let demo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../research/rekordcrate/data/complete_export/demo_tracks");
+    if !demo.exists() {
+        eprintln!("fixture missing, skipping");
+        return;
+    }
+    let mac = tempfile::tempdir().unwrap();
+    let stick = tempfile::tempdir().unwrap();
+    let backup = tempfile::tempdir().unwrap();
+    let old =
+        Database::parse(&std::fs::read(demo.join("PIONEER/rekordbox/export.pdb")).unwrap()).unwrap();
+    let t = &old.tracks[0];
+    let audio = mac.path().join("a.mp3");
+    std::fs::write(&audio, vec![1u8; 4000]).unwrap();
+    let req = SyncRequest {
+        stick: stick.path().to_path_buf(),
+        tracks: vec![SyncTrack {
+            key: 1,
+            audio,
+            title: "A".into(),
+            artist: "A".into(),
+            anlz_dat: Some(demo.join(t.analyze_path.trim_start_matches('/'))),
+            ..Default::default()
+        }],
+        playlists: vec![SyncPlaylist {
+            key: 10,
+            parent: 0,
+            name: "Set".into(),
+            is_folder: false,
+            sort: 0,
+            tracks: vec![1],
+        }],
+        device_name: "TEST".into(),
+        date: "2026-10-31".into(),
+        engine: None,
+        settings: None,
+    };
+    execute(&req, &plan(&req), backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    let db =
+        Database::parse(&std::fs::read(stick.path().join("PIONEER/rekordbox/export.pdb")).unwrap())
+            .unwrap();
+    let ext = stick
+        .path()
+        .join(db.tracks[0].analyze_path.trim_start_matches('/'))
+        .with_extension("EXT");
+    let good = std::fs::read(&ext).unwrap();
+    // Truncated by a stick pulled out mid-write elsewhere, or deleted.
+    std::fs::write(&ext, &good[..good.len() / 2]).unwrap();
+    let r = execute(&req, &plan(&req), backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    assert_eq!(r.anlz_written, 1);
+    assert_eq!(std::fs::read(&ext).unwrap(), good);
 }
 
 #[test]
@@ -306,4 +406,74 @@ fn walk(dir: &Path) -> Vec<String> {
         }
     }
     out
+}
+
+#[test]
+fn analysis_already_on_the_stick_is_used_for_an_unanalysed_track() {
+    let demo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../research/rekordcrate/data/complete_export/demo_tracks");
+    if !demo.exists() {
+        eprintln!("fixture missing, skipping");
+        return;
+    }
+    let mac = tempfile::tempdir().unwrap();
+    let stick = tempfile::tempdir().unwrap();
+    let backup = tempfile::tempdir().unwrap();
+    // A stick rekordbox exported to: the audio and its analysis are there.
+    copy_dir(&demo.join("PIONEER"), &stick.path().join("PIONEER"));
+    let old =
+        Database::parse(&std::fs::read(demo.join("PIONEER/rekordbox/export.pdb")).unwrap()).unwrap();
+    let t = &old.tracks[0];
+    // rekordbox put a hot cue on it.
+    let stick_dat = stick.path().join(t.analyze_path.trim_start_matches('/'));
+    let mut dat = AnlzFile::parse(&std::fs::read(&stick_dat).unwrap()).unwrap();
+    let mut ext = AnlzFile::parse(&std::fs::read(stick_dat.with_extension("EXT")).unwrap()).unwrap();
+    pioneer_formats::anlz::write_cue_points(&mut dat, Some(&mut ext), &[CuePoint::hot(1, 12_000)]);
+    std::fs::write(&stick_dat, dat.to_bytes()).unwrap();
+    std::fs::write(stick_dat.with_extension("EXT"), ext.to_bytes()).unwrap();
+    let on_stick = stick.path().join(t.file_path.trim_start_matches('/'));
+    std::fs::create_dir_all(on_stick.parent().unwrap()).unwrap();
+    std::fs::write(&on_stick, vec![3u8; t.file_size as usize]).unwrap();
+    // The same file in the library, never analysed there.
+    let audio = mac.path().join(Path::new(&t.file_path).file_name().unwrap());
+    std::fs::write(&audio, vec![3u8; t.file_size as usize]).unwrap();
+    let req = SyncRequest {
+        stick: stick.path().to_path_buf(),
+        tracks: vec![SyncTrack {
+            key: 1,
+            audio,
+            title: t.title.clone(),
+            artist: "A".into(),
+            ..Default::default()
+        }],
+        playlists: vec![SyncPlaylist {
+            key: 10,
+            parent: 0,
+            name: "Set".into(),
+            is_folder: false,
+            sort: 0,
+            tracks: vec![1],
+        }],
+        device_name: "TEST".into(),
+        date: "2026-10-31".into(),
+        engine: None,
+        settings: None,
+    };
+    let p = plan(&req);
+    assert_eq!(p.reuse_files, 1);
+    assert!(p.no_analysis.is_empty(), "{:?}", p.no_analysis);
+    assert!(p.tracks[0].stick_anlz.is_some());
+
+    let r = execute(&req, &p, backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let db =
+        Database::parse(&std::fs::read(stick.path().join("PIONEER/rekordbox/export.pdb")).unwrap())
+            .unwrap();
+    let anlz = stick.path().join(db.tracks[0].analyze_path.trim_start_matches('/'));
+    let dat = AnlzFile::parse(&std::fs::read(&anlz).unwrap()).unwrap();
+    let ext = AnlzFile::parse(&std::fs::read(anlz.with_extension("EXT")).unwrap()).unwrap();
+    assert!(matches!(dat.beat_grid(), Some(Ok(_))), "waveform and grid carried over");
+    // The library has no cues of its own for it: the stick's stay.
+    let cues = read_cue_points(&dat, Some(&ext)).unwrap();
+    assert_eq!((cues.len(), cues[0].time_ms), (1, 12_000));
 }

@@ -99,6 +99,8 @@
   .overview {
     display: flex;
     flex-direction: column;
+    padding: 0 0 2px;
+    background: #101114;
   }
   .flags {
     position: relative;
@@ -106,14 +108,15 @@
   }
   .flag {
     position: absolute;
+    top: 1px;
     width: 11px;
-    height: 12px;
+    height: 11px;
     border-radius: 2px;
-    font-size: 8.5px;
+    font-size: 7.5px;
     font-weight: 700;
-    line-height: 12px;
+    line-height: 11px;
     text-align: center;
-    color: var(--booth);
+    color: #fff;
   }
   .track {
     position: relative;
@@ -131,7 +134,7 @@
     left: 0;
     top: 0;
     bottom: 0;
-    background: rgb(20 22 27 / 0.5);
+    background: rgb(10 11 13 / 0.5);
     pointer-events: none;
   }
   .ghost {
@@ -145,8 +148,9 @@
     position: absolute;
     top: -1px;
     bottom: -1px;
-    border: 1px solid rgb(255 255 255 / 0.55);
-    border-radius: 2px;
+    border: 1px solid rgb(255 255 255 / 0.35);
+    background: rgb(255 255 255 / 0.06);
+    border-radius: 3px;
     pointer-events: none;
   }
   .head {
@@ -155,7 +159,7 @@
     bottom: -2px;
     width: 2px;
     margin-left: -1px;
-    background: var(--cue);
+    background: var(--text);
     pointer-events: none;
   }
   .tip {
@@ -163,9 +167,9 @@
     top: 50%;
     transform: translate(-50%, -50%);
     padding: 0 6px;
-    border-radius: 4px;
-    background: var(--booth);
-    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-3);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
     font-size: 13px;
     pointer-events: none;
   }
@@ -187,6 +191,6 @@
     margin-left: -4px;
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
-    border-bottom: 6px solid var(--fault);
+    border-bottom: 6px solid var(--danger);
   }
 </style>

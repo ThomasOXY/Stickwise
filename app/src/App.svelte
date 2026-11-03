@@ -9,7 +9,7 @@
   import SetPlanner from "./lib/SetPlanner.svelte";
   import SyncSheet from "./lib/SyncSheet.svelte";
   import PlayerSettingsSheet from "./lib/PlayerSettingsSheet.svelte";
-  import PlaylistTree from "./lib/PlaylistTree.svelte";
+  import Rail from "./lib/Rail.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import StickHeader from "./lib/StickHeader.svelte";
   import TrackDetail from "./lib/TrackDetail.svelte";
@@ -32,6 +32,22 @@
       return;
     }
     const typing = (e.target as HTMLElement)?.tagName === "INPUT";
+    // ⌘S sync, ⌘P plan the open set: the shortcuts the tools palette shows.
+    if (e.metaKey && !e.shiftKey && !e.altKey && !typing) {
+      const k = e.key.toLowerCase();
+      if (k === "s" && (app.library?.tracks.length ?? 0) > 0) {
+        e.preventDefault();
+        app.toolsOpen = false;
+        app.syncOpen = true;
+        return;
+      }
+      if (k === "p" && app.isLibrary && (app.currentPlaylist?.trackIds.length ?? 0) > 1) {
+        e.preventDefault();
+        app.toolsOpen = false;
+        app.view = "planner";
+        return;
+      }
+    }
     if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
@@ -47,12 +63,12 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="window">
+  <Rail />
   <Sidebar />
   <main>
     {#if app.data}
       {#if app.isLibrary}<LibraryHeader />{:else}<StickHeader />{/if}
       <div class="content">
-        <PlaylistTree />
         {#if app.view === "health"}
           <HealthReport />
         {:else if app.view === "planner"}
@@ -100,6 +116,7 @@
   .window {
     display: flex;
     height: 100%;
+    background: var(--bg);
   }
   main {
     position: relative;
@@ -107,7 +124,11 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    background: var(--booth);
+    margin: 10px 10px 10px 0;
+    border-radius: 16px;
+    border: 1px solid var(--hairline);
+    background: var(--surface-1);
+    overflow: hidden;
   }
   .content {
     flex: 1;
@@ -121,7 +142,7 @@
   .toast {
     position: absolute;
     left: 50%;
-    bottom: 292px;
+    top: 18px;
     transform: translateX(-50%);
     max-width: 640px;
     padding: 8px 14px;

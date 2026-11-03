@@ -1,8 +1,11 @@
 <script lang="ts">
-  import { CircleCheck, FileMusic, FileText, Folder } from "@lucide/svelte";
+  import { CircleCheck, CircleX, FileMusic, FileText, Folder, FolderOpen, HardDriveDownload, History, Lock } from "@lucide/svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { api, type Playlist } from "./api";
   import { plural, size } from "./format";
+  import SheetCheck from "./SheetCheck.svelte";
+  import SheetFrame from "./SheetFrame.svelte";
+  import SheetSwitch from "./SheetSwitch.svelte";
   import { app } from "./state.svelte";
 
   const data = $derived(app.data!);
@@ -75,18 +78,24 @@
     if (typeof d === "string") dest = d;
   }
 
+  const fileName = (id: number, i: number) => {
+    const t = app.trackById.get(id);
+    if (!t) return null;
+    const ext = t.filePath.split(".").pop();
+    const stem = artistTitle ? `${t.artist} – ${t.title}` : t.filePath.split("/").pop()!.replace(/\.[^.]+$/, "");
+    return { name: `${numbered ? String(i + 1).padStart(2, "0") + " " : ""}${stem}.${ext}`, size: t.fileSize };
+  };
+
+  // Folder tree the export will make: the first playlist opened, the rest collapsed.
   const preview = $derived.by(() => {
-    const first = allPlaylists.find((p) => picked.has(p.id));
-    if (!first) return null;
-    const ts = first.trackIds.slice(0, 2).map((id) => app.trackById.get(id)).filter((t) => !!t);
-    return {
-      name: first.name,
-      files: ts.map((t, i) => {
-        const ext = t!.filePath.split(".").pop();
-        const stem = artistTitle ? `${t!.artist} – ${t!.title}` : t!.filePath.split("/").pop()!.replace(/\.[^.]+$/, "");
-        return `${numbered ? String(i + 1).padStart(2, "0") + " " : ""}${stem}.${ext}`;
-      }),
-    };
+    const chosen = allPlaylists.filter((p) => picked.has(p.id));
+    if (!chosen.length) return null;
+    const first = chosen[0];
+    const files = first.trackIds
+      .slice(0, 3)
+      .map((id, i) => fileName(id, i))
+      .filter((f) => !!f);
+    return { first, files, more: first.trackIds.length - files.length, rest: chosen.slice(1, 7), hidden: Math.max(0, chosen.length - 7) };
   });
 
   async function start() {
@@ -118,79 +127,112 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="dim"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="export-title">
+<SheetFrame
+  id="export-title"
+  icon={HardDriveDownload}
+  title={job?.state === "running" ? "Exportuji playlisty" : "Exportovat playlisty na disk"}
+  sub="Z flashky {data.info.name} do složky na Macu, jako obyčejné složky s hudbou. Flashka zůstane beze změny."
+  width={job ? 620 : 1100}
+  onclose={job?.state === "running" ? undefined : close}
+>
   {#if !job}
-    <div class="body">
-      <h2 id="export-title">Exportovat playlisty na disk</h2>
-      <p class="sub">Z flashky {data.info.name} do složky na Macu</p>
+    <div class="cols">
+      <div class="left">
+        <section>
+          <div class="eyebrow">Kam</div>
+          <div class="dest">
+            <Folder size={15} />
+            <span class="path">{dest.replace(/^\/Users\/[^/]+/, "~")}</span>
+            <button class="btn" onclick={chooseDest}>Změnit…</button>
+          </div>
+        </section>
 
-      <div class="all">
-        <button class="check {allState}" onclick={toggleAll} aria-label="Vybrat vše"></button>
-        <span>Vybrat vše</span>
-        <span class="totals">
-          <span class="readout">{picked.size}</span> playlistů
-          <span class="readout">{uniqueIds.size}</span> skladeb
-          <span class="readout">{size(bytes)}</span>
-        </span>
-      </div>
-      <div class="pick">
-        {#each rows as { node, depth } (node.id)}
-          <div class="pick-row" style:padding-left="{10 + depth * 22}px">
-            <button class="check {checkState(node)}" onclick={() => toggle(node)} aria-label="Vybrat {node.name}"></button>
-            {#if node.isFolder}<Folder size={14} />{/if}
-            <span class="name">{node.name}</span>
-            <span class="readout n">
-              {node.isFolder ? leaves(node.id).reduce((s, l) => s + l.trackIds.length, 0) : node.trackIds.length}
+        <section>
+          <div class="sec-head">
+            <span class="eyebrow">Playlisty</span>
+            <span class="count">
+              {picked.size} {plural(picked.size, "playlist", "playlisty", "playlistů")} · {uniqueIds.size}
+              {plural(uniqueIds.size, "skladba", "skladby", "skladeb")} · {size(bytes)}
             </span>
           </div>
-        {/each}
+          <div class="pick">
+            <button class="row all" class:on={allState === "on"} onclick={toggleAll}>
+              <SheetCheck state={allState} />
+              <span class="pname">Vybrat vše</span>
+            </button>
+            {#each rows as { node, depth } (node.id)}
+              {@const st = checkState(node)}
+              <button class="row" class:on={st === "on"} style:padding-left="{10 + depth * 22}px" onclick={() => toggle(node)} aria-label="Vybrat {node.name}">
+                <SheetCheck state={st} />
+                {#if node.isFolder}<Folder size={14} />{:else}<FileMusic size={14} />{/if}
+                <span class="pname">{node.name}</span>
+                <span class="readout n">
+                  {node.isFolder ? leaves(node.id).reduce((s, l) => s + l.trackIds.length, 0) : node.trackIds.length}
+                </span>
+              </button>
+            {/each}
+          </div>
+        </section>
+
+        <section>
+          <div class="eyebrow">Pojmenování</div>
+          <div class="opts">
+            <SheetSwitch bind:checked={numbered} label="Očíslovat podle pořadí (01 – …)" />
+            <SheetSwitch bind:checked={artistTitle} label="Pojmenovat Interpret – Název" />
+            <SheetSwitch bind:checked={m3u} label="Vytvořit .m3u8" />
+            <SheetSwitch bind:checked={history} label="Zahrnout historii" desc="Playlisty historie hraní z přehrávače." />
+          </div>
+        </section>
+
+        <section>
+          <div class="eyebrow">Skladba ve více playlistech</div>
+          <div class="dupes">
+            <div class="seg" role="radiogroup" aria-label="Duplicity">
+              {#each [["clone", "Klon (nezabírá místo)"], ["copy", "Kopie"], ["symlink", "Odkaz"]] as [v, label]}
+                <button role="radio" aria-checked={duplicates === v} class:on={duplicates === v} onclick={() => (duplicates = v as typeof duplicates)}>{label}</button>
+              {/each}
+            </div>
+            <span class="count">{dupes} {plural(dupes, "skladba je", "skladby jsou", "skladeb je")} ve více playlistech</span>
+          </div>
+        </section>
       </div>
 
-      <h3>Cíl</h3>
-      <div class="dest">
-        <div class="path"><Folder size={14} /><span>{dest.replace(/^\/Users\/[^/]+/, "~")}</span></div>
-        <button class="btn" onclick={chooseDest}>Změnit…</button>
-      </div>
-
-      <h3>Možnosti</h3>
-      <label class="opt"><input type="checkbox" bind:checked={numbered} /> Očíslovat podle pořadí (01 – …)</label>
-      <label class="opt"><input type="checkbox" bind:checked={artistTitle} /> Pojmenovat Interpret – Název</label>
-      <label class="opt"><input type="checkbox" bind:checked={m3u} /> Vytvořit .m3u8</label>
-      <label class="opt"><input type="checkbox" bind:checked={history} /> Zahrnout historii</label>
-
-      <div class="dupes">
-        <div>
-          <div class="strong">Duplicity</div>
-          <div class="sub">{dupes} {plural(dupes, "skladba je", "skladby jsou", "skladeb je")} ve více playlistech</div>
+      <aside class="right">
+        <div class="eyebrow">Náhled</div>
+        <div class="tree">
+          <div class="t0"><FolderOpen size={14} /><span>{dest.split("/").pop()}</span></div>
+          {#if preview}
+            <div class="t1"><FolderOpen size={14} /><span>{preview.first.name}</span><em>{preview.first.trackIds.length}</em></div>
+            {#each preview.files as f}
+              <div class="t2"><FileMusic size={14} /><span>{f!.name}</span><em>{size(f!.size)}</em></div>
+            {/each}
+            {#if preview.more > 0}<div class="t2 dimmed"><span>+ {preview.more} dalších</span></div>{/if}
+            {#if m3u}<div class="t2"><FileText size={14} /><span>{preview.first.name}.m3u8</span></div>{/if}
+            {#each preview.rest as p (p.id)}
+              <div class="t1"><Folder size={14} /><span>{p.name}</span><em>{p.trackIds.length}</em></div>
+            {/each}
+            {#if preview.hidden}<div class="t1 dimmed"><span>+ {preview.hidden} dalších playlistů</span></div>{/if}
+          {:else}
+            <div class="t1 dimmed"><span>Vyber aspoň jeden playlist.</span></div>
+          {/if}
+          {#if history}<div class="t1"><History size={14} /><span>Historie</span></div>{/if}
         </div>
-        <div class="seg" role="radiogroup" aria-label="Duplicity">
-          {#each [["clone", "Klon (nezabírá místo)"], ["copy", "Kopie"], ["symlink", "Odkaz"]] as [v, label]}
-            <button role="radio" aria-checked={duplicates === v} class:on={duplicates === v} onclick={() => (duplicates = v as typeof duplicates)}>{label}</button>
-          {/each}
-        </div>
-      </div>
 
-      {#if preview}
-        <h3>Náhled</h3>
-        <div class="preview">
-          <div><Folder size={13} /> {dest.split("/").pop()}</div>
-          <div class="in1"><Folder size={13} /> {preview.name}</div>
-          {#each preview.files as f}<div class="in2"><FileMusic size={13} /> {f}</div>{/each}
-          {#if m3u}<div class="in2"><FileText size={13} /> {preview.name}.m3u8</div>{/if}
+        <div class="sum">
+          <div><span>Souborů</span><span class="readout">{uniqueIds.size}</span></div>
+          <div><span>Na disk zabere</span><span class="readout">{size(bytes)}</span></div>
+          <div>
+            <span>{duplicates === "clone" ? "Klonů (bez místa navíc)" : duplicates === "copy" ? "Kopií navíc" : "Odkazů"}</span>
+            <span class="readout">{dupes}</span>
+          </div>
         </div>
-      {/if}
-      {#if failed}<p class="err">{failed}</p>{/if}
-    </div>
-    <div class="foot">
-      <button class="btn" onclick={close}>Zrušit</button>
-      <button class="btn primary" onclick={start} disabled={picked.size === 0 && !history}>
-        Exportovat {uniqueIds.size} {plural(uniqueIds.size, "skladbu", "skladby", "skladeb")}
-      </button>
+        {#if failed}<div class="callout"><CircleX size={15} /><span>{failed}</span></div>{/if}
+
+        <p class="safe"><Lock size={14} /> Z flashky se jen čte, nic se na ni nezapíše.</p>
+      </aside>
     </div>
   {:else if job.state === "running"}
-    <div class="body progress">
-      <h2>Exportuji playlisty</h2>
+    <div class="body">
       <p class="sub">Z flashky {data.info.name} do {job.dest.replace(/^\/Users\/[^/]+/, "~")}</p>
       <div class="bigbar"><div style:width="{(job.bytesDone / Math.max(1, job.bytesTotal)) * 100}%"></div></div>
       <div class="stats">
@@ -199,271 +241,279 @@
       </div>
       <p class="current">{job.current}</p>
     </div>
-    <div class="foot">
-      <button class="btn" onclick={() => api.cancelJob(job.id)}>Zastavit</button>
-    </div>
   {:else}
     <div class="body done">
       {#if job.state === "done"}
-        <CircleCheck size={36} color="var(--play)" />
-        <h2>Hotovo</h2>
+        <span class="done-ic"><CircleCheck size={30} /></span>
+        <h3>Hotovo</h3>
         <p>{job.filesTotal} {plural(job.filesTotal, "skladba je", "skladby jsou", "skladeb je")} v {job.dest.replace(/^\/Users\/[^/]+/, "~")}</p>
       {:else if job.state === "cancelled"}
-        <h2>Export zastaven</h2>
+        <h3>Export zastaven</h3>
         <p class="sub">Hotové soubory zůstaly na disku. Další export naváže tam, kde skončil.</p>
       {:else}
-        <h2>Export skončil s chybami</h2>
+        <span class="done-ic bad"><CircleX size={30} /></span>
+        <h3>Export skončil s chybami</h3>
       {/if}
       <p class="sub">{job.message}</p>
     </div>
-    <div class="foot">
-      <button class="btn" onclick={() => api.reveal(job.dest)}>Otevřít ve Finderu</button>
-      <button class="btn primary" onclick={close}>Zavřít</button>
-    </div>
   {/if}
-</div>
+
+  {#snippet foot()}
+    {#if !job}
+      <button class="btn ghost lg" onclick={close}>Zrušit</button>
+      <button class="btn primary lg" onclick={start} disabled={picked.size === 0 && !history}>
+        <HardDriveDownload size={16} />
+        Exportovat {uniqueIds.size} {plural(uniqueIds.size, "skladbu", "skladby", "skladeb")}
+      </button>
+    {:else if job.state === "running"}
+      <button class="btn lg" onclick={() => api.cancelJob(job.id)}>Zastavit</button>
+    {:else}
+      <button class="btn lg" onclick={() => api.reveal(job.dest)}>Otevřít ve Finderu</button>
+      <button class="btn primary lg" onclick={close}>Zavřít</button>
+    {/if}
+  {/snippet}
+</SheetFrame>
 
 <style>
-  .dim {
-    position: fixed;
-    inset: 0;
-    background: rgb(10 11 14 / 0.55);
-    z-index: 20;
+  .cols {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
   }
-  .sheet {
-    position: fixed;
-    top: 36px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 560px;
-    max-height: calc(100vh - 72px);
+  .left {
+    overflow-y: auto;
+    padding: 22px 26px 26px;
     display: flex;
     flex-direction: column;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
-    z-index: 21;
-    animation: drop 0.18s ease-out;
+    gap: 22px;
   }
-  @keyframes drop {
-    from {
-      transform: translate(-50%, -12px);
-      opacity: 0;
-    }
+  .left .eyebrow {
+    display: block;
+    margin-bottom: 10px;
   }
-  .body {
-    padding: 20px 20px 16px;
-    overflow-y: auto;
-  }
-  h2 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 600;
-  }
-  h3 {
-    margin: 16px 0 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
-  }
-  .sub {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .strong {
-    font-weight: 500;
-  }
-  .all {
+  .sec-head {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 16px 0 8px;
-  }
-  .totals {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--text-2);
-    display: flex;
-    gap: 6px;
     align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
   }
-  .totals .readout {
-    font-size: 14px;
-    color: var(--text);
-    margin-left: 6px;
+  .sec-head .eyebrow {
+    margin: 0;
   }
-  .pick {
-    max-height: 184px;
-    overflow-y: auto;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--booth);
-    padding: 4px 0;
-  }
-  .pick-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: 26px;
-    padding-right: 12px;
-    color: var(--text);
-  }
-  .pick-row .name {
-    flex: 1;
-  }
-  .n {
+  .count {
     font-size: 12px;
-    color: var(--text-2);
-  }
-  .check {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    border: 1px solid var(--text-3);
-    background: transparent;
-    padding: 0;
-    flex: none;
-    position: relative;
-  }
-  .check.on,
-  .check.some {
-    background: var(--cue);
-    border-color: var(--cue);
-  }
-  .check.on::after {
-    content: "";
-    position: absolute;
-    left: 5px;
-    top: 2px;
-    width: 4px;
-    height: 8px;
-    border: solid var(--booth);
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
-  }
-  .check.some::after {
-    content: "";
-    position: absolute;
-    left: 3px;
-    right: 3px;
-    top: 6px;
-    height: 2px;
-    background: var(--booth);
+    color: var(--text-3);
   }
   .dest {
     display: flex;
-    gap: 8px;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 6px 0 14px;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+    color: var(--accent);
   }
   .path {
     flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--booth);
-    overflow: hidden;
+    min-width: 0;
+    color: var(--text);
+    font-size: 13.5px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .opt {
+  .pick {
+    max-height: 280px;
+    overflow-y: auto;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .row {
     display: flex;
     align-items: center;
     gap: 10px;
-    height: 25px;
+    height: 36px;
+    flex: none;
+    padding-right: 12px;
+    border: 0;
+    border-radius: var(--r-control);
+    background: none;
+    color: var(--text-2);
+    text-align: left;
+    cursor: pointer;
   }
-  .opt input {
-    accent-color: var(--cue);
-    width: 15px;
-    height: 15px;
-    margin: 0;
+  .row:hover {
+    background: var(--surface-3);
+  }
+  .row.on {
+    color: var(--text);
+    background: rgb(255 255 255 / 0.025);
+  }
+  .row.all {
+    padding-left: 10px;
+    font-weight: 500;
+  }
+  .row :global(svg) {
+    flex: none;
+    color: var(--text-3);
+  }
+  .pname {
+    flex: 1;
+    min-width: 0;
+    font-size: 13.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .n {
+    font-size: 13px;
+    color: var(--text-3);
+  }
+  .opts {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
   .dupes {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-top: 12px;
+    gap: 14px;
+    flex-wrap: wrap;
   }
-  .seg {
-    display: flex;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 2px;
-    background: var(--booth);
-  }
-  .seg button {
-    border: 0;
-    background: none;
-    height: 24px;
-    padding: 0 10px;
-    border-radius: 4px;
-    color: var(--text-2);
-    font-size: 12px;
-  }
-  .seg button.on {
-    background: var(--panel-2);
-    color: var(--text);
-  }
-  .preview {
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--booth);
-    padding: 10px 12px;
-    font-size: 12px;
-    color: var(--text-2);
+
+  .right {
+    background: var(--surface-2);
+    padding: 22px 24px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 14px;
   }
-  .preview div {
+  .tree {
+    border-radius: var(--r-panel);
+    background: var(--surface-1);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+  }
+  .tree > div {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    height: 28px;
+    min-width: 0;
+  }
+  .tree span {
+    flex: 1;
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .in1 {
+  .tree em {
+    font-style: normal;
+    font-family: var(--font-readout);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .tree :global(svg) {
+    flex: none;
+    color: var(--accent);
+  }
+  .t1 {
     padding-left: 18px;
   }
-  .in2 {
-    padding-left: 36px;
+  .t2 {
+    padding-left: 38px;
+    color: var(--text-2);
   }
-  .err {
-    color: var(--fault);
+  .t2 :global(svg) {
+    color: var(--text-3) !important;
   }
-  .foot {
+  .dimmed {
+    color: var(--text-3);
+  }
+  .sum {
+    border-radius: var(--r-panel);
+    background: var(--surface-1);
+    padding: 8px 16px;
+  }
+  .sum div {
     display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 12px 20px;
-    border-top: 1px solid var(--line);
+    align-items: baseline;
+    justify-content: space-between;
+    height: 30px;
+    line-height: 30px;
+    font-size: 13px;
+    color: var(--text-2);
   }
-  .progress .bigbar {
+  .sum .readout {
+    font-size: 17px;
+    color: var(--text);
+  }
+  .callout {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--r-panel);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: 12.5px;
+  }
+  .safe {
+    margin: auto 0 0;
+    padding-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .safe :global(svg) {
+    color: var(--success);
+  }
+
+  .body {
+    padding: 24px 26px;
+    overflow-y: auto;
+  }
+  .sub {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .bigbar {
     height: 8px;
     border-radius: 4px;
-    background: var(--line);
+    background: var(--surface-3);
     overflow: hidden;
-    margin: 22px 0 10px;
+    margin: 18px 0 12px;
   }
   .bigbar div {
     height: 100%;
-    background: var(--cue);
+    border-radius: 4px;
+    background: var(--accent);
     transition: width 0.15s linear;
   }
   .stats {
     display: flex;
     justify-content: space-between;
-    color: var(--text-2);
+    color: var(--text-3);
   }
   .stats .readout {
     font-size: 16px;
     color: var(--text);
   }
   .current {
-    margin: 10px 0 0;
+    margin: 12px 0 0;
     color: var(--text-2);
     white-space: nowrap;
     overflow: hidden;
@@ -474,7 +524,30 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 6px;
-    padding: 30px 20px;
+    gap: 8px;
+    padding: 34px 26px;
+  }
+  .done h3 {
+    margin: 0;
+    font-size: 18px;
+  }
+  .done p {
+    margin: 0;
+    max-width: 480px;
+    line-height: 1.5;
+  }
+  .done-ic {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--success-soft);
+    color: var(--success);
+    margin-bottom: 4px;
+  }
+  .done-ic.bad {
+    background: var(--danger-soft);
+    color: var(--danger);
   }
 </style>

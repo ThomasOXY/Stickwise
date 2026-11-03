@@ -128,6 +128,11 @@ CREATE TABLE IF NOT EXISTS grids (
   bpm REAL NOT NULL,
   anchor_ms REAL NOT NULL
 );
+-- Tracks whose analysis failed, for the file as it was (mtime, seconds).
+CREATE TABLE IF NOT EXISTS analysis_failures (
+  track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  mtime INTEGER NOT NULL
+);
 -- Cues a track had before a set plan replaced them (restorable).
 CREATE TABLE IF NOT EXISTS cue_backups (track_id INTEGER PRIMARY KEY, cues TEXT NOT NULL, saved TEXT NOT NULL);
 ";
@@ -375,7 +380,32 @@ impl Library {
         )?;
         // A new analysis is asked for: its grid replaces an edited one.
         self.conn.execute("DELETE FROM grids WHERE track_id = ?1", [id])?;
+        self.conn.execute("DELETE FROM analysis_failures WHERE track_id = ?1", [id])?;
         Ok(())
+    }
+
+    /// Remember that analysing a track failed, for its file as it is now
+    /// (modification time, seconds).
+    pub fn set_analysis_failed(&self, id: i64, mtime: u64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO analysis_failures(track_id, mtime) VALUES (?1, ?2) \
+             ON CONFLICT(track_id) DO UPDATE SET mtime = excluded.mtime",
+            params![id, mtime as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Analysing this track failed before and its file has not changed.
+    pub fn analysis_failed(&self, id: i64, mtime: u64) -> Result<bool> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT 1 FROM analysis_failures WHERE track_id = ?1 AND mtime = ?2",
+                params![id, mtime as i64],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
     }
 
     /// Give siblings their order: `ids[0]` first. Others under the same
@@ -606,5 +636,19 @@ mod tests {
         assert_eq!(back.len(), 2);
         assert_eq!(back[0].comment, "Drop");
         assert_eq!(lib.hot_cue_codes().unwrap()[&1], vec![(1, 0x2a, false)]);
+    }
+
+    #[test]
+    fn failed_analysis_is_remembered_until_the_file_changes() {
+        let mut lib = Library::in_memory().unwrap();
+        lib.conn().execute("INSERT INTO tracks(path, title) VALUES ('/m/x.mp3', 'X')", []).unwrap();
+        assert!(!lib.analysis_failed(1, 100).unwrap());
+        lib.set_analysis_failed(1, 100).unwrap();
+        assert!(lib.analysis_failed(1, 100).unwrap());
+        // The file changed: worth another try.
+        assert!(!lib.analysis_failed(1, 200).unwrap());
+        // Analysed after all: forgotten.
+        lib.set_analysis(1, "/a/ANLZ0000.DAT", None, None, 0.0).unwrap();
+        assert!(!lib.analysis_failed(1, 100).unwrap());
     }
 }

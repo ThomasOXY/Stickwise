@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { CircleCheck, HardDrive, LoaderCircle, RefreshCw, TriangleAlert } from "@lucide/svelte";
+  import { CircleCheck, CircleX, Eraser, HardDrive, LoaderCircle, RefreshCw, TriangleAlert, Usb } from "@lucide/svelte";
   import { playerApi, type Disk } from "./api";
   import { gb } from "./format";
+  import SheetFrame from "./SheetFrame.svelte";
+  import SheetSwitch from "./SheetSwitch.svelte";
   import { app } from "./state.svelte";
 
   let disks = $state<Disk[] | null>(null);
@@ -79,17 +81,21 @@
   onkeydown={(e) => e.key === "Escape" && job?.state !== "running" && app.settingsFor === undefined && close()}
 />
 
-<div class="dim"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="fmt-title">
+<SheetFrame
+  id="fmt-title"
+  icon={Eraser}
+  tone="danger"
+  title={job?.state === "running" ? `Formátuji ${shownName}` : "Formátovat flashku"}
+  sub="Flashka dostane jeden oddíl (MBR) a prázdnou rekordbox knihovnu, takže ji přehrávače hned poznají."
+  width={760}
+  onclose={job?.state === "running" ? undefined : close}
+>
   {#if !job}
     <div class="body">
-      <h2 id="fmt-title">Formátovat flashku</h2>
-      <p class="sub">Flashka dostane jeden oddíl (MBR) a prázdnou rekordbox knihovnu, takže ji přehrávače hned poznají.</p>
-
-      <h3>
-        Flashka
-        <button class="icon-btn" title="Načíst znovu" onclick={load}><RefreshCw size={12} /></button>
-      </h3>
+      <div class="sec-head">
+        <span class="eyebrow">Disk</span>
+        <button class="btn ghost icon sm" title="Načíst znovu" aria-label="Načíst znovu" onclick={load}><RefreshCw size={13} /></button>
+      </div>
       {#if disks === null}
         <p class="none"><LoaderCircle size={14} class="spin" /> Hledám flashky…</p>
       {:else if disks.length === 0}
@@ -97,18 +103,25 @@
       {:else}
         <div class="list">
           {#each disks as d (d.id)}
+            {@const vols = d.volumes.filter((v) => v.content !== "EFI")}
             <label class="disk" class:on={diskId === d.id} class:blocked={!!d.blocked}>
               <input type="radio" name="disk" checked={diskId === d.id} disabled={!!d.blocked} onchange={() => choose(d)} />
-              <span class="dname">{d.volumes.filter((v) => v.content !== "EFI").map((v) => v.name).filter(Boolean).join(", ") || "Bez názvu"}</span>
-              <span class="meta">{d.media} · {gb(d.size)} GB · {d.id}</span>
-              {#if d.blocked}<span class="why">{d.blocked}</span>{/if}
+              <span class="dic">{#if d.removable}<Usb size={17} />{:else}<HardDrive size={17} />{/if}</span>
+              <span class="dtext">
+                <span class="dname">{d.media} · {gb(d.size)} GB</span>
+                <span class="meta">
+                  {[d.bus, d.id, vols.map((v) => v.name || "Bez názvu").join(", ")].filter(Boolean).join(" · ")}
+                </span>
+                {#if d.blocked}<span class="why">{d.blocked}</span>{/if}
+              </span>
+              <span class="radio" aria-hidden="true"></span>
             </label>
           {/each}
         </div>
       {/if}
 
       {#if disk}
-        <h3>Souborový systém</h3>
+        <div class="eyebrow">Souborový systém</div>
         <div class="fs">
           <label class="card" class:on={fs === "fat32"}>
             <input type="radio" name="fs" value="fat32" bind:group={fs} />
@@ -122,315 +135,353 @@
           </label>
         </div>
 
-        <div class="row2">
-          <label class="lbl">
-            Název flashky
-            <input type="text" bind:value={name} maxlength="11" spellcheck="false" />
-            <span class="hint" class:err={!nameOk}>
-              {nameOk ? `Na přehrávači: ${shownName.trim()}` : "1–11 znaků: písmena bez diakritiky, číslice, mezera, _ -"}
-            </span>
-          </label>
-          <label class="opt">
-            <input type="checkbox" bind:checked={writeSettings} />
-            <span>
-              Nahrát moje nastavení přehrávače
+        <label class="eyebrow" for="fmt-name">Název flashky</label>
+        <input id="fmt-name" class="field" type="text" bind:value={name} maxlength="11" spellcheck="false" />
+        <span class="hint" class:err={!nameOk}>
+          {nameOk ? `Na přehrávači: ${shownName.trim()}` : "1–11 znaků: písmena bez diakritiky, číslice, mezera, _ -"}
+        </span>
+
+        <div class="sw">
+          <SheetSwitch bind:checked={writeSettings} label="Nahrát moje nastavení přehrávače">
+            {#snippet extra()}
               <button class="link" onclick={(e) => (e.preventDefault(), (app.settingsFor = null))}>upravit</button>
-            </span>
-          </label>
+            {/snippet}
+          </SheetSwitch>
         </div>
 
         <div class="erase-warn">
-          <TriangleAlert size={16} />
-          <div>
+          <div class="msg">
+            <TriangleAlert size={16} />
             <p>
               <strong>Všechno na {confirmName} ({gb(disk.size)} GB) se smaže</strong>: hudba, playlisty, historie hraní.
               Databáze a nastavení se předtím zazálohují do ~/RB-EXPORT/backups, hudba ne.
             </p>
-            {#if !disk.removable}
-              <p class="warn">Tohle je externí disk, ne flashka. Zkontroluj, že je to opravdu ten správný.</p>
-            {/if}
-            <label class="lbl">
-              Pro potvrzení napiš název flashky: <span class="readout">{confirmName}</span>
-              <input type="text" bind:value={confirm} spellcheck="false" autocomplete="off" />
-            </label>
           </div>
+          {#if !disk.removable}
+            <p class="ext">Tohle je externí disk, ne flashka. Zkontroluj, že je to opravdu ten správný.</p>
+          {/if}
+          <label class="confirm">
+            <span>Pro potvrzení napiš název flashky: <b>{confirmName}</b></span>
+            <input class="field" type="text" bind:value={confirm} spellcheck="false" autocomplete="off" />
+          </label>
         </div>
       {/if}
-      {#if failed}<p class="err">{failed}</p>{/if}
-    </div>
-    <div class="foot">
-      <button class="btn" onclick={close}>Zrušit</button>
-      <button class="btn danger" onclick={start} disabled={!ready}>Smazat a naformátovat</button>
+      {#if failed}<p class="fail"><CircleX size={15} /> {failed}</p>{/if}
     </div>
   {:else if job.state === "running"}
     <div class="body">
-      <h2>Formátuji {shownName}</h2>
-      <p class="sub">{job.current}</p>
+      <p class="cur">{job.current}</p>
       <div class="bigbar"><div style:width="{(job.fraction ?? 0) * 100}%"></div></div>
-      <p class="sub">Flashku nevytahuj, dokud to neskončí.</p>
+      <p class="cur">Flashku nevytahuj, dokud to neskončí.</p>
     </div>
   {:else}
     <div class="body done">
       {#if job.state === "done"}
-        <CircleCheck size={36} color="var(--play)" />
-        <h2>Hotovo</h2>
+        <span class="done-ic"><CircleCheck size={30} /></span>
+        <h3>Hotovo</h3>
       {:else}
-        <h2>Formátování se nepovedlo</h2>
+        <span class="done-ic bad"><CircleX size={30} /></span>
+        <h3>Formátování se nepovedlo</h3>
       {/if}
       <p>{job.message}</p>
     </div>
-    <div class="foot">
-      {#if job.state === "done"}
-        <button class="btn" onclick={() => (app.settingsFor = job.dest)}>Nastavení přehrávače</button>
-      {/if}
-      <button class="btn" onclick={close}>Zavřít</button>
-      {#if job.state === "done"}
-        <button class="btn primary" onclick={sync}>Synchronizovat na flashku</button>
-      {/if}
-    </div>
   {/if}
-</div>
+
+  {#snippet foot()}
+    {#if !job}
+      <button class="btn ghost lg" onclick={close}>Zrušit</button>
+      <button class="btn danger lg" onclick={start} disabled={!ready}><Eraser size={16} /> Smazat a naformátovat</button>
+    {:else if job.state !== "running"}
+      {#if job.state === "done"}
+        <button class="btn lg" onclick={() => (app.settingsFor = job.dest)}>Nastavení přehrávače</button>
+      {/if}
+      <button class="btn ghost lg" onclick={close}>Zavřít</button>
+      {#if job.state === "done"}
+        <button class="btn primary lg" onclick={sync}>Synchronizovat na flashku</button>
+      {/if}
+    {/if}
+  {/snippet}
+</SheetFrame>
 
 <style>
-  .dim {
-    position: fixed;
-    inset: 0;
-    background: rgb(10 11 14 / 0.55);
-    z-index: 20;
-  }
-  .sheet {
-    position: fixed;
-    top: 36px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 600px;
-    max-height: calc(100vh - 72px);
+  .body {
+    padding: 22px 26px 24px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
-    z-index: 21;
-    animation: drop 0.18s ease-out;
   }
-  @keyframes drop {
-    from {
-      transform: translate(-50%, -12px);
-      opacity: 0;
-    }
+  .eyebrow {
+    display: block;
+    margin: 20px 0 10px;
   }
-  .body {
-    padding: 20px;
-    overflow-y: auto;
-  }
-  h2 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 600;
-  }
-  h3 {
+  .sec-head {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: 16px 0 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
+    justify-content: space-between;
+    margin-bottom: 6px;
   }
-  .icon-btn {
-    border: 0;
-    background: none;
-    color: var(--text-3);
-    padding: 2px;
-    display: flex;
+  .sec-head .eyebrow {
+    margin: 0;
   }
-  .icon-btn:hover {
-    color: var(--text);
-  }
-  .sub {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--text-2);
+  .btn.sm {
+    width: 26px;
+    height: 26px;
   }
   .none {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin: 0;
     color: var(--text-2);
   }
   .list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
   .disk {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
+    display: flex;
     align-items: center;
-    gap: 2px 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    cursor: pointer;
   }
   .disk.on {
-    border-color: var(--fault);
+    box-shadow: inset 0 0 0 1.5px var(--danger);
+    background: var(--danger-soft);
   }
   .disk.blocked {
-    color: var(--text-3);
+    cursor: default;
+    opacity: 0.55;
   }
-  .disk input {
-    accent-color: var(--fault);
-    margin: 0;
+  .disk input,
+  .card input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
   }
-  .dname {
-    font-weight: 600;
+  .disk:has(input:focus-visible),
+  .card:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
-  .meta {
-    font-size: 12px;
+  .dic {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-control);
+    display: grid;
+    place-items: center;
+    background: var(--surface-3);
     color: var(--text-2);
   }
+  .dtext {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .dname {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .meta,
   .why {
-    grid-column: 2 / 4;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-3);
+  }
+  .why {
+    color: var(--warning);
+  }
+  .radio {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px var(--text-3);
+  }
+  .disk.on .radio {
+    box-shadow: inset 0 0 0 1.5px var(--danger);
+    background: radial-gradient(circle, var(--danger) 0 4.5px, transparent 5px);
   }
   .fs {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 10px;
   }
   .card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--hairline);
     cursor: pointer;
   }
-  .card.on {
-    border-color: var(--cue);
-    background: var(--booth);
+  .card:hover {
+    background: var(--surface-3);
   }
-  .card input {
-    display: none;
+  .card.on {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
   }
   .t {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 16px;
     font-weight: 600;
   }
   .d {
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 12.5px;
+    line-height: 1.5;
     color: var(--text-2);
   }
   .tag {
-    font-size: 10px;
-    font-weight: 500;
-    color: var(--cue);
-    border: 1px solid rgb(242 163 58 / 0.5);
-    border-radius: 3px;
-    padding: 0 4px;
-  }
-  .row2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: 16px;
-    align-items: start;
-  }
-  .lbl {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     font-size: 11px;
     font-weight: 600;
-    color: var(--text-2);
+    color: var(--on-accent);
+    background: var(--accent);
+    border-radius: 6px;
+    padding: 1px 7px;
   }
-  .lbl input {
-    font-weight: 400;
+  .field {
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+    border-radius: var(--r-control);
   }
   .hint {
-    font-weight: 400;
+    margin-top: 6px;
+    font-size: 12px;
     color: var(--text-3);
   }
-  .opt {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 20px;
+  .hint.err {
+    color: var(--danger);
   }
-  .opt input {
-    accent-color: var(--cue);
-    width: 15px;
-    height: 15px;
-    margin: 0;
+  .sw {
+    margin-top: 18px;
   }
   .link {
     border: 0;
     background: none;
-    color: var(--cue);
-    padding: 0 0 0 4px;
+    color: var(--accent);
+    padding: 0 0 0 8px;
     font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .link:hover {
     text-decoration: underline;
   }
   .erase-warn {
+    margin-top: 18px;
+    padding: 14px 16px 16px;
+    border-radius: var(--r-panel);
+    background: var(--danger-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg {
     display: flex;
     gap: 10px;
-    margin-top: 18px;
-    padding: 12px;
-    border: 1px solid rgb(229 72 77 / 0.45);
-    border-radius: 6px;
-    background: rgb(229 72 77 / 0.06);
-    color: var(--fault);
+    color: var(--danger);
   }
-  .erase-warn p {
-    margin: 0 0 10px;
-    font-size: 12px;
+  .msg :global(svg) {
+    flex: none;
+    margin-top: 1px;
+  }
+  .msg p {
+    margin: 0;
+    font-size: 13px;
     line-height: 1.5;
-    color: var(--text);
+    color: #f2a4a6;
   }
-  .erase-warn .warn {
-    color: var(--warn);
+  .msg strong {
+    color: var(--danger);
   }
-  .erase-warn .readout {
-    color: var(--text);
+  .ext {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--warning);
   }
-  .err {
-    color: var(--fault);
-  }
-  .hint.err {
-    color: var(--fault);
-  }
-  .foot {
+  .confirm {
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
     gap: 8px;
-    padding: 12px 20px;
-    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .confirm b {
+    margin-left: 4px;
+    color: var(--text);
+  }
+  .confirm .field {
+    background: var(--surface-1);
+    border-color: rgb(240 88 92 / 0.35);
+  }
+  .confirm .field:focus {
+    border-color: var(--danger);
+  }
+  .fail {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 0;
+    color: var(--danger);
+  }
+  .cur {
+    margin: 0;
+    color: var(--text-2);
   }
   .bigbar {
     height: 8px;
     border-radius: 4px;
-    background: var(--line);
+    background: var(--surface-3);
     overflow: hidden;
-    margin: 22px 0 10px;
+    margin: 18px 0 14px;
   }
   .bigbar div {
     height: 100%;
-    background: var(--fault);
+    border-radius: 4px;
+    background: var(--danger);
     transition: width 0.3s ease-out;
   }
   .done {
-    display: flex;
-    flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 6px;
-    padding: 30px 20px;
+    gap: 8px;
+    padding: 34px 26px;
+  }
+  .done h3 {
+    margin: 0;
+    font-size: 18px;
   }
   .done p {
+    margin: 0;
     max-width: 480px;
     color: var(--text-2);
+    line-height: 1.5;
+  }
+  .done-ic {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--success-soft);
+    color: var(--success);
+    margin-bottom: 4px;
+  }
+  .done-ic.bad {
+    background: var(--danger-soft);
+    color: var(--danger);
   }
 </style>

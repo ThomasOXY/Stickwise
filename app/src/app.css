@@ -1,16 +1,37 @@
 :root {
-  --booth: #14161b;
-  --panel: #1c1f26;
-  --panel-2: #232731;
-  --line: #2a2e37;
-  --text: #e8e6e1;
-  --text-2: #8b909c;
-  --text-3: #5c616d;
-  --cue: #f2a33a;
-  --play: #59c98a;
-  --fault: #e5484d;
-  --fault-strong: #c93a3f;
-  --warn: #d9b54a;
+  /* v2 design tokens (redesign/v2/*.png). Older names kept as aliases. */
+  --bg: #0b0c0e;
+  --surface-1: #131418;
+  --surface-2: #1a1c21;
+  --surface-3: #24272d;
+  --border: #2c3037;
+  --hairline: rgb(255 255 255 / 0.05);
+  --accent: #f2a33a;
+  --accent-soft: rgb(242 163 58 / 0.12);
+  --on-accent: #1b1206;
+  --success: #3fcf8e;
+  --success-soft: rgb(63 207 142 / 0.1);
+  --warning: #e9c552;
+  --warning-soft: rgb(233 197 82 / 0.1);
+  --danger: #f0585c;
+  --danger-soft: rgb(240 88 92 / 0.1);
+  --r-panel: 12px;
+  --r-control: 8px;
+  --shadow-pop: 0 24px 64px rgb(0 0 0 / 0.65);
+
+  --booth: var(--bg);
+  --panel: var(--surface-1);
+  --panel-2: var(--surface-2);
+  --panel-3: var(--surface-3);
+  --line: var(--border);
+  --text: #ecedef;
+  --text-2: #a2a7af;
+  --text-3: #696e77;
+  --cue: var(--accent);
+  --play: var(--success);
+  --fault: var(--danger);
+  --fault-strong: #d9454a;
+  --warn: var(--warning);
   --hc-a: #ee5fb0;
   --hc-b: #e8423c;
   --hc-c: #f28a2e;
@@ -74,36 +95,95 @@ button {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--panel);
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-control);
+  border: 0;
+  background: var(--surface-3);
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
 }
-.btn:hover { background: var(--panel-2); }
+.btn svg { color: var(--text-2); }
+.btn:hover { background: #2c3037; }
+.btn.ghost { background: none; color: var(--text-2); }
+.btn.ghost:hover { background: var(--surface-2); color: var(--text); }
 .btn.primary {
-  background: var(--cue);
-  border-color: var(--cue);
-  color: var(--booth);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
 }
-.btn.primary:hover { filter: brightness(1.08); }
+.btn.primary svg { color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
 .btn.danger {
-  background: var(--fault-strong);
-  border-color: var(--fault-strong);
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
 }
+.btn.danger svg { color: #fff; }
+.btn.danger:hover { background: var(--danger); filter: brightness(1.08); }
+.btn.lg { height: 40px; padding: 0 18px; font-size: 14px; }
 .btn.icon {
-  width: 28px;
+  width: 32px;
   padding: 0;
   justify-content: center;
 }
 .btn:disabled {
   opacity: 0.45;
   pointer-events: none;
+}
+
+/* Segmented control: .seg > button(.on) */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+}
+.seg > button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.seg > button:hover { color: var(--text); }
+.seg > button.on {
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+/* Section label: small caps over a group. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Camelot key pill; colour set inline with --k. */
+.keypill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-family: var(--font-readout);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--k, var(--text-2));
+  background: color-mix(in srgb, var(--k, var(--text-3)) 14%, transparent);
 }
 
 :focus-visible {
@@ -113,11 +193,11 @@ button {
 
 input[type="text"],
 input[type="search"] {
-  height: 28px;
-  border: 1px solid var(--line);
-  background: var(--booth);
+  height: 32px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: 6px;
+  border-radius: var(--r-control);
   padding: 0 10px;
   font: inherit;
   outline: none;

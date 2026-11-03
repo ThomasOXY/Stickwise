@@ -488,12 +488,10 @@
 
 <style>
   .tree {
-    width: 260px;
-    flex: none;
+    flex: 1;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--line);
-    padding: 12px 0 12px;
+    padding: 0;
     min-height: 0;
   }
   .tree {
@@ -523,12 +521,13 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 12px 14px;
+    margin: 0 0 12px;
     padding: 0 10px;
-    height: 28px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    color: var(--text-2);
+    height: 32px;
+    border: 1px solid transparent;
+    border-radius: var(--r-control);
+    background: var(--surface-2);
+    color: var(--text-3);
   }
   .search:focus-within {
     border-color: var(--cue);
@@ -536,7 +535,7 @@
   .search input {
     border: 0;
     padding: 0;
-    height: 26px;
+    height: 30px;
     flex: 1;
     background: transparent;
   }
@@ -544,10 +543,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 12px 16px 6px;
-    font-size: 11px;
+    margin: 16px 10px 6px;
+    font-size: 10.5px;
     font-weight: 600;
-    color: var(--text-2);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-3);
   }
   .head .readout {
     font-weight: 500;
@@ -556,7 +557,7 @@
   .head.history {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--hairline);
   }
   .tools {
     display: flex;
@@ -597,15 +598,17 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    height: 26px;
-    padding-right: 16px;
-    padding-left: 16px;
+    height: 32px;
+    padding-right: 10px;
+    padding-left: 10px;
     border: 0;
+    border-radius: var(--r-control);
     background: none;
     text-align: left;
     font-size: 13px;
+    color: var(--text-2);
   }
   .item:hover {
     background: rgb(255 255 255 / 0.03);
@@ -614,23 +617,19 @@
     margin-bottom: 4px;
   }
   .item :global(.icon) {
-    color: var(--text-2);
+    color: var(--text-3);
     flex: none;
   }
   .item :global(.icon.set) {
     color: var(--cue);
   }
   .item.selected {
-    background: var(--panel-2);
+    background: var(--accent-soft);
+    color: var(--text);
+    font-weight: 600;
   }
-  .item.selected::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: var(--cue);
+  .item.selected .n {
+    color: var(--accent);
   }
   .item.selected :global(.icon) {
     color: var(--cue);

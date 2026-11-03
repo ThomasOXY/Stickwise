@@ -451,6 +451,15 @@ fn needs_analysis(app: &AppHandle, ids: impl IntoIterator<Item = i64>, again: bo
         .collect())
 }
 
+/// Modification time of a file, seconds (0 when unknown).
+fn file_mtime(p: &Path) -> u64 {
+    std::fs::metadata(p)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs())
+}
+
 /// Analyse `todo` (waveforms, beat grid, key) into the app's data folder
 /// and record it in the library. `progress(done, file name)` after each
 /// track. Returns how many were done, the errors, and whether Beat This!
@@ -495,6 +504,8 @@ fn analyze_all(
                         })
                     });
                 if let Err(e) = result {
+                    // A sync does not try it again until the file changes.
+                    let _ = lib(app, |l| l.set_analysis_failed(t.id, file_mtime(Path::new(&t.path))));
                     errors.lock().unwrap().push(format!("{name}: {e}"));
                 }
                 progress(done.fetch_add(1, Ordering::Relaxed) + 1, &name);
@@ -842,7 +853,7 @@ const PHASES: [(&str, &str); 8] = [
     ("analyze", "Analýza skladeb"),
     ("backup", "Záloha databáze"),
     ("copy", "Kopírování skladeb"),
-    ("analysis", "Analýzy a cue"),
+    ("analysis", "Cue a waveformy"),
     ("database", "Databáze"),
     ("settings", "Nastavení přehrávače"),
     ("engine", "Denon knihovna"),
@@ -880,13 +891,6 @@ pub fn sync_start(
         }
     };
     let mut req = request()?;
-    // Tracks without analysis are analysed first, so the players get their
-    // waveforms and grids.
-    let unanalysed = needs_analysis(
-        &app,
-        req.tracks.iter().filter(|t| t.anlz_dat.as_ref().is_none_or(|p| !p.is_file())).map(|t| t.key),
-        false,
-    )?;
     lib(&app, |l| {
         l.set_meta(
             &selection_key(&stick),
@@ -896,10 +900,28 @@ pub fn sync_start(
     let (id, cancel) = jobs.start();
     std::thread::spawn(move || {
         let name = req.device_name.clone();
+        let mut plan = sync::plan(&req);
+        // Tracks without analysis are analysed first, so the players get
+        // their waveforms and grids. Not those whose analysis is on the stick
+        // already, nor those that failed before and did not change since.
+        let on_stick: HashSet<i64> =
+            plan.tracks.iter().filter(|pt| pt.stick_anlz.is_some()).map(|pt| pt.key).collect();
+        let unanalysed: Vec<library::Track> = needs_analysis(
+            &app,
+            req.tracks
+                .iter()
+                .filter(|t| t.anlz_dat.as_ref().is_none_or(|p| !p.is_file()) && !on_stick.contains(&t.key))
+                .map(|t| t.key),
+            false,
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| !lib(&app, |l| l.analysis_failed(t.id, file_mtime(Path::new(&t.path)))).unwrap_or(false))
+        .collect();
         // Share of the whole bar for the analysis: ~3.5 s a track against
         // copying at ~25 MB/s.
         let n = unanalysed.len();
-        let copy_secs = sync::plan(&req).copy_bytes as f64 / 25e6 + 15.0;
+        let copy_secs = plan.copy_bytes as f64 / 25e6 + 15.0;
         let w = if n == 0 { 0.0 } else { n as f64 * 3.5 / (n as f64 * 3.5 + copy_secs) };
         let mut analysed = String::new();
         if n > 0 {
@@ -926,7 +948,10 @@ pub fn sync_start(
             });
             // The library now points at the new analysis files.
             match request() {
-                Ok(r) => req = r,
+                Ok(r) => {
+                    req = r;
+                    plan = sync::plan(&req);
+                }
                 Err(e) => {
                     let mut e2 = ev.clone();
                     e2.state = "error";
@@ -941,7 +966,6 @@ pub fn sync_start(
                 analysed += &format!(" Bez analýzy zůstalo {}: {}.", errors.len(), errors.join("; "));
             }
         }
-        let plan = sync::plan(&req);
         let mut ev = dto::JobEvent {
             id,
             label: format!("Sync {name}"),
@@ -997,6 +1021,10 @@ pub fn sync_start(
                 let mut msg = format!(
                     "Na flashce je {} skladeb v {} playlistech. Zkopírováno {}, použito z flashky {}.",
                     r.tracks, r.playlists, r.copied, r.reused
+                );
+                msg += &format!(
+                    " Cue a waveformy: zapsáno {}, beze změny {}.",
+                    r.anlz_written, r.anlz_unchanged
                 );
                 if !r.skipped.is_empty() {
                     msg += &format!(

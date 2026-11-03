@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Download, Eject, LayoutGrid, LibraryBig } from "@lucide/svelte";
+  import { Download, Eject, Laptop, Usb } from "@lucide/svelte";
+  import PlaylistTree from "./PlaylistTree.svelte";
   import { api } from "./api";
   import { gb } from "./format";
   import { app } from "./state.svelte";
@@ -26,16 +27,16 @@
 <aside class="sidebar">
   <div class="drag" data-tauri-drag-region></div>
 
-  <button class="tools" onclick={() => (app.toolsOpen = true)} title="Všechny nástroje (⌘K)">
-    <span class="tile"><LayoutGrid size={14} /></span>
-    <span class="label">Nástroje</span>
-    <kbd>⌘K</kbd>
-  </button>
+  <div class="head" data-tauri-drag-region>
+    <h1>{app.isLibrary ? "Knihovna" : app.data?.info.name ?? "Flashka"}</h1>
+    <button class="fmt" title="Smazat a připravit flashku pro přehrávače" onclick={() => (app.formatOpen = true)}>
+      Formátovat…
+    </button>
+  </div>
 
-  <section>
-    <h2>Knihovna</h2>
+  <section class="sources">
     <div
-      class="stick lib"
+      class="src"
       class:active={app.isLibrary}
       role="button"
       tabindex="0"
@@ -43,28 +44,15 @@
       onkeydown={(e) => e.key === "Enter" && app.openLibrary()}
     >
       <div class="row">
-        <LibraryBig size={14} />
+        <Laptop size={16} />
         <span class="name">Tento Mac</span>
         <span class="readout count">{app.library?.tracks.length ?? 0}</span>
       </div>
-      <div class="libsub">Sety a playlisty, které chystáš</div>
     </div>
-  </section>
-
-  <section>
-    <h2>
-      Flashky
-      <button class="fmt" title="Smazat a připravit flashku pro přehrávače" onclick={() => (app.formatOpen = true)}>
-        Formátovat…
-      </button>
-    </h2>
-    {#if app.sticks.length === 0}
-      <p class="empty">Žádná připojená flashka</p>
-    {/if}
     {#each app.sticks as s (s.path)}
       {@const used = s.totalBytes - s.freeBytes}
       <div
-        class="stick"
+        class="src"
         class:active={!app.isLibrary && s.path === app.stickPath}
         role="button"
         tabindex="0"
@@ -72,214 +60,170 @@
         onkeydown={(e) => e.key === "Enter" && app.open(s.path)}
       >
         <div class="row">
-          <span class="dot {stickStatus(s.path)}"></span>
+          <Usb size={16} />
           <span class="name">{s.name}</span>
+          <span class="dot {stickStatus(s.path)}"></span>
+          <span class="readout count">{gb(used)} / {gb(s.totalBytes)} GB</span>
           <button class="eject" title="Vysunout {s.name}" onclick={(e) => eject(e, s.path)}>
             <Eject size={12} />
           </button>
         </div>
-        <div class="cap">
-          <div class="bar"><div style:width="{(used / Math.max(1, s.totalBytes)) * 100}%"></div></div>
-          <span class="readout">{gb(used)} / {gb(s.totalBytes)} GB</span>
-        </div>
+        <div class="bar"><div style:width="{(used / Math.max(1, s.totalBytes)) * 100}%"></div></div>
       </div>
     {/each}
-  </section>
-
-
-  <section class="jobs">
-    <h2>Úlohy</h2>
-    {#if running.length === 0}
-      <p class="empty">Nic neběží</p>
+    {#if app.sticks.length === 0}
+      <p class="empty">Žádná připojená flashka</p>
     {/if}
-    {#each running as j (j.id)}
-      <div class="job">
-        <div class="row">
-          <Download size={13} />
-          <span class="label">{j.label}</span>
-          <span class="readout count">{j.filesDone} / {j.filesTotal}</span>
-        </div>
-        <div class="bar amber">
-          <div style:width="{(j.fraction ?? j.bytesDone / Math.max(1, j.bytesTotal)) * 100}%"></div>
-        </div>
-      </div>
-    {/each}
   </section>
+
+  {#if app.data}<PlaylistTree />{:else}<div class="fill"></div>{/if}
+
+  {#if running.length > 0}
+    <section class="jobs">
+      {#each running as j (j.id)}
+        <div class="job">
+          <div class="row">
+            <Download size={13} />
+            <span class="label">{j.label}</span>
+            <span class="readout count">{j.filesDone} / {j.filesTotal}</span>
+          </div>
+          <div class="bar">
+            <div style:width="{(j.fraction ?? j.bytesDone / Math.max(1, j.bytesTotal)) * 100}%"></div>
+          </div>
+        </div>
+      {/each}
+    </section>
+  {/if}
 </aside>
 
 <style>
   .sidebar {
-    width: 240px;
+    width: 264px;
     flex: none;
     display: flex;
     flex-direction: column;
-    padding: 0 10px 18px;
-    background: rgb(28 31 38 / 0.72);
-    border-right: 1px solid rgb(0 0 0 / 0.35);
+    min-height: 0;
+    padding: 0 6px 12px 0;
   }
   .drag {
-    height: 52px;
+    height: 30px;
     flex: none;
   }
-  section {
-    margin-bottom: 22px;
-  }
-  .tools {
+  .head {
     display: flex;
     align-items: center;
-    gap: 9px;
-    margin: 0 0 20px;
-    padding: 7px 10px 7px 7px;
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    background: rgb(255 255 255 / 0.03);
-    text-align: left;
+    justify-content: space-between;
+    padding: 0 10px 14px;
   }
-  .tools:hover {
-    border-color: rgb(242 163 58 / 0.5);
-    background: rgb(242 163 58 / 0.06);
-  }
-  .tools .tile {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    background: linear-gradient(160deg, #f2a33a, #c46a12);
-    color: #fff;
-  }
-  .tools .label {
-    flex: 1;
+  h1 {
+    margin: 0;
+    font-size: 17px;
     font-weight: 600;
-  }
-  .tools kbd {
-    font-family: inherit;
-    font-size: 11px;
-    color: var(--text-3);
-  }
-  .jobs {
-    margin-top: auto;
-    margin-bottom: 0;
-  }
-  h2 {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 10px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .fmt {
-    margin-left: auto;
     border: 0;
     background: none;
     padding: 0;
-    font: inherit;
-    font-weight: 500;
+    font-size: 12px;
     color: var(--text-3);
   }
   .fmt:hover {
     color: var(--text);
   }
-  .badge {
-    font-weight: 500;
-    color: var(--text-3);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 1px 6px;
+  .sources {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 18px;
   }
-  .empty {
-    margin: 0 10px;
+  .src {
+    padding: 10px;
+    border-radius: 10px;
     color: var(--text-2);
   }
-  .stick {
-    padding: 8px 10px;
-    border-radius: 6px;
-    margin-bottom: 2px;
-  }
-  .stick:hover {
+  .src:hover {
     background: rgb(255 255 255 / 0.03);
   }
-  .stick.active {
-    background: var(--panel-2);
+  .src.active {
+    background: var(--surface-2);
+    color: var(--text);
   }
   .row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+  }
+  .row :global(svg) {
+    flex: none;
+    color: var(--text-3);
+  }
+  .src.active .row :global(svg) {
+    color: var(--text);
   }
   .name {
     flex: 1;
+    font-size: 13.5px;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .count {
+    font-size: 12px;
+    color: var(--text-3);
+  }
   .eject {
+    display: none;
     border: 0;
     background: none;
     color: var(--text-3);
     padding: 2px;
     border-radius: 4px;
-    opacity: 0;
   }
-  .stick:hover .eject,
+  .src:hover .eject,
   .eject:focus-visible {
-    opacity: 1;
+    display: block;
+  }
+  .src:hover .count {
+    display: none;
   }
   .eject:hover {
     color: var(--text);
   }
-  .cap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 6px 0 0 16px;
-  }
-  .cap .readout {
-    font-size: 11px;
-    color: var(--text-2);
-  }
   .bar {
-    flex: 1;
-    height: 3px;
+    height: 4px;
+    margin-top: 8px;
     border-radius: 2px;
-    background: var(--line);
+    background: var(--surface-3);
     overflow: hidden;
   }
   .bar > div {
     height: 100%;
-    background: var(--text-2);
+    border-radius: 2px;
+    background: var(--accent);
   }
-  .bar.amber > div {
-    background: var(--cue);
+  .empty {
+    margin: 4px 10px;
+    font-size: 12px;
+    color: var(--text-3);
   }
-  .lib .count {
-    font-size: 13px;
-    color: var(--text-2);
+  .fill {
+    flex: 1;
   }
-  .libsub {
-    margin: 4px 0 0 22px;
-    font-size: 11px;
-    color: var(--text-2);
+  .jobs {
+    padding: 12px 10px 0;
+    border-top: 1px solid var(--hairline);
   }
-  .job {
-    padding: 0 10px;
-    margin-bottom: 10px;
+  .job + .job {
+    margin-top: 10px;
   }
   .job .label {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .job .count {
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .job .bar {
-    margin-top: 8px;
   }
 </style>

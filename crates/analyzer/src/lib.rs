@@ -17,7 +17,7 @@ pub mod waveform;
 
 use std::path::{Path, PathBuf};
 
-use pioneer_formats::anlz::{AnlzFile, Beat, BeatGrid, Section, build_path, tag, write_cue_points};
+use pioneer_formats::anlz::{AnlzFile, Beat, BeatGrid, Section, build_path, complete, tag, write_cue_points};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -42,6 +42,8 @@ pub struct Analysis {
     /// As rekordbox names keys ("Am", "F#").
     pub key: Option<&'static str>,
     pub waveforms: waveform::Waveforms,
+    /// Length in samples for an MP3 (rekordbox's `PVBR` holds it), else 0.
+    pub mp3_samples: u32,
 }
 
 /// Analyse an audio file. With a `tracker` the beats come from Beat This!,
@@ -62,6 +64,11 @@ pub fn analyze(path: &Path, bpm_hint: Option<f64>, tracker: Option<&tracker::Tra
         grid,
         key: key::detect(&audio.samples, audio.rate),
         waveforms: waveform::build(&frames),
+        mp3_samples: if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp3")) {
+            audio.samples.len() as u32
+        } else {
+            0
+        },
     })
 }
 
@@ -102,16 +109,7 @@ pub fn anlz_files(a: &Analysis, audio_path: &str) -> [AnlzFile; 3] {
         u32s(&[2, scroll_cols, 0x0096_0305]),
         w.color_scroll.clone(),
     ));
-    // Empty cue lists, where rekordbox keeps them: last in the .DAT, right
-    // after PWV3 in the .EXT.
     write_cue_points(&mut dat, Some(&mut ext), &[]);
-    let is_cue = |s: &Section| s.tag == tag::CUES || s.tag == tag::CUES_2;
-    let (cues, rest): (Vec<_>, Vec<_>) = dat.sections.drain(..).partition(is_cue);
-    dat.sections = rest.into_iter().chain(cues).collect();
-    let (cues, mut rest): (Vec<_>, Vec<_>) = ext.sections.drain(..).partition(is_cue);
-    let at = rest.iter().position(|s| s.tag == tag::WAVE_SCROLL).map_or(rest.len(), |i| i + 1);
-    rest.splice(at..at, cues);
-    ext.sections = rest;
 
     let mut two = AnlzFile::default();
     two.sections.push(path);
@@ -121,6 +119,9 @@ pub fn anlz_files(a: &Analysis, audio_path: &str) -> [AnlzFile; 3] {
         w.three_band_scroll.clone(),
     ));
     two.sections.push(Section::new(tag::WAVE_3BAND_PREVIEW, u32s(&[3, 1200]), w.three_band_preview.clone()));
+    // rekordbox's other sections, in its order: without them it shows
+    // neither grid nor waveform.
+    complete(&mut dat, Some(&mut ext), Some(&mut two), a.mp3_samples);
     [dat, ext, two]
 }
 
@@ -206,8 +207,8 @@ mod tests {
         let beats = f.beat_grid().unwrap().unwrap().beats;
         assert_eq!((beats[0].beat_number, beats[0].tempo, beats[1].beat_number), (1, 12000, 2));
         let tags = |f: &AnlzFile| f.sections.iter().map(|s| s.tag_str()).collect::<Vec<_>>().join(" ");
-        assert_eq!(tags(&f), "PPTH PQTZ PWAV PWV2 PCOB PCOB");
-        assert_eq!(tags(&read("EXT")), "PPTH PWV3 PCOB PCOB PCO2 PCO2 PWV5");
-        assert_eq!(tags(&read("2EX")), "PPTH PWV7 PWV6");
+        assert_eq!(tags(&f), "PPTH PVBR PQTZ PWAV PWV2 PCOB PCOB");
+        assert_eq!(tags(&read("EXT")), "PPTH PWV3 PCOB PCOB PCO2 PCO2 PQT2 PWV5 PWV4");
+        assert_eq!(tags(&read("2EX")), "PPTH PWV7 PWV6 PWVC");
     }
 }
