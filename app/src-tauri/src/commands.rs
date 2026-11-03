@@ -746,6 +746,27 @@ pub fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_default()
 }
 
+/// Whether macOS gave the app Full Disk Access: the privacy database is
+/// readable only with it, and trying does not ask the DJ anything.
+#[tauri::command]
+pub fn full_disk_access() -> bool {
+    let Ok(home) = std::env::var("HOME") else {
+        return true;
+    };
+    std::fs::File::open(Path::new(&home).join("Library/Application Support/com.apple.TCC/TCC.db"))
+        .is_ok()
+}
+
+/// System Settings at Privacy & Security › Full Disk Access.
+#[tauri::command]
+pub fn open_full_disk_settings() -> CmdResult<()> {
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        .status()
+        .map_err(err)?;
+    Ok(())
+}
+
 /// Keep edited cues in the app until they are written to the stick.
 #[tauri::command]
 pub async fn save_cues(

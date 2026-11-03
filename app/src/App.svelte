@@ -16,6 +16,7 @@
   import ToolsLaunchpad from "./lib/ToolsLaunchpad.svelte";
   import TrackTable from "./lib/TrackTable.svelte";
   import UpdateSheet from "./lib/UpdateSheet.svelte";
+  import AccessSheet from "./lib/AccessSheet.svelte";
   import PeerSheet from "./lib/PeerSheet.svelte";
   import PairPrompt from "./lib/PairPrompt.svelte";
   import OfferPrompt from "./lib/OfferPrompt.svelte";
@@ -23,12 +24,14 @@
   import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
   import { updates } from "./lib/updates.svelte";
+  import { access } from "./lib/access.svelte";
 
   let deck = $state<ReturnType<typeof Deck>>();
 
   onMount(() => {
     app.init();
     updates.init();
+    access.init();
   });
 
   function onKey(e: KeyboardEvent) {
@@ -55,7 +58,7 @@
         return;
       }
     }
-    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || app.offerRequest || app.mirrorRequest || updates.open || app.settingsFor !== undefined) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || app.offerRequest || app.mirrorRequest || updates.open || access.open || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -123,6 +126,8 @@
 {/if}
 {#if updates.open}
   <UpdateSheet />
+{:else if access.open}
+  <AccessSheet />
 {/if}
 {#if app.pairRequest}
   <PairPrompt />

@@ -41,6 +41,8 @@ fn main() {
             commands::reveal,
             commands::eject,
             commands::home_dir,
+            commands::full_disk_access,
+            commands::open_full_disk_settings,
             commands::save_cues,
             commands::revert_cues,
             commands::pending_cues,

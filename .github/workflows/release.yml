@@ -65,6 +65,13 @@ jobs:
       # The app ships uv (scripts/fetch-uv.sh copies it into the bundle).
       - uses: astral-sh/setup-uv@v6
 
+      # Without the certificate the build is ad-hoc signed and every update
+      # would make macOS ask for its permissions again.
+      - name: Check signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        run: '[ -n "$APPLE_CERTIFICATE" ] || { echo "::error::Secret APPLE_CERTIFICATE is missing"; exit 1; }'
+
       - run: npm ci
         working-directory: app
 
@@ -73,6 +80,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Self-signed code signing certificate (~/.tauri/stickwise-signing.p12).
+          # Every build signed by it is the same app to macOS, so Full Disk Access
+          # and the other privacy grants survive updates; ad-hoc builds lose them.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           projectPath: app
           tagName: ${{ env.TAG }}
