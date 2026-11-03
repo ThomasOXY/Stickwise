@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { Key, LangChoice } from "./i18n.svelte";
 
 /**
  * The app's settings, edited in the Settings window. The sheets start from
@@ -9,6 +10,7 @@ export interface Prefs {
   general: {
     /** Smart Cue, AI cue analysis and the set planner; off = the DJ does it all by hand. */
     helpers: boolean;
+    language: LangChoice;
   };
   stick: {
     /** All playlists at the top of the stick, no folders. */
@@ -36,39 +38,41 @@ export interface Prefs {
 }
 
 /** Engine DJ library versions for a hybrid stick: the oldest Denon firmware it plays on. */
-export const ENGINE: { schema: string; label: string; note: string }[] = [
-  { schema: "2.21.0", label: "Engine OS 3.1+", note: "i nejstarší Denony" },
-  { schema: "3.0.1", label: "Engine OS 4.3+", note: "doporučeno" },
-  { schema: "3.0.2", label: "Engine OS 5+", note: "jen nejnovější" },
+export const ENGINE: { schema: string; label: string; note: Key }[] = [
+  { schema: "2.21.0", label: "Engine OS 3.1+", note: "stick.engine.oldest" },
+  { schema: "3.0.1", label: "Engine OS 4.3+", note: "stick.engine.recommended" },
+  { schema: "3.0.2", label: "Engine OS 5+", note: "stick.engine.newest" },
 ];
 
+/** [value, label, hint] */
 export const PLAN_LEVELS = [
-  ["beginner", "Začátečník", "Jen harmonicky čisté páry, tempo ±3 %, dlouhé 32taktové přechody."],
-  ["advanced", "Pokročilý", "Energy boosty (+2), tempo ±6 %, 16taktové přechody."],
-  ["pro", "Profík", "Odvážnější tóniny a tempo, krátké 8taktové přechody, střihy."],
-] as const;
+  ["beginner", "planner.levels.beginner", "planner.levels.beginnerHint"],
+  ["advanced", "planner.levels.advanced", "planner.levels.advancedHint"],
+  ["pro", "planner.levels.pro", "planner.levels.proHint"],
+] as const satisfies readonly (readonly [string, Key, Key])[];
 
 export const PLAN_CURVES = [
-  ["warmup", "Warm-up"],
-  ["peak", "Peak"],
-  ["journey", "Cesta"],
-  ["closing", "Closing"],
-] as const;
+  ["warmup", "planner.curves.warmup"],
+  ["peak", "planner.curves.peak"],
+  ["journey", "planner.curves.journey"],
+  ["closing", "planner.curves.closing"],
+] as const satisfies readonly (readonly [string, Key])[];
 
+/** [value, label, hint] */
 export const PLAN_CUES = [
-  ["only", "Jen přechody", "Na padech zůstanou jen cue přechodů (start, swap, drop, mix out) v pořadí A, B, …; ostatní hot cue se zazálohují a smažou, memory cue zůstanou"],
-  ["hot", "Na volné pady", "Tvoje hot cue zůstanou, cue přechodů přibudou na nejvyšší volné pady (H, G, …)"],
-  ["memory", "Memory", "Jako memory cue, pady zůstanou, jak jsou"],
-] as const;
+  ["only", "planner.cueModes.only", "planner.cueModes.onlyHint"],
+  ["hot", "planner.cueModes.hot", "planner.cueModes.hotHint"],
+  ["memory", "planner.cueModes.memory", "planner.cueModes.memoryHint"],
+] as const satisfies readonly (readonly [string, Key, Key])[];
 
 export const DUPLICATES = [
-  ["clone", "Klon (nezabírá místo)"],
-  ["copy", "Kopie"],
-  ["symlink", "Odkaz"],
-] as const;
+  ["clone", "export.dup.clone"],
+  ["copy", "export.dup.copy"],
+  ["symlink", "export.dup.symlink"],
+] as const satisfies readonly (readonly [string, Key])[];
 
 export const DEFAULTS: Prefs = {
-  general: { helpers: true },
+  general: { helpers: true, language: "auto" },
   stick: { flat: true, writeSettings: true, engine: null },
   planner: { minutes: 60, level: "advanced", curve: "peak", keepOrder: true, cueMode: "only" },
   export: { numbered: true, artistTitle: true, m3u: true, history: false, duplicates: "clone" },
@@ -107,6 +111,8 @@ class PrefsStore {
     const saved = await invoke<Partial<Prefs> | null>("prefs_get");
     if (saved) {
       this.value = merge(saved);
+      // From before languages: the app was Czech, keep it so.
+      if (!saved.general?.language) await this.set("general", { language: "cs" });
     } else {
       this.value = remembered();
       await this.save();

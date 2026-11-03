@@ -1,3 +1,5 @@
+import { i18n } from "./i18n.svelte";
+
 export function time(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);
@@ -35,10 +37,22 @@ export function keyOrder(key: string): number {
   return camelot ? parseInt(camelot, 10) * 2 + (camelot.endsWith("B") ? 1 : 0) : Infinity;
 }
 
-/** "2024-05-01" as "1. 5. 2024". */
+/** "2024-05-01" in the app's language: "1. 5. 2024", "May 1, 2024", "1.5.2024". */
 export function date(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  return m ? `${Number(m[3])}. ${Number(m[2])}. ${m[1]}` : "";
+  if (!m) return "";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString(i18n.lang, { day: "numeric", month: i18n.lang === "en" ? "short" : "numeric", year: "numeric" });
+}
+
+/** A count with the app language's thousands separator. */
+export function num(n: number): string {
+  return n.toLocaleString(i18n.lang);
+}
+
+/** Sorting text the way the app's language does. */
+export function collator(): Intl.Collator {
+  return new Intl.Collator(i18n.lang, { numeric: true, sensitivity: "base" });
 }
 
 /** Swatch colour for a key on the Camelot wheel. */

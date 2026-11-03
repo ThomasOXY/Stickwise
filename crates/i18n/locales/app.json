@@ -1,0 +1,14 @@
+{
+  "cs": {
+    "settingsMenu": "Nastavení…",
+    "settingsWindow": "Nastavení"
+  },
+  "en": {
+    "settingsMenu": "Settings…",
+    "settingsWindow": "Settings"
+  },
+  "de": {
+    "settingsMenu": "Einstellungen…",
+    "settingsWindow": "Einstellungen"
+  }
+}

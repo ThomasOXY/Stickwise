@@ -51,6 +51,8 @@ fn main() {
             prefs::prefs_get,
             prefs::prefs_set,
             prefs::open_settings,
+            prefs::set_locale,
+            prefs::system_languages,
             commands::save_cues,
             commands::revert_cues,
             commands::pending_cues,

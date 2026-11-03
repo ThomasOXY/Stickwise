@@ -26,6 +26,7 @@
   import { updates } from "./lib/updates.svelte";
   import { access } from "./lib/access.svelte";
   import { prefs } from "./lib/prefs.svelte";
+  import { i18n, type LangChoice } from "./lib/i18n.svelte";
   import { listen } from "@tauri-apps/api/event";
 
   let deck = $state<ReturnType<typeof Deck>>();
@@ -41,6 +42,16 @@
       if (!updates.available) updates.check();
     });
     return () => off.then((f) => f());
+  });
+
+  // The language: at start and when it changes in the Settings window.
+  let applied: LangChoice | null = null;
+  $effect(() => {
+    const l = prefs.value.general.language;
+    if (prefs.loaded && l !== applied) {
+      applied = l;
+      i18n.apply(l);
+    }
   });
 
   // Helpers switched off in the settings: close what is open of them.

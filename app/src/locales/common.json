@@ -1,0 +1,53 @@
+{
+  "cs": {
+    "close": "Zavřít",
+    "done": "Hotovo",
+    "later": "Později",
+    "save": "Uložit",
+    "cancel": "Zrušit",
+    "stop": "Zastavit",
+    "restart": "Restartovat",
+    "default": "Výchozí",
+    "change": "Změnit…",
+    "resetDefaults": "Obnovit výchozí",
+    "continue": "Pokračovat",
+    "checkAgain": "Zkontrolovat znovu",
+    "loading": "Načítám…",
+    "minutes": "{count} min",
+    "tracks": { "one": "{count} skladba", "few": "{count} skladby", "other": "{count} skladeb" }
+  },
+  "en": {
+    "close": "Close",
+    "done": "Done",
+    "later": "Later",
+    "save": "Save",
+    "cancel": "Cancel",
+    "stop": "Stop",
+    "restart": "Restart",
+    "default": "Default",
+    "change": "Change…",
+    "resetDefaults": "Reset to defaults",
+    "continue": "Continue",
+    "checkAgain": "Check again",
+    "loading": "Loading…",
+    "minutes": "{count} min",
+    "tracks": { "one": "{count} track", "other": "{count} tracks" }
+  },
+  "de": {
+    "close": "Schließen",
+    "done": "Fertig",
+    "later": "Später",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "stop": "Stoppen",
+    "restart": "Neu starten",
+    "default": "Standard",
+    "change": "Ändern…",
+    "resetDefaults": "Auf Standard zurücksetzen",
+    "continue": "Weiter",
+    "checkAgain": "Erneut prüfen",
+    "loading": "Wird geladen…",
+    "minutes": "{count} Min.",
+    "tracks": { "one": "{count} Track", "other": "{count} Tracks" }
+  }
+}

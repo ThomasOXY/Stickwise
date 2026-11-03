@@ -49,7 +49,7 @@ fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
         None => "index.html?window=settings".into(),
     };
     WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
-        .title("Nastavení")
+        .title(i18n::t!("app.settingsWindow"))
         .inner_size(920.0, 640.0)
         .min_inner_size(780.0, 520.0)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
@@ -59,11 +59,11 @@ fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The standard menu with "Nastavení…" (⌘,) in the app menu.
+/// The standard menu with Settings… (⌘,) in the app menu.
 pub fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::default(app)?;
     if let Some(app_menu) = menu.items()?.first().and_then(|i| i.as_submenu().cloned()) {
-        let item = MenuItem::with_id(app, MENU_ID, "Nastavení…", true, Some("CmdOrCtrl+,"))?;
+        let item = MenuItem::with_id(app, MENU_ID, i18n::t!("app.settingsMenu"), true, Some("CmdOrCtrl+,"))?;
         // After "About Stickwise".
         app_menu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
         app_menu.insert(&item, 2)?;
@@ -75,4 +75,33 @@ pub fn on_menu(app: &AppHandle, id: &str) {
     if id == MENU_ID {
         let _ = open(app, None);
     }
+}
+
+/// Use `lang` for the texts from here on: the menu, the Settings window's
+/// title and every message the Rust side sends.
+#[tauri::command]
+pub fn set_locale(app: AppHandle, lang: String) -> CmdResult<()> {
+    if lang == i18n::lang() {
+        return Ok(());
+    }
+    i18n::set_lang(&lang);
+    app.set_menu(menu(&app).map_err(err)?).map_err(err)?;
+    if let Some(w) = app.get_webview_window(WINDOW) {
+        w.set_title(&i18n::t!("app.settingsWindow")).map_err(err)?;
+    }
+    Ok(())
+}
+
+/// macOS's preferred languages, most preferred first (`cs-CZ`, `en`, …).
+#[tauri::command]
+pub fn system_languages() -> Vec<String> {
+    let Ok(out) = std::process::Command::new("defaults").args(["read", "-g", "AppleLanguages"]).output() else {
+        return Vec::new();
+    };
+    // A plist array: ( "cs-CZ", "en-CZ" )
+    String::from_utf8_lossy(&out.stdout)
+        .split(['(', ')', ',', '\n'])
+        .map(|l| l.trim().trim_matches('"').to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }

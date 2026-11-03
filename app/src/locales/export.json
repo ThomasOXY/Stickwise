@@ -1,0 +1,29 @@
+{
+  "cs": {
+    "numbered": "Očíslovat podle pořadí (01 – …)",
+    "artistTitle": "Pojmenovat Interpret – Název",
+    "m3u": "Vytvořit .m3u8",
+    "history": "Zahrnout historii",
+    "historyHint": "Playlisty historie hraní z přehrávače.",
+    "duplicates": "Skladba ve více playlistech",
+    "dup": { "clone": "Klon (nezabírá místo)", "copy": "Kopie", "symlink": "Odkaz" }
+  },
+  "en": {
+    "numbered": "Number by order (01 – …)",
+    "artistTitle": "Name as Artist – Title",
+    "m3u": "Create .m3u8",
+    "history": "Include history",
+    "historyHint": "The player's play history playlists.",
+    "duplicates": "Track in several playlists",
+    "dup": { "clone": "Clone (takes no space)", "copy": "Copy", "symlink": "Link" }
+  },
+  "de": {
+    "numbered": "Nach Reihenfolge nummerieren (01 – …)",
+    "artistTitle": "Als Interpret – Titel benennen",
+    "m3u": ".m3u8 erstellen",
+    "history": "Verlauf einbeziehen",
+    "historyHint": "Die Verlaufs-Playlists des Players.",
+    "duplicates": "Track in mehreren Playlists",
+    "dup": { "clone": "Klon (belegt keinen Platz)", "copy": "Kopie", "symlink": "Verknüpfung" }
+  }
+}

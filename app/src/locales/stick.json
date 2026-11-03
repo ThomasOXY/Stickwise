@@ -1,0 +1,44 @@
+{
+  "cs": {
+    "flat": "Všechny playlisty rovnou nahoru, bez složek",
+    "flatHint": "Na přehrávači se nemusíš proklikávat složkami. Stejné názvy dostanou do závorky jméno složky.",
+    "writeSettings": "Zapsat i moje nastavení přehrávače (My Settings)",
+    "writeSettingsHint": "Quantize, auto cue, jas, waveform a další, jak je máš uložené.",
+    "hybrid": "Hybridní flashka i pro Denon",
+    "hybridHint": "Engine DJ knihovna nad stejnými soubory, hudba na flashce jen jednou.",
+    "oldestDenon": "Nejstarší Denon",
+    "engine": {
+      "oldest": "i nejstarší Denony",
+      "recommended": "doporučeno",
+      "newest": "jen nejnovější"
+    }
+  },
+  "en": {
+    "flat": "All playlists at the top, no folders",
+    "flatHint": "No clicking through folders on the player. Playlists with the same name get the folder name in brackets.",
+    "writeSettings": "Also write my player settings (My Settings)",
+    "writeSettingsHint": "Quantize, auto cue, brightness, waveform and more, as you saved them.",
+    "hybrid": "Hybrid stick for Denon too",
+    "hybridHint": "An Engine DJ library over the same files; the music is on the stick only once.",
+    "oldestDenon": "Oldest Denon",
+    "engine": {
+      "oldest": "even the oldest Denons",
+      "recommended": "recommended",
+      "newest": "newest only"
+    }
+  },
+  "de": {
+    "flat": "Alle Playlists oben, ohne Ordner",
+    "flatHint": "Kein Durchklicken durch Ordner am Player. Gleichnamige Playlists bekommen den Ordnernamen in Klammern.",
+    "writeSettings": "Auch meine Player-Einstellungen schreiben (My Settings)",
+    "writeSettingsHint": "Quantize, Auto Cue, Helligkeit, Waveform und mehr, so wie du sie gespeichert hast.",
+    "hybrid": "Hybrid-Stick auch für Denon",
+    "hybridHint": "Eine Engine-DJ-Bibliothek über denselben Dateien; die Musik liegt nur einmal auf dem Stick.",
+    "oldestDenon": "Ältester Denon",
+    "engine": {
+      "oldest": "auch die ältesten Denons",
+      "recommended": "empfohlen",
+      "newest": "nur die neuesten"
+    }
+  }
+}

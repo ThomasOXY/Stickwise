@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pioneer-formats", "crates/usb-tools", "crates/analysis", "crates/analyzer", "crates/library", "crates/engine-library", "crates/peerlink", "crates/libsync", "cli", "app/src-tauri"]
+members = ["crates/i18n", "crates/pioneer-formats", "crates/usb-tools", "crates/analysis", "crates/analyzer", "crates/library", "crates/engine-library", "crates/peerlink", "crates/libsync", "cli", "app/src-tauri"]
 
 [workspace.package]
 edition = "2024"

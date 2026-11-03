@@ -1797,6 +1797,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "i18n"
+version = "0.4.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3300,6 +3307,7 @@ dependencies = [
  "analysis",
  "analyzer",
  "engine-library",
+ "i18n",
  "libc",
  "library",
  "libsync",

@@ -7,16 +7,23 @@
   import { onMount } from "svelte";
   import { api, peerApi, type PeerSettings } from "./lib/api";
   import PlayerSettingsEditor from "./lib/PlayerSettingsEditor.svelte";
+  import { i18n, t, type Key, type LangChoice } from "./lib/i18n.svelte";
   import { DUPLICATES, ENGINE, PLAN_CUES, PLAN_CURVES, PLAN_LEVELS, prefs, type Prefs } from "./lib/prefs.svelte";
   import SheetSwitch from "./lib/SheetSwitch.svelte";
 
-  const SECTIONS: { id: string; title: string; icon: Component<{ size?: number }> }[] = [
-    { id: "general", title: "Obecné", icon: Settings },
-    { id: "player", title: "Přehrávač", icon: SlidersHorizontal },
-    { id: "stick", title: "Flashka", icon: Usb },
-    { id: "planner", title: "Plánovač setu", icon: Route },
-    { id: "export", title: "Export na disk", icon: FileOutput },
-    { id: "peer", title: "Sync mezi Macy", icon: Laptop },
+  const SECTIONS: { id: string; title: Key; icon: Component<{ size?: number }> }[] = [
+    { id: "general", title: "settings.sections.general", icon: Settings },
+    { id: "player", title: "settings.sections.player", icon: SlidersHorizontal },
+    { id: "stick", title: "settings.sections.stick", icon: Usb },
+    { id: "planner", title: "settings.sections.planner", icon: Route },
+    { id: "export", title: "settings.sections.export", icon: FileOutput },
+    { id: "peer", title: "settings.sections.peer", icon: Laptop },
+  ];
+  /** Languages by their own name, so anyone finds theirs. */
+  const LANGUAGES: [LangChoice, string][] = [
+    ["cs", "Čeština"],
+    ["en", "English"],
+    ["de", "Deutsch"],
   ];
   const known = (s: string | null) => (SECTIONS.some((x) => x.id === s) ? s! : "general");
 
@@ -43,6 +50,16 @@
       clearInterval(poll);
       off.then((f) => f());
     };
+  });
+
+  // The language: at start and when picked here or in the other window.
+  let applied: LangChoice | null = null;
+  $effect(() => {
+    const l = prefs.value.general.language;
+    if (prefs.loaded && l !== applied) {
+      applied = l;
+      i18n.apply(l);
+    }
   });
 
   async function musicDir(path: string | null) {
@@ -75,14 +92,14 @@
     {#each SECTIONS as s (s.id)}
       <button class:on={section === s.id} onclick={() => (section = s.id)}>
         <s.icon size={16} />
-        <span>{s.title}</span>
+        <span>{t(s.title)}</span>
       </button>
     {/each}
   </nav>
 
   <main>
     <header data-tauri-drag-region>
-      <h1 data-tauri-drag-region>{SECTIONS.find((s) => s.id === section)?.title}</h1>
+      <h1 data-tauri-drag-region>{t(SECTIONS.find((s) => s.id === section)?.title ?? "settings.sections.general")}</h1>
     </header>
 
     {#if error}<p class="err">{error}</p>{/if}
@@ -90,166 +107,174 @@
     {#if section === "general"}
       <div class="pane">
         <section>
-          <div class="eyebrow">Pomocníci</div>
+          <div class="eyebrow">{t("settings.language")}</div>
+          <div class="seg" role="radiogroup" aria-label={t("settings.language")}>
+            <button role="radio" aria-checked={p.general.language === "auto"} class:on={p.general.language === "auto"} onclick={() => set("general", { language: "auto" })}>
+              {t("settings.languageAuto")}
+            </button>
+            {#each LANGUAGES as [v, name] (v)}
+              <button role="radio" aria-checked={p.general.language === v} class:on={p.general.language === v} onclick={() => set("general", { language: v })}>{name}</button>
+            {/each}
+          </div>
+        </section>
+        <section>
+          <div class="eyebrow">{t("settings.helpers")}</div>
           <SheetSwitch
             checked={p.general.helpers}
             onchange={(on) => set("general", { helpers: on })}
-            label="Smart Cue, AI analýza cue a plánovač setu"
-            desc="Vypnuté jako za starých časů: cue i pořadí setu děláš sám. Cue, které už ve skladbách jsou, zůstanou; analýza a kontrola flashky běží dál."
+            label={t("settings.helpersLabel")}
+            desc={t("settings.helpersHint")}
           />
         </section>
         <section>
-          <div class="eyebrow">Verze</div>
+          <div class="eyebrow">{t("settings.version")}</div>
           <div class="line">
             <span>Stickwise <strong class="readout">{version}</strong></span>
-            <button class="btn" onclick={() => emitTo("main", "open-updates")}><Download size={15} />Zkontrolovat aktualizace</button>
+            <button class="btn" onclick={() => emitTo("main", "open-updates")}><Download size={15} />{t("settings.checkUpdates")}</button>
           </div>
-          <p class="hint">Nové verze hledá Stickwise sám při startu a každé 4 hodiny.</p>
+          <p class="hint">{t("settings.updatesHint")}</p>
         </section>
         <section>
-          <div class="eyebrow">Přístup k disku</div>
+          <div class="eyebrow">{t("settings.diskAccess")}</div>
           <div class="line">
             {#if fullDisk}
-              <span class="ok"><CircleCheck size={16} />Plný přístup k disku je povolený.</span>
+              <span class="ok"><CircleCheck size={16} />{t("settings.diskOn")}</span>
             {:else if fullDisk === false}
-              <span class="warn"><ShieldAlert size={16} />Plný přístup k disku není povolený.</span>
-              <button class="btn" onclick={() => api.openFullDiskSettings()}>Otevřít Nastavení systému</button>
+              <span class="warn"><ShieldAlert size={16} />{t("settings.diskOff")}</span>
+              <button class="btn" onclick={() => api.openFullDiskSettings()}>{t("settings.openSystemSettings")}</button>
             {/if}
           </div>
-          <p class="hint">
-            Bez něj se macOS ptá na hudbu na externích discích, flashky a knihovnu rekordboxu pořád dokola. Po zapnutí
-            Stickwise restartuj.
-          </p>
+          <p class="hint">{t("settings.diskHint")}</p>
         </section>
       </div>
     {:else if section === "player"}
-      <p class="lead">Tvoje My Settings pro CDJ/XDJ a mixer. Zapíšou se na flashku při synchronizaci a formátování.</p>
+      <p class="lead">{t("settings.playerLead")}</p>
       <PlayerSettingsEditor stick={null} />
     {:else if section === "stick"}
       <div class="pane">
-        <p class="lead">Výchozí volby pro synchronizaci a formátování flashky. U jednotlivé flashky je jde přepnout jen pro ten jednou.</p>
+        <p class="lead">{t("settings.stickLead")}</p>
         <section class="opts">
           <SheetSwitch
             checked={p.stick.flat}
             onchange={(on) => set("stick", { flat: on })}
-            label="Všechny playlisty rovnou nahoru, bez složek"
-            desc="Na přehrávači se nemusíš proklikávat složkami. Stejné názvy dostanou do závorky jméno složky."
+            label={t("stick.flat")}
+            desc={t("stick.flatHint")}
           />
           <SheetSwitch
             checked={p.stick.writeSettings}
             onchange={(on) => set("stick", { writeSettings: on })}
-            label="Zapisovat moje nastavení přehrávače (My Settings)"
-            desc="Při synchronizaci i formátování. Nastavení je v sekci Přehrávač."
+            label={t("settings.writeSettings")}
+            desc={t("settings.writeSettingsHint")}
           />
           <SheetSwitch
             checked={!!p.stick.engine}
             onchange={(on) => set("stick", { engine: on ? "3.0.1" : null })}
-            label="Hybridní flashka i pro Denon"
-            desc="Engine DJ knihovna nad stejnými soubory, hudba na flashce jen jednou. Flashka, která už Denon má, si svou volbu pamatuje."
+            label={t("stick.hybrid")}
+            desc={t("settings.hybridHint")}
           />
           {#if p.stick.engine}
             <div class="sub">
-              <div class="seg" role="radiogroup" aria-label="Nejstarší Denon">
+              <div class="seg" role="radiogroup" aria-label={t("stick.oldestDenon")}>
                 {#each ENGINE as o (o.schema)}
                   <button role="radio" aria-checked={p.stick.engine === o.schema} class:on={p.stick.engine === o.schema} onclick={() => set("stick", { engine: o.schema })}>
-                    {o.label}<span class="n">{o.note}</span>
+                    {o.label}<span class="n">{t(o.note)}</span>
                   </button>
                 {/each}
               </div>
-              <p class="hint">Nejstarší firmware Denonu, na kterém budeš hrát; novější ho přečtou taky.</p>
+              <p class="hint">{t("settings.engineHint")}</p>
             </div>
           {/if}
         </section>
-        <footer><button class="btn ghost" onclick={() => prefs.reset("stick")}>Obnovit výchozí</button></footer>
+        <footer><button class="btn ghost" onclick={() => prefs.reset("stick")}>{t("common.resetDefaults")}</button></footer>
       </div>
     {:else if section === "planner"}
       <div class="pane">
-        <p class="lead">S čím plánovač setu začne. V plánovači je jde změnit pro jeden plán.</p>
+        <p class="lead">{t("settings.plannerLead")}</p>
         <section class="rows">
           <div class="row">
-            <span class="label">Pořadí</span>
+            <span class="label">{t("planner.order.title")}</span>
             <div class="seg">
-              <button class:on={p.planner.keepOrder} onclick={() => set("planner", { keepOrder: true })}>Moje</button>
-              <button class:on={!p.planner.keepOrder} onclick={() => set("planner", { keepOrder: false })}>Navrhnout</button>
+              <button class:on={p.planner.keepOrder} onclick={() => set("planner", { keepOrder: true })} title={t("planner.order.mineHint")}>{t("planner.order.mine")}</button>
+              <button class:on={!p.planner.keepOrder} onclick={() => set("planner", { keepOrder: false })} title={t("planner.order.suggestHint")}>{t("planner.order.suggest")}</button>
             </div>
           </div>
           <div class="row">
-            <span class="label">Energie</span>
+            <span class="label">{t("planner.energy")}</span>
             <div class="seg">
               {#each PLAN_CURVES as [v, label] (v)}
-                <button class:on={p.planner.curve === v} onclick={() => set("planner", { curve: v })}>{label}</button>
+                <button class:on={p.planner.curve === v} onclick={() => set("planner", { curve: v })}>{t(label)}</button>
               {/each}
             </div>
           </div>
           <div class="row">
-            <span class="label">Úroveň</span>
+            <span class="label">{t("planner.level")}</span>
             <div class="seg">
               {#each PLAN_LEVELS as [v, label, hint] (v)}
-                <button class:on={p.planner.level === v} onclick={() => set("planner", { level: v })} title={hint}>{label}</button>
+                <button class:on={p.planner.level === v} onclick={() => set("planner", { level: v })} title={t(hint)}>{t(label)}</button>
               {/each}
             </div>
           </div>
           <div class="row">
-            <span class="label">Cue přechodů</span>
+            <span class="label">{t("planner.cues")}</span>
             <div class="seg">
               {#each PLAN_CUES as [v, label, hint] (v)}
-                <button class:on={p.planner.cueMode === v} onclick={() => set("planner", { cueMode: v })} title={hint}>{label}</button>
+                <button class:on={p.planner.cueMode === v} onclick={() => set("planner", { cueMode: v })} title={t(hint)}>{t(label)}</button>
               {/each}
             </div>
           </div>
           <div class="row">
-            <span class="label">Délka setu <span class="desc">když plánovač vybírá skladby</span></span>
+            <span class="label">{t("planner.length")} <span class="desc">{t("planner.lengthHint")}</span></span>
             <div class="len">
               <input type="range" min="15" max="240" step="5" value={p.planner.minutes} oninput={(e) => set("planner", { minutes: Number(e.currentTarget.value) })} />
-              <span class="readout">{p.planner.minutes} min</span>
+              <span class="readout">{t("common.minutes", { count: p.planner.minutes })}</span>
             </div>
           </div>
         </section>
-        <footer><button class="btn ghost" onclick={() => prefs.reset("planner")}>Obnovit výchozí</button></footer>
+        <footer><button class="btn ghost" onclick={() => prefs.reset("planner")}>{t("common.resetDefaults")}</button></footer>
       </div>
     {:else if section === "export"}
       <div class="pane">
-        <p class="lead">Jak export z flashky na disk pojmenuje a uloží soubory. Při exportu je jde změnit pro ten jednou.</p>
+        <p class="lead">{t("settings.exportLead")}</p>
         <section class="opts">
-          <SheetSwitch checked={p.export.numbered} onchange={(on) => set("export", { numbered: on })} label="Očíslovat podle pořadí (01 – …)" />
-          <SheetSwitch checked={p.export.artistTitle} onchange={(on) => set("export", { artistTitle: on })} label="Pojmenovat Interpret – Název" />
-          <SheetSwitch checked={p.export.m3u} onchange={(on) => set("export", { m3u: on })} label="Vytvořit .m3u8" />
-          <SheetSwitch checked={p.export.history} onchange={(on) => set("export", { history: on })} label="Zahrnout historii" desc="Playlisty historie hraní z přehrávače." />
+          <SheetSwitch checked={p.export.numbered} onchange={(on) => set("export", { numbered: on })} label={t("export.numbered")} />
+          <SheetSwitch checked={p.export.artistTitle} onchange={(on) => set("export", { artistTitle: on })} label={t("export.artistTitle")} />
+          <SheetSwitch checked={p.export.m3u} onchange={(on) => set("export", { m3u: on })} label={t("export.m3u")} />
+          <SheetSwitch checked={p.export.history} onchange={(on) => set("export", { history: on })} label={t("export.history")} desc={t("export.historyHint")} />
         </section>
         <section class="rows">
           <div class="row">
-            <span class="label">Skladba ve více playlistech</span>
-            <div class="seg" role="radiogroup" aria-label="Duplicity">
+            <span class="label">{t("export.duplicates")}</span>
+            <div class="seg" role="radiogroup" aria-label={t("export.duplicates")}>
               {#each DUPLICATES as [v, label] (v)}
-                <button role="radio" aria-checked={p.export.duplicates === v} class:on={p.export.duplicates === v} onclick={() => set("export", { duplicates: v })}>{label}</button>
+                <button role="radio" aria-checked={p.export.duplicates === v} class:on={p.export.duplicates === v} onclick={() => set("export", { duplicates: v })}>{t(label)}</button>
               {/each}
             </div>
           </div>
         </section>
-        <footer><button class="btn ghost" onclick={() => prefs.reset("export")}>Obnovit výchozí</button></footer>
+        <footer><button class="btn ghost" onclick={() => prefs.reset("export")}>{t("common.resetDefaults")}</button></footer>
       </div>
     {:else if section === "peer"}
       <div class="pane">
-        <p class="lead">Párování, posílání a zrcadlení je v nástrojích (⌘K) → Sync mezi Macy.</p>
+        <p class="lead">{t("settings.peerLead")}</p>
         <section>
-          <div class="eyebrow">Hudba z jiných Maců se ukládá do</div>
+          <div class="eyebrow">{t("settings.musicDir")}</div>
           <div class="line">
             <span class="path"><Folder size={15} />{peer ? home(peer.musicDir) : "…"}</span>
             <span class="grow"></span>
             {#if peer && !peer.defaultMusicDir}
-              <button class="btn ghost" onclick={() => musicDir(null)}>Výchozí</button>
+              <button class="btn ghost" onclick={() => musicDir(null)}>{t("common.default")}</button>
             {/if}
-            <button class="btn" onclick={chooseMusicDir} disabled={!peer}>Změnit…</button>
+            <button class="btn" onclick={chooseMusicDir} disabled={!peer}>{t("common.change")}</button>
           </div>
-          <p class="hint">Uvnitř podle interpreta a alba. Soubory, které už tu jsou, se nikdy nepřepíšou.</p>
+          <p class="hint">{t("settings.musicDirHint")}</p>
         </section>
         {#if peer}
           <section>
             <SheetSwitch
               checked={peer.autoMirror}
               onchange={autoMirror}
-              label="Zrcadlit samo, když je spárovaný Mac v síti"
-              desc="Bez ptaní jen tehdy, když se nemá nic mazat; jinak ukáže, co se změní. Nejvýš jednou za 10 minut."
+              label={t("settings.autoMirror")}
+              desc={t("settings.autoMirrorHint")}
             />
           </section>
         {/if}

@@ -1,0 +1,95 @@
+{
+  "cs": {
+    "order": {
+      "title": "Pořadí",
+      "mine": "Moje",
+      "mineHint": "Skladby zůstanou, jak jsi je seřadil; naplánují se jen přechody",
+      "suggest": "Navrhnout",
+      "suggestHint": "Plánovač vybere a seřadí skladby podle tóniny, tempa a energie"
+    },
+    "energy": "Energie",
+    "curves": { "warmup": "Warm-up", "peak": "Peak", "journey": "Cesta", "closing": "Closing" },
+    "level": "Úroveň",
+    "levels": {
+      "beginner": "Začátečník",
+      "beginnerHint": "Jen harmonicky čisté páry, tempo ±3 %, dlouhé 32taktové přechody.",
+      "advanced": "Pokročilý",
+      "advancedHint": "Energy boosty (+2), tempo ±6 %, 16taktové přechody.",
+      "pro": "Profík",
+      "proHint": "Odvážnější tóniny a tempo, krátké 8taktové přechody, střihy."
+    },
+    "cues": "Cue přechodů",
+    "cueModes": {
+      "only": "Jen přechody",
+      "onlyHint": "Na padech zůstanou jen cue přechodů (start, swap, drop, mix out) v pořadí A, B, …; ostatní hot cue se zazálohují a smažou, memory cue zůstanou",
+      "hot": "Na volné pady",
+      "hotHint": "Tvoje hot cue zůstanou, cue přechodů přibudou na nejvyšší volné pady (H, G, …)",
+      "memory": "Memory",
+      "memoryHint": "Jako memory cue, pady zůstanou, jak jsou"
+    },
+    "length": "Délka setu",
+    "lengthHint": "když plánovač vybírá skladby"
+  },
+  "en": {
+    "order": {
+      "title": "Order",
+      "mine": "Mine",
+      "mineHint": "The tracks stay in your order; only the transitions are planned",
+      "suggest": "Suggest",
+      "suggestHint": "The planner picks and orders the tracks by key, tempo and energy"
+    },
+    "energy": "Energy",
+    "curves": { "warmup": "Warm-up", "peak": "Peak", "journey": "Journey", "closing": "Closing" },
+    "level": "Level",
+    "levels": {
+      "beginner": "Beginner",
+      "beginnerHint": "Only harmonically clean pairs, tempo ±3 %, long 32-bar transitions.",
+      "advanced": "Advanced",
+      "advancedHint": "Energy boosts (+2), tempo ±6 %, 16-bar transitions.",
+      "pro": "Pro",
+      "proHint": "Bolder keys and tempo, short 8-bar transitions, cuts."
+    },
+    "cues": "Transition cues",
+    "cueModes": {
+      "only": "Transitions only",
+      "onlyHint": "The pads keep only the transition cues (start, swap, drop, mix out) as A, B, …; other hot cues are backed up and removed, memory cues stay",
+      "hot": "On free pads",
+      "hotHint": "Your hot cues stay; transition cues go on the highest free pads (H, G, …)",
+      "memory": "Memory",
+      "memoryHint": "As memory cues; the pads stay as they are"
+    },
+    "length": "Set length",
+    "lengthHint": "when the planner picks the tracks"
+  },
+  "de": {
+    "order": {
+      "title": "Reihenfolge",
+      "mine": "Meine",
+      "mineHint": "Die Tracks bleiben in deiner Reihenfolge; nur die Übergänge werden geplant",
+      "suggest": "Vorschlagen",
+      "suggestHint": "Der Planer wählt die Tracks aus und ordnet sie nach Tonart, Tempo und Energie"
+    },
+    "energy": "Energie",
+    "curves": { "warmup": "Warm-up", "peak": "Peak", "journey": "Journey", "closing": "Closing" },
+    "level": "Stufe",
+    "levels": {
+      "beginner": "Einsteiger",
+      "beginnerHint": "Nur harmonisch saubere Paare, Tempo ±3 %, lange Übergänge über 32 Takte.",
+      "advanced": "Fortgeschritten",
+      "advancedHint": "Energy-Boosts (+2), Tempo ±6 %, Übergänge über 16 Takte.",
+      "pro": "Profi",
+      "proHint": "Mutigere Tonarten und Tempi, kurze Übergänge über 8 Takte, Cuts."
+    },
+    "cues": "Übergangs-Cues",
+    "cueModes": {
+      "only": "Nur Übergänge",
+      "onlyHint": "Auf den Pads bleiben nur die Übergangs-Cues (Start, Swap, Drop, Mix-out) als A, B, …; andere Hot Cues werden gesichert und entfernt, Memory Cues bleiben",
+      "hot": "Auf freie Pads",
+      "hotHint": "Deine Hot Cues bleiben; Übergangs-Cues kommen auf die höchsten freien Pads (H, G, …)",
+      "memory": "Memory",
+      "memoryHint": "Als Memory Cues; die Pads bleiben, wie sie sind"
+    },
+    "length": "Set-Länge",
+    "lengthHint": "wenn der Planer die Tracks auswählt"
+  }
+}
