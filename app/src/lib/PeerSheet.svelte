@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { CircleCheck, Folder, Laptop, Link2Off, LoaderCircle, Wifi, WifiOff } from "@lucide/svelte";
+  import { CircleCheck, Folder, Laptop, Link2Off, ListMusic, LoaderCircle, Send, Wifi, WifiOff } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
-  import { peerApi, type PairResult, type PeerList, type PeerSettings } from "./api";
-  import { plural } from "./format";
+  import { peerApi, type PairResult, type Peer, type PeerList, type PeerSettings, type Playlist } from "./api";
+  import { plural, size } from "./format";
+  import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
 
@@ -15,6 +16,84 @@
   let pairing = $state<{ id: string; name: string; code: string; result?: PairResult } | null>(null);
   /** Connection checks: peer id → "…", milliseconds or the error. */
   let checks = $state<Record<string, string>>({});
+  /** Choosing what to send to this Mac. */
+  let sendTo = $state<Peer | null>(null);
+  let picked = $state<Set<number>>(new Set());
+
+  const lists = $derived(app.library?.playlists ?? []);
+  const children = (parent: number) => lists.filter((p) => p.parentId === parent).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  /** The library's playlists as a tree, sets first. */
+  const rows = $derived.by(() => {
+    const out: { p: Playlist; depth: number }[] = [];
+    const walk = (parent: number, depth: number) => {
+      for (const p of children(parent)) {
+        out.push({ p, depth });
+        walk(p.id, depth + 1);
+      }
+    };
+    const top = children(0);
+    for (const p of [...top.filter((p) => p.isSet), ...top.filter((p) => !p.isSet)]) {
+      out.push({ p, depth: 0 });
+      walk(p.id, 1);
+    }
+    return out;
+  });
+
+  const ancestors = (p: Playlist): number[] => {
+    const up: number[] = [];
+    let at = lists.find((x) => x.id === p.parentId);
+    while (at) {
+      up.push(at.id);
+      at = lists.find((x) => x.id === at!.parentId);
+    }
+    return up;
+  };
+  const descendants = (id: number): Playlist[] => children(id).flatMap((c) => [c, ...descendants(c.id)]);
+
+  function rowState(p: Playlist): "on" | "off" | "some" {
+    if (picked.has(p.id) || ancestors(p).some((a) => picked.has(a))) return "on";
+    return descendants(p.id).some((d) => picked.has(d.id)) ? "some" : "off";
+  }
+
+  function toggle(p: Playlist) {
+    if (ancestors(p).some((a) => picked.has(a))) return;
+    const next = new Set(picked);
+    if (next.has(p.id)) next.delete(p.id);
+    else {
+      next.add(p.id);
+      for (const d of descendants(p.id)) next.delete(d.id);
+    }
+    picked = next;
+  }
+
+  const sendIds = $derived.by(() => {
+    const ids = new Set<number>();
+    for (const id of picked) {
+      const p = lists.find((x) => x.id === id);
+      if (!p) continue;
+      for (const l of [p, ...descendants(id)]) for (const t of l.trackIds) ids.add(t);
+    }
+    return ids;
+  });
+  const sendBytes = $derived.by(() => {
+    const sizes = new Map((app.library?.tracks ?? []).map((t) => [t.id, t.fileSize]));
+    let n = 0;
+    for (const id of sendIds) n += sizes.get(id) ?? 0;
+    return n;
+  });
+
+  async function startSend() {
+    if (!sendTo) return;
+    error = "";
+    try {
+      await peerApi.send(sendTo.id, [...picked], []);
+      app.notice = `Posílám na ${sendTo.name}. Průběh je v úlohách, ${sendTo.name} to musí přijmout.`;
+      app.peerOpen = false;
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   const home = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
   const ready = $derived(!!s && s.fingerprinted >= s.total);
@@ -94,90 +173,128 @@
   onclose={() => (app.peerOpen = false)}
 >
   <div class="body">
-    <section>
-      <div class="eyebrow">Hudba z jiných Maců se ukládá do</div>
-      <div class="dest">
-        <Folder size={15} />
-        <span class="path">{s ? home(s.musicDir) : "…"}</span>
-        {#if s && !s.defaultMusicDir}
-          <button class="btn ghost" onclick={() => save(null)}>Výchozí</button>
-        {/if}
-        <button class="btn" onclick={chooseDir} disabled={!s}>Změnit…</button>
-      </div>
-      <p class="hint">Uvnitř podle interpreta a alba. Soubory, které už tu jsou, se nikdy nepřepíšou.</p>
-    </section>
-
-    <section>
-      <div class="eyebrow">Příprava knihovny</div>
-      {#if s}
-        {#if ready}
-          <p class="ok"><CircleCheck size={16} />Všech {s.total} {plural(s.total, "skladba má", "skladby mají", "skladeb má")} otisk, knihovna je připravená.</p>
-        {:else}
-          <div class="progress">
-            <div class="bar"><span style:width="{pct}%"></span></div>
-            <span class="readout">{s.fingerprinted} / {s.total}</span>
+    {#if sendTo}
+      <section class="send">
+        <div class="sec-head">
+          <span class="eyebrow">Co poslat na {sendTo.name}</span>
+          <span class="count">
+            {sendIds.size} {plural(sendIds.size, "skladba", "skladby", "skladeb")} · {size(sendBytes)}
+          </span>
+        </div>
+        {#if rows.length}
+          <div class="pick">
+            {#each rows as { p, depth } (p.id)}
+              <button class="row" style:padding-left="{10 + depth * 18}px" onclick={() => toggle(p)}>
+                <SheetCheck state={rowState(p)} />
+                {#if p.isFolder}<Folder size={14} />{:else}<ListMusic size={14} />{/if}
+                <span class="pname">{p.name}</span>
+                {#if p.isSet}<span class="tag">set</span>{/if}
+                <span class="pcount">{p.isFolder ? "" : p.trackIds.length}</span>
+              </button>
+            {/each}
           </div>
-          <p class="hint">
-            <LoaderCircle size={13} class="spin" />Počítají se otisky skladeb. Podle nich druhý Mac pozná stejnou skladbu, i když leží
-            jinde. Běží na pozadí, skladby na odpojeném disku přijdou na řadu po připojení.
-          </p>
+        {:else}
+          <div class="empty">V knihovně nejsou žádné playlisty ani sety.</div>
         {/if}
-      {/if}
-    </section>
-
-    <section>
-      <div class="eyebrow">Macy</div>
-      {#if pairing}
-        <div class="pairing">
-          {#if !pairing.result}
-            <div class="code readout">{pairing.code}</div>
-            <p><LoaderCircle size={14} class="spin" />Na <strong>{pairing.name}</strong> potvrď, že ukazuje stejný kód.</p>
-          {:else}
-            <p class:ok={pairing.result.accepted} class:err={!pairing.result.accepted}>
-              {#if pairing.result.accepted}<CircleCheck size={16} />{/if}{pairing.result.message}
-            </p>
-            <button class="btn" onclick={() => (pairing = null)}>OK</button>
+        <p class="hint">
+          Druhý Mac pošle jen to, co mu chybí. Skladby, které už má, se nepřenášejí; přijdou k nim jen novější cue, gridy a tagy.
+        </p>
+      </section>
+    {:else}
+      <section>
+        <div class="eyebrow">Hudba z jiných Maců se ukládá do</div>
+        <div class="dest">
+          <Folder size={15} />
+          <span class="path">{s ? home(s.musicDir) : "…"}</span>
+          {#if s && !s.defaultMusicDir}
+            <button class="btn ghost" onclick={() => save(null)}>Výchozí</button>
           {/if}
+          <button class="btn" onclick={chooseDir} disabled={!s}>Změnit…</button>
         </div>
-      {/if}
-      {#if list?.error}
-        <div class="empty err"><WifiOff size={18} />{list.error}</div>
-      {:else if list && list.peers.length === 0}
-        <div class="empty">
-          <LoaderCircle size={18} class="spin" />Hledám další Macy… Na druhém Macu otevři Stickwise ve stejné síti.
-        </div>
-      {:else if list}
-        <div class="peers">
-          {#each list.peers as p (p.id)}
-            <div class="peer">
-              <span class="icon" class:off={!p.online}><Laptop size={18} /></span>
-              <div class="who">
-                <span class="name">{p.name}</span>
-                <span class="status">
-                  {#if checks[p.id]}{checks[p.id]}{:else if p.paired}Spárováno · {p.online ? "v síti" : "mimo síť"}{:else}Nespárováno{/if}
-                </span>
-              </div>
-              {#if p.paired}
-                {#if p.online}
-                  <button class="btn" onclick={() => check(p.id)} disabled={checks[p.id] === "…"}><Wifi size={14} />Ověřit spojení</button>
-                {/if}
-                <button class="btn icon ghost" title="Zrušit spárování" aria-label="Zrušit spárování" onclick={() => unpair(p.id, p.name)}>
-                  <Link2Off size={15} />
-                </button>
-              {:else}
-                <button class="btn primary" onclick={() => pair(p.id, p.name)} disabled={!!pairing && !pairing.result}>Spárovat</button>
-              {/if}
+        <p class="hint">Uvnitř podle interpreta a alba. Soubory, které už tu jsou, se nikdy nepřepíšou.</p>
+      </section>
+
+      <section>
+        <div class="eyebrow">Příprava knihovny</div>
+        {#if s}
+          {#if ready}
+            <p class="ok"><CircleCheck size={16} />Všech {s.total} {plural(s.total, "skladba má", "skladby mají", "skladeb má")} otisk, knihovna je připravená.</p>
+          {:else}
+            <div class="progress">
+              <div class="bar"><span style:width="{pct}%"></span></div>
+              <span class="readout">{s.fingerprinted} / {s.total}</span>
             </div>
-          {/each}
-        </div>
-      {/if}
-    </section>
+            <p class="hint">
+              <LoaderCircle size={13} class="spin" />Počítají se otisky skladeb. Podle nich druhý Mac pozná stejnou skladbu, i když leží
+              jinde. Běží na pozadí, skladby na odpojeném disku přijdou na řadu po připojení.
+            </p>
+          {/if}
+        {/if}
+      </section>
+
+      <section>
+        <div class="eyebrow">Macy</div>
+        {#if pairing}
+          <div class="pairing">
+            {#if !pairing.result}
+              <div class="code readout">{pairing.code}</div>
+              <p><LoaderCircle size={14} class="spin" />Na <strong>{pairing.name}</strong> potvrď, že ukazuje stejný kód.</p>
+            {:else}
+              <p class:ok={pairing.result.accepted} class:err={!pairing.result.accepted}>
+                {#if pairing.result.accepted}<CircleCheck size={16} />{/if}{pairing.result.message}
+              </p>
+              <button class="btn" onclick={() => (pairing = null)}>OK</button>
+            {/if}
+          </div>
+        {/if}
+        {#if list?.error}
+          <div class="empty err"><WifiOff size={18} />{list.error}</div>
+        {:else if list && list.peers.length === 0}
+          <div class="empty">
+            <LoaderCircle size={18} class="spin" />Hledám další Macy… Na druhém Macu otevři Stickwise ve stejné síti.
+          </div>
+        {:else if list}
+          <div class="peers">
+            {#each list.peers as p (p.id)}
+              <div class="peer">
+                <span class="icon" class:off={!p.online}><Laptop size={18} /></span>
+                <div class="who">
+                  <span class="name">{p.name}</span>
+                  <span class="status">
+                    {#if checks[p.id]}{checks[p.id]}{:else if p.paired}Spárováno · {p.online ? "v síti" : "mimo síť"}{:else}Nespárováno{/if}
+                  </span>
+                </div>
+                {#if p.paired}
+                  {#if p.online}
+                    <button class="btn" onclick={() => check(p.id)} disabled={checks[p.id] === "…"}><Wifi size={14} />Ověřit</button>
+                    <button class="btn primary" onclick={() => ((sendTo = p), (picked = new Set()))}><Send size={14} />Poslat…</button>
+                  {/if}
+                  <button class="btn icon ghost" title="Zrušit spárování" aria-label="Zrušit spárování" onclick={() => unpair(p.id, p.name)}>
+                    <Link2Off size={15} />
+                  </button>
+                {:else}
+                  <button class="btn primary" onclick={() => pair(p.id, p.name)} disabled={!!pairing && !pairing.result}>Spárovat</button>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
+
+    {/if}
 
     {#if error}<p class="err">{error}</p>{/if}
   </div>
 
   {#snippet foot()}
-    <button class="btn primary lg" onclick={() => (app.peerOpen = false)}>Hotovo</button>
+    {#if sendTo}
+      <button class="btn ghost lg" onclick={() => (sendTo = null)}>Zpět</button>
+      <button class="btn primary lg" onclick={startSend} disabled={sendIds.size === 0 && picked.size === 0}>
+        <Send size={16} />Poslat na {sendTo.name}
+      </button>
+    {:else}
+      <button class="btn primary lg" onclick={() => (app.peerOpen = false)}>Hotovo</button>
+    {/if}
   {/snippet}
 </SheetFrame>
 
@@ -262,6 +379,66 @@
   }
   .err {
     color: var(--danger);
+  }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .sec-head .eyebrow {
+    margin: 0;
+  }
+  .count {
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .pick {
+    max-height: 380px;
+    overflow-y: auto;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 34px;
+    flex: none;
+    padding-right: 12px;
+    border: 0;
+    border-radius: var(--r-control);
+    background: none;
+    color: var(--text-2);
+    font: inherit;
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .row:hover {
+    background: var(--surface-3);
+  }
+  .pname {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tag {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .pcount {
+    font-size: 12px;
+    color: var(--text-3);
   }
   .peers {
     display: flex;

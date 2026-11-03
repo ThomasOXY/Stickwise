@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 pub use identity::{Identity, cert_id, pairing_code};
@@ -72,7 +73,7 @@ pub enum Msg {
     Pong,
 }
 
-fn write_frame(w: &mut impl Write, m: &Msg) -> Result<()> {
+fn write_frame<T: Serialize>(w: &mut impl Write, m: &T) -> Result<()> {
     let b = serde_json::to_vec(m)?;
     w.write_all(&(b.len() as u32).to_be_bytes())?;
     w.write_all(&b)?;
@@ -80,7 +81,7 @@ fn write_frame(w: &mut impl Write, m: &Msg) -> Result<()> {
     Ok(())
 }
 
-fn read_frame(r: &mut impl Read) -> Result<Msg> {
+fn read_frame<T: DeserializeOwned>(r: &mut impl Read) -> Result<T> {
     let mut n = [0u8; 4];
     r.read_exact(&mut n)?;
     let n = u32::from_be_bytes(n) as usize;
@@ -92,19 +93,37 @@ fn read_frame(r: &mut impl Read) -> Result<Msg> {
     Ok(serde_json::from_slice(&b)?)
 }
 
-/// A connection between two paired Macs.
+/// A connection between two paired Macs. Messages are any JSON the two
+/// sides agree on ([`Msg::Ping`] / [`Msg::Pong`] are answered by default);
+/// raw bytes (files) go through `Read` / `Write` between them.
 pub struct Session {
     stream: tls::Stream,
     pub peer_id: String,
     pub peer_name: String,
 }
 
+impl Read for Session {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.stream.read(buf)
+    }
+}
+
+impl Write for Session {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.stream.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
 impl Session {
-    pub fn send(&mut self, m: &Msg) -> Result<()> {
+    pub fn send<T: Serialize>(&mut self, m: &T) -> Result<()> {
         write_frame(&mut self.stream, m)
     }
 
-    pub fn recv(&mut self) -> Result<Msg> {
+    pub fn recv<T: DeserializeOwned>(&mut self) -> Result<T> {
         read_frame(&mut self.stream)
     }
 
@@ -201,7 +220,7 @@ fn load_paired(dir: &Path) -> Vec<Paired> {
 
 /// Answer pings until the other side hangs up.
 fn serve_pings(mut s: Session) {
-    while let Ok(m) = s.recv() {
+    while let Ok(m) = s.recv::<Msg>() {
         if m == Msg::Ping && s.send(&Msg::Pong).is_err() {
             break;
         }
@@ -292,7 +311,7 @@ impl Node {
         let inner = self.inner.clone();
         std::thread::Builder::new().name("peer-pair".into()).spawn(move || {
             let name = inner.nearby.lock().unwrap().get(&id).map(|n| n.name.clone()).unwrap_or_default();
-            let (accepted, message) = match read_frame(&mut stream) {
+            let (accepted, message) = match read_frame::<Msg>(&mut stream) {
                 Ok(Msg::PairAccepted) => {
                     inner.remember(&id, &name);
                     (true, format!("Spárováno s {name}."))
@@ -334,7 +353,7 @@ impl Node {
         }
         let (mut stream, id) = self.inner.dial(peer_id)?;
         write_frame(&mut stream, &self.inner.hello(false))?;
-        match read_frame(&mut stream)? {
+        match read_frame::<Msg>(&mut stream)? {
             Msg::Hello { name, .. } => {
                 self.inner.remember(&id, &name);
                 Ok(Session { stream, peer_id: id, peer_name: name })
@@ -350,7 +369,7 @@ impl Node {
         let mut s = self.connect(peer_id)?;
         let t = Instant::now();
         s.send(&Msg::Ping)?;
-        match s.recv()? {
+        match s.recv::<Msg>()? {
             Msg::Pong => Ok(t.elapsed()),
             _ => refused("Druhý Mac odpověděl nesrozumitelně."),
         }

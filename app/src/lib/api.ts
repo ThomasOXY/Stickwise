@@ -320,6 +320,21 @@ export interface PairResult {
   message: string;
 }
 
+/** What another Mac offers to send. */
+export interface OfferRequest {
+  request: number;
+  from: string;
+  summary: {
+    /** Playlists and sets (not folders). */
+    playlists: string[];
+    sets: number;
+    tracks: number;
+    /** Tracks this Mac does not have yet, and their size. */
+    newTracks: number;
+    newBytes: number;
+  };
+}
+
 export const peerApi = {
   settings: () => invoke<PeerSettings>("peer_settings"),
   setMusicDir: (path: string | null) => invoke<PeerSettings>("peer_set_music_dir", { path }),
@@ -330,6 +345,9 @@ export const peerApi = {
   unpair: (id: string) => invoke<void>("peer_unpair", { id }),
   /** Milliseconds there and back. */
   ping: (id: string) => invoke<number>("peer_ping", { id }),
+  /** Send playlists (folders whole) and tracks; returns the job id. */
+  send: (id: string, playlistIds: number[], trackIds: number[]) => invoke<number>("peer_send", { id, playlistIds, trackIds }),
+  answerOffer: (request: number, accept: boolean) => invoke<void>("peer_answer_offer", { request, accept }),
 };
 
 export const libApi = {

@@ -20,6 +20,7 @@ analyzer.workspace = true
 library.workspace = true
 engine-library.workspace = true
 peerlink.workspace = true
+libsync.workspace = true
 libc = "0.2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

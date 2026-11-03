@@ -2284,6 +2284,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsync"
+version = "0.2.0"
+dependencies = [
+ "blake3",
+ "libc",
+ "library",
+ "peerlink",
+ "pioneer-formats",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3288,6 +3302,7 @@ dependencies = [
  "engine-library",
  "libc",
  "library",
+ "libsync",
  "peerlink",
  "pioneer-formats",
  "serde",

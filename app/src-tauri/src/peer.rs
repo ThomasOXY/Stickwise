@@ -4,15 +4,20 @@
 //! wherever their files lie.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+use libsync::{Host, Outcome, Progress, Summary};
+use library::transfer::ApplyReport;
 use peerlink::{Event, Node, Peer};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::{CmdResult, blocking, err};
-use crate::library_cmds::lib;
+use crate::dto::JobEvent;
+use crate::jobs::Jobs;
+use crate::library_cmds::{LibState, analysis_dir, emit_job, lib};
 
 const MUSIC_DIR_KEY: &str = "peer.music_dir";
 
@@ -39,6 +44,14 @@ struct FingerprintProgress {
 
 fn default_music_dir() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Music/Stickwise")
+}
+
+fn music_dir(app: &AppHandle) -> PathBuf {
+    lib(app, |l| l.meta(MUSIC_DIR_KEY))
+        .ok()
+        .flatten()
+        .map(PathBuf::from)
+        .unwrap_or_else(default_music_dir)
 }
 
 fn settings(app: &AppHandle) -> CmdResult<PeerSettings> {
@@ -85,6 +98,22 @@ pub fn start_fingerprints(app: AppHandle) {
                 std::thread::sleep(RESCAN);
             }
         });
+}
+
+/// Fingerprint now the tracks of `ids` that have none or an outdated one
+/// (sending cannot wait for the background pass).
+fn fingerprint_now(app: &AppHandle, ids: &[i64]) -> CmdResult<()> {
+    let want: std::collections::HashSet<i64> = ids.iter().copied().collect();
+    let stamps = lib(app, |l| l.file_stamps())?;
+    for s in stamps.iter().filter(|s| want.contains(&s.id)) {
+        let Ok(m) = std::fs::metadata(&s.path) else { continue };
+        if !s.stale(m.len(), mtime(&m)) {
+            continue;
+        }
+        let fp = library::peer::fingerprint_file(Path::new(&s.path)).map_err(err)?;
+        lib(app, |l| l.set_fingerprint(s.id, &fp, m.len(), mtime(&m)))?;
+    }
+    Ok(())
 }
 
 fn mtime(m: &std::fs::Metadata) -> i64 {
@@ -172,6 +201,10 @@ struct PairResultDto {
 }
 
 pub fn start_node(app: &AppHandle, dir: PathBuf) -> PeerNode {
+    let serving = app.clone();
+    let on_session: peerlink::OnSession = Arc::new(move |s| {
+        libsync::serve(s, &AppHost { app: serving.clone(), job: Mutex::new(None) });
+    });
     let handle = app.clone();
     let on_event = Arc::new(move |e: Event| {
         let _ = match e {
@@ -191,7 +224,7 @@ pub fn start_node(app: &AppHandle, dir: PathBuf) -> PeerNode {
             name: computer_name(),
             discovery: true,
             on_event,
-            on_session: None,
+            on_session: Some(on_session),
         })
         .map_err(err),
     )
@@ -240,4 +273,201 @@ pub async fn peer_ping(app: AppHandle, id: String) -> CmdResult<u32> {
         Ok(d.as_millis().max(1) as u32)
     })
     .await
+}
+
+// ---- Sending and receiving ----------------------------------------------
+
+/// The offer from another Mac waiting for the DJ's answer (one at a time).
+#[derive(Default)]
+pub struct OfferAsk {
+    pending: Mutex<Option<(u64, mpsc::Sender<bool>)>>,
+    next: AtomicU64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct OfferDto {
+    request: u64,
+    from: String,
+    summary: Summary,
+}
+
+fn plural(n: usize, one: &str, few: &str, many: &str) -> String {
+    let w = match n {
+        1 => one,
+        2..=4 => few,
+        _ => many,
+    };
+    format!("{n} {w}")
+}
+
+/// "12 nových skladeb, 2 playlisty, cue u 3 skladeb" — what changed.
+fn report_text(r: &ApplyReport) -> String {
+    let mut parts = Vec::new();
+    if r.tracks_added > 0 {
+        parts.push(plural(r.tracks_added, "nová skladba", "nové skladby", "nových skladeb"));
+    }
+    let lists = r.playlists_added + r.playlists_updated;
+    if lists > 0 {
+        parts.push(plural(lists, "playlist", "playlisty", "playlistů"));
+    }
+    if r.cues_updated > 0 {
+        parts.push(format!("nové cue u {}", plural(r.cues_updated, "skladby", "skladeb", "skladeb")));
+    }
+    let mut text = if parts.is_empty() { "všechno už tu bylo".to_string() } else { parts.join(", ") };
+    if !r.skipped.is_empty() {
+        text.push_str(&format!(". Nepřišlo: {}", r.skipped.join("; ")));
+    }
+    text
+}
+
+/// This app as the receiving side of [`libsync`]: one per connection.
+struct AppHost {
+    app: AppHandle,
+    /// The job showing this transfer, with its cancel flag.
+    job: Mutex<Option<(u32, Arc<AtomicBool>)>>,
+}
+
+impl AppHost {
+    fn event(&self, from: &str, state: &'static str, p: &Progress, message: String) -> Option<(JobEvent, Arc<AtomicBool>)> {
+        let (id, cancel) = self.job.lock().unwrap().clone()?;
+        let ev = JobEvent {
+            id,
+            label: format!("Příjem z {from}"),
+            state,
+            files_done: p.files_done,
+            files_total: p.files_total,
+            bytes_done: p.bytes_done,
+            bytes_total: p.bytes_total.max(1),
+            current: p.current.clone(),
+            message,
+            dest: music_dir(&self.app).display().to_string(),
+            ..Default::default()
+        };
+        Some((ev, cancel))
+    }
+}
+
+impl Host for AppHost {
+    fn library(&self) -> &Mutex<library::Library> {
+        &self.app.state::<LibState>().inner().0
+    }
+
+    fn music_dir(&self) -> PathBuf {
+        music_dir(&self.app)
+    }
+
+    fn anlz_dir(&self) -> PathBuf {
+        analysis_dir(&self.app).unwrap_or_else(|_| default_music_dir().join(".analysis"))
+    }
+
+    fn ask(&self, from: &str, summary: &Summary) -> bool {
+        let asks = self.app.state::<OfferAsk>();
+        let request = asks.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let (tx, rx) = mpsc::channel();
+        {
+            let mut pending = asks.pending.lock().unwrap();
+            if pending.is_some() {
+                return false;
+            }
+            *pending = Some((request, tx));
+        }
+        let _ = self.app.emit("peer-offer", OfferDto { request, from: from.to_string(), summary: summary.clone() });
+        let answer = rx.recv_timeout(libsync::ANSWER_TIMEOUT - Duration::from_secs(5)).ok();
+        *asks.pending.lock().unwrap() = None;
+        if answer.is_none() {
+            let _ = self.app.emit("peer-offer-gone", request);
+        }
+        if answer == Some(true) {
+            *self.job.lock().unwrap() = Some(self.app.state::<Jobs>().start());
+        }
+        answer == Some(true)
+    }
+
+    fn progress(&self, from: &str, p: &Progress) -> bool {
+        let Some((ev, cancel)) = self.event(from, "running", p, String::new()) else { return true };
+        emit_job(&self.app, &ev);
+        !cancel.load(Ordering::Relaxed)
+    }
+
+    fn finished(&self, from: &str, result: &Result<ApplyReport, String>) {
+        let p = Progress::default();
+        let (state, message) = match result {
+            Ok(r) => ("done", format!("Z {from}: {}", report_text(r))),
+            Err(e) => ("error", format!("Příjem z {from} se nepovedl: {e}")),
+        };
+        if let Some((mut ev, _)) = self.event(from, state, &p, message) {
+            ev.files_done = ev.files_total;
+            emit_job(&self.app, &ev);
+            self.app.state::<Jobs>().finish(ev.id);
+        }
+        if result.is_ok() {
+            let _ = self.app.emit("library-changed", ());
+        }
+    }
+}
+
+/// The DJ's answer to an offer from another Mac.
+#[tauri::command]
+pub fn peer_answer_offer(asks: State<'_, OfferAsk>, request: u64, accept: bool) {
+    if let Some((r, tx)) = asks.pending.lock().unwrap().as_ref()
+        && *r == request
+    {
+        let _ = tx.send(accept);
+    }
+}
+
+/// Send playlists / sets (folders whole) and tracks to a paired Mac, as a
+/// background job; returns the job id.
+#[tauri::command]
+pub fn peer_send(
+    app: AppHandle,
+    jobs: State<'_, Jobs>,
+    id: String,
+    playlist_ids: Vec<i64>,
+    track_ids: Vec<i64>,
+) -> CmdResult<u32> {
+    let node = app.state::<PeerNode>();
+    let name = node.get()?.peers().into_iter().find(|p| p.id == id).map(|p| p.name).unwrap_or_else(|| "Mac".into());
+    let (job, cancel) = jobs.start();
+    std::thread::spawn(move || {
+        let mut ev = JobEvent {
+            id: job,
+            label: format!("Posílání na {name}"),
+            state: "running",
+            current: format!("Čekám, až to {name} přijme…"),
+            bytes_total: 1,
+            ..Default::default()
+        };
+        emit_job(&app, &ev);
+        let result = (|| -> CmdResult<Outcome> {
+            let (_, tracks) = lib(&app, |l| l.selection(&playlist_ids, &track_ids))?;
+            fingerprint_now(&app, &tracks)?;
+            let offer = lib(&app, |l| l.offer(&playlist_ids, &track_ids))?;
+            let mut session = app.state::<PeerNode>().get()?.connect(&id).map_err(err)?;
+            let state = app.state::<LibState>();
+            libsync::send(&mut session, &state.0, offer, |p| {
+                let mut e = ev.clone();
+                e.files_done = p.files_done;
+                e.files_total = p.files_total;
+                e.bytes_done = p.bytes_done;
+                e.bytes_total = p.bytes_total.max(1);
+                e.current = p.current.clone();
+                emit_job(&app, &e);
+                !cancel.load(Ordering::Relaxed)
+            })
+            .map_err(err)
+        })();
+        ev.current.clear();
+        ev.bytes_done = ev.bytes_total;
+        (ev.state, ev.message) = match result {
+            Ok(Outcome::Sent(r)) => ("done", format!("Na {name}: {}", report_text(&r))),
+            Ok(Outcome::Declined(why)) => ("cancelled", why),
+            Err(_) if cancel.load(Ordering::Relaxed) => ("cancelled", "Posílání zastaveno.".into()),
+            Err(e) => ("error", format!("Poslat na {name} se nepovedlo: {e}")),
+        };
+        emit_job(&app, &ev);
+        app.state::<Jobs>().finish(job);
+    });
+    Ok(job)
 }

@@ -15,6 +15,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(jobs::Jobs::default())
+        .manage(peer::OfferAsk::default())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
@@ -87,6 +88,8 @@ fn main() {
             peer::peer_answer,
             peer::peer_unpair,
             peer::peer_ping,
+            peer::peer_send,
+            peer::peer_answer_offer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stickwise");
