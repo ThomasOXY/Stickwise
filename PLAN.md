@@ -43,7 +43,8 @@ Datum plánu: 2026-10-13
 - ⏳ Neověřeno mezi dvěma fyzickými Macy. Artwork se zatím neposílá.
 - ✅ **P4 — Zrcadlo 1:1**: u spárovaného Macu „Zrcadlit“. Obě strany si dopočítají otisky, vymění si celou knihovnu (playlisty se skladbami na odpojeném disku se vynechají, aby se na druhé straně neořezaly), každá spočítá nanečisto (transakce, která se vrátí), co by se u ní změnilo. DJ na Macu, kde zrcadlení spustil, vidí změny na obou stranách (nové skladby a GB, novější cue / tagy / gridy, playlisty) a playlisty smazané na jedné straně — zaškrtnuté se smažou i na druhé, odškrtnuté se vrátí. Pak soubory jedním směrem, potom druhým, pravidla stejná jako u P3. Druhý Mac zrcadlení od spárovaného Macu přijme bez ptaní a ukáže ho jako úlohu. Testy: obě knihovny stejné, druhé zrcadlení nic nepřenáší, novější cue z druhé strany (původní do zálohy), potvrzené a nepotvrzené mazání, zrušení. Kopie skutečné knihovny (6 002 skladeb): nabídka 0,9 s / 3,8 MB, náhled 25–300 ms.
 - ⏳ Neověřeno mezi dvěma fyzickými Macy.
-- ⏭ Další: P5 — doladění (obnova přerušeného přenosu, artwork, „Poslat na Mac“ v menu playlistu, volitelně automatický sync).
+- ✅ **P5 — doladění**: přerušený přenos pokračuje tam, kde skončil (skrytý `.stickwise-part` zůstane, příjemce řekne, kolik už má, otisk se ověří přes celý soubor); artwork jde se skladbou (`analysis/peer/<otisk>/artwork.*`); „Poslat na Mac…“ v menu playlistu / setu / složky (s jedním Macem v síti rovnou výběr); volitelné **automatické zrcadlení**, když se spárovaný Mac objeví v síti — bez ptaní jen když se nic nemaže a je místo, jinak náhled; nejvýš jednou za 10 min, začne Mac s nižším id (druhý po 45 s, pokud mezitím nic neproběhlo).
+- ⏳ Neověřeno mezi dvěma fyzickými Macy. Rozpracované `.stickwise-part` soubory, které už nikdy nepřijdou, se zatím samy nemažou.
 
 ## 1. Co už existuje (rešerše GitHubu)
 

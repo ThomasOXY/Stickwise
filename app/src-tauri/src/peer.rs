@@ -33,6 +33,8 @@ pub struct PeerSettings {
     pub default_music_dir: bool,
     pub fingerprinted: usize,
     pub total: usize,
+    /// Mirror with paired Macs by itself when they come on the network.
+    pub auto_mirror: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -61,6 +63,7 @@ fn settings(app: &AppHandle) -> CmdResult<PeerSettings> {
         music_dir: dir.unwrap_or_else(|| default_music_dir().display().to_string()),
         fingerprinted,
         total,
+        auto_mirror: auto_mirror_on(app),
     })
 }
 
@@ -192,7 +195,10 @@ pub fn start_node(app: &AppHandle, dir: PathBuf) -> PeerNode {
     let handle = app.clone();
     let on_event = Arc::new(move |e: Event| {
         let _ = match e {
-            Event::PeersChanged => handle.emit("peer-peers", ()),
+            Event::PeersChanged => {
+                auto_mirror_check(&handle);
+                handle.emit("peer-peers", ())
+            }
             Event::PairRequest { request, peer, code } => {
                 handle.emit("peer-pair-request", PairRequestDto { request, peer, code })
             }
@@ -375,6 +381,13 @@ impl Host for AppHost {
 
     fn started(&self, from: &str, mirror: bool) {
         *self.label.lock().unwrap() = if mirror { format!("Zrcadlení s {from}") } else { format!("Příjem z {from}") };
+        // The other Mac started a mirror: this one need not start its own.
+        if mirror
+            && let Ok(n) = self.app.state::<PeerNode>().get()
+            && let Some(p) = n.peers().into_iter().find(|p| p.name == from)
+        {
+            self.app.state::<AutoMirror>().last.lock().unwrap().insert(p.id, Instant::now());
+        }
         let mut job = self.job.lock().unwrap();
         if job.is_none() {
             *job = Some(self.app.state::<Jobs>().start());
@@ -495,15 +508,28 @@ struct MirrorPreviewDto {
 /// Mirror the library with a paired Mac, as a background job; the DJ
 /// confirms the changes in between. Returns the job id.
 #[tauri::command]
-pub fn peer_mirror(app: AppHandle, jobs: State<'_, Jobs>, id: String) -> CmdResult<u32> {
-    let node = app.state::<PeerNode>();
-    let name = node.get()?.peers().into_iter().find(|p| p.id == id).map(|p| p.name).unwrap_or_else(|| "Mac".into());
+pub fn peer_mirror(app: AppHandle, id: String) -> CmdResult<u32> {
     if app.state::<MirrorAsk>().pending.lock().unwrap().is_some() {
         return Err("Jedno zrcadlení už čeká na potvrzení.".into());
     }
-    let (job, cancel) = jobs.start();
+    start_mirror(&app, id, false)
+}
+
+/// Mirror with `id` in the background. `auto`: started because the Mac
+/// came on the network; it goes ahead without asking when nothing would
+/// be deleted, else the DJ sees the preview as usual.
+fn start_mirror(app: &AppHandle, id: String, auto: bool) -> CmdResult<u32> {
+    let node = app.state::<PeerNode>();
+    let name = node.get()?.peers().into_iter().find(|p| p.id == id).map(|p| p.name).unwrap_or_else(|| "Mac".into());
+    let auto_state = app.state::<AutoMirror>();
+    if !auto_state.running.lock().unwrap().insert(id.clone()) {
+        return Err(format!("Zrcadlení s {name} už běží."));
+    }
+    auto_state.last.lock().unwrap().insert(id.clone(), Instant::now());
+    let (job, cancel) = app.state::<Jobs>().start();
+    let app = app.clone();
     std::thread::spawn(move || {
-        let label = format!("Zrcadlení s {name}");
+        let label = if auto { format!("Automatické zrcadlení s {name}") } else { format!("Zrcadlení s {name}") };
         let host = AppHost::new(&app, Some((job, cancel.clone())), label.clone());
         let mut ev = JobEvent { id: job, label, state: "running", bytes_total: 1, ..Default::default() };
         ev.current = "Porovnávám knihovny…".into();
@@ -511,13 +537,23 @@ pub fn peer_mirror(app: AppHandle, jobs: State<'_, Jobs>, id: String) -> CmdResu
         let result = (|| -> CmdResult<MirrorOutcome> {
             let mut session = app.state::<PeerNode>().get()?.connect(&id).map_err(err)?;
             libsync::mirror(&mut session, &host, |preview| {
-                let mut wait = ev.clone();
-                wait.current = "Čekám na potvrzení změn…".into();
-                emit_job(&app, &wait);
+                let quiet = preview.delete_here.is_empty() && preview.delete_there.is_empty() && preview.room_here;
+                if auto && quiet {
+                    return Some(MirrorChoice::default());
+                }
                 let asks = app.state::<MirrorAsk>();
                 let request = asks.next.fetch_add(1, Ordering::Relaxed) + 1;
                 let (tx, rx) = mpsc::channel();
-                *asks.pending.lock().unwrap() = Some((request, tx));
+                {
+                    let mut pending = asks.pending.lock().unwrap();
+                    if pending.is_some() {
+                        return None;
+                    }
+                    *pending = Some((request, tx));
+                }
+                let mut wait = ev.clone();
+                wait.current = "Čekám na potvrzení změn…".into();
+                emit_job(&app, &wait);
                 let _ = app.emit("peer-mirror-preview", MirrorPreviewDto { request, peer: name.clone(), preview: preview.clone() });
                 let answer = rx.recv_timeout(libsync::CONFIRM_TIMEOUT).ok().flatten();
                 *asks.pending.lock().unwrap() = None;
@@ -538,11 +574,78 @@ pub fn peer_mirror(app: AppHandle, jobs: State<'_, Jobs>, id: String) -> CmdResu
         };
         emit_job(&app, &ev);
         app.state::<Jobs>().finish(job);
+        app.state::<AutoMirror>().running.lock().unwrap().remove(&id);
         if matches!(result, Ok(MirrorOutcome::Done { .. })) {
             let _ = app.emit("library-changed", ());
         }
     });
     Ok(job)
+}
+
+// ---- Mirroring by itself ------------------------------------------------
+
+const AUTO_MIRROR_KEY: &str = "peer.auto_mirror";
+/// Not again with the same Mac sooner than this.
+const AUTO_EVERY: Duration = Duration::from_secs(10 * 60);
+/// The Mac with the higher id waits this long for the other to start.
+const AUTO_DEFER: Duration = Duration::from_secs(45);
+
+/// Mirrors running, the last one with each Mac, and the paired Macs seen
+/// on the network (to tell when one comes).
+#[derive(Default)]
+pub struct AutoMirror {
+    running: Mutex<std::collections::HashSet<String>>,
+    last: Mutex<std::collections::HashMap<String, Instant>>,
+    online: Mutex<std::collections::HashSet<String>>,
+}
+
+fn auto_mirror_on(app: &AppHandle) -> bool {
+    lib(app, |l| l.meta(AUTO_MIRROR_KEY)).ok().flatten().as_deref() == Some("1")
+}
+
+/// A paired Mac came on the network: mirror with it if the DJ wants that.
+/// Of the two Macs the one with the lower id starts; the other only if no
+/// mirror happened meanwhile (its DJ may have this off).
+fn auto_mirror_check(app: &AppHandle) {
+    let Some(node) = app.try_state::<PeerNode>() else { return };
+    let Ok(n) = node.get() else { return };
+    let Some(state) = app.try_state::<AutoMirror>() else { return };
+    let now: std::collections::HashSet<String> =
+        n.peers().into_iter().filter(|p| p.paired && p.online).map(|p| p.id).collect();
+    let came: Vec<String> = {
+        let mut seen = state.online.lock().unwrap();
+        let came = now.difference(&seen).cloned().collect();
+        *seen = now;
+        came
+    };
+    if !auto_mirror_on(app) {
+        return;
+    }
+    for id in came {
+        let wait = if n.id() < id.as_str() { Duration::ZERO } else { AUTO_DEFER };
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(wait);
+            let recent = app.state::<AutoMirror>().last.lock().unwrap().get(&id).is_some_and(|t| t.elapsed() < AUTO_EVERY);
+            let waiting = app.state::<MirrorAsk>().pending.lock().unwrap().is_some();
+            if !recent && !waiting {
+                let _ = start_mirror(&app, id, true);
+            }
+        });
+    }
+}
+
+#[tauri::command]
+pub fn peer_set_auto_mirror(app: AppHandle, on: bool) -> CmdResult<PeerSettings> {
+    if on {
+        lib(&app, |l| l.set_meta(AUTO_MIRROR_KEY, "1"))?;
+        // Macs on the network now count as just come.
+        app.state::<AutoMirror>().online.lock().unwrap().clear();
+        auto_mirror_check(&app);
+    } else {
+        lib(&app, |l| l.clear_meta(AUTO_MIRROR_KEY))?;
+    }
+    settings(&app)
 }
 
 /// The DJ's go for a mirror (`None` calls it off).

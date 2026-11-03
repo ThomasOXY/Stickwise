@@ -212,6 +212,12 @@ impl Library {
         Ok(())
     }
 
+    /// The image shown for a track (a file path, empty for none).
+    pub fn set_artwork(&self, track_id: i64, path: &str) -> Result<()> {
+        self.conn.execute("UPDATE tracks SET artwork = ?2 WHERE id = ?1", params![track_id, path])?;
+        Ok(())
+    }
+
     pub fn clear_meta(&self, key: &str) -> Result<()> {
         self.conn.execute("DELETE FROM meta WHERE key = ?1", [key])?;
         Ok(())

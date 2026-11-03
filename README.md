@@ -21,6 +21,12 @@ rbx pdb /Volumes/DJ                       # technický výpis export.pdb
 ```
 Všechny příkazy flashku jen **čtou**.
 
+## Sync mezi Macy
+Stickwise na dvou Macích ve stejné síti se najdou samy (Bonjour) a po spárování kódem si posílají
+knihovnu přes šifrované spojení: **Poslat** vybrané sety a playlisty, nebo **Zrcadlit** celou knihovnu
+oběma směry s náhledem změn. Hudba, kterou Mac už má, se nepřepisuje; u cue, gridů a tagů vyhrává
+novější úprava; smazání playlistu se propíše jen po potvrzení. Podrobnosti v [PLAN.md](PLAN.md) (5b).
+
 ## Vydání a aktualizace
 ```sh
 scripts/release.sh 0.2.0              # poznámky z feat/fix commitů od minulé verze

@@ -7,6 +7,7 @@
   import { plural, size } from "./format";
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
+  import SheetSwitch from "./SheetSwitch.svelte";
   import { app } from "./state.svelte";
 
   let s = $state<PeerSettings | null>(null);
@@ -110,7 +111,23 @@
   const ready = $derived(!!s && s.fingerprinted >= s.total);
   const pct = $derived(s && s.total ? (s.fingerprinted / s.total) * 100 : 0);
 
-  const refresh = () => peerApi.list().then((v) => (list = v));
+  /** Playlists chosen from a playlist's menu, kept until a Mac is picked. */
+  const preset = app.peerSendPreset;
+  app.peerSendPreset = null;
+  const presetNames = $derived((preset ?? []).map((id) => lists.find((p) => p.id === id)?.name).filter(Boolean).join(", "));
+
+  const refresh = () =>
+    peerApi.list().then((v) => {
+      list = v;
+      // One Mac to send to: straight to it.
+      const ready = v.peers.filter((p) => p.paired && p.online);
+      if (preset && !sendTo && ready.length === 1) choose(ready[0]);
+    });
+
+  function choose(p: Peer) {
+    sendTo = p;
+    picked = new Set(preset ?? []);
+  }
 
   onMount(() => {
     peerApi.settings().then((v) => (s = v), (e) => (error = String(e)));
@@ -225,6 +242,23 @@
         <p class="hint">Uvnitř podle interpreta a alba. Soubory, které už tu jsou, se nikdy nepřepíšou.</p>
       </section>
 
+      {#if s}
+        <section>
+          <SheetSwitch
+            checked={s.autoMirror}
+            label="Zrcadlit samo, když je spárovaný Mac v síti"
+            desc="Bez ptaní jen tehdy, když se nemá nic mazat; jinak ukáže, co se změní. Nejvýš jednou za 10 minut."
+            onchange={async (on) => {
+              try {
+                s = await peerApi.setAutoMirror(on);
+              } catch (e) {
+                error = String(e);
+              }
+            }}
+          />
+        </section>
+      {/if}
+
       <section>
         <div class="eyebrow">Příprava knihovny</div>
         {#if s}
@@ -245,6 +279,9 @@
 
       <section>
         <div class="eyebrow">Macy</div>
+        {#if preset}
+          <p class="hint">Vyber Mac, kam poslat „{presetNames}“. Posílat jde jen na spárovaný Mac ve stejné síti.</p>
+        {/if}
         {#if pairing}
           <div class="pairing">
             {#if !pairing.result}
@@ -281,7 +318,7 @@
                       <Wifi size={15} />
                     </button>
                     <button class="btn" title="Obě knihovny budou stejné" onclick={() => mirror(p)}><ArrowLeftRight size={14} />Zrcadlit</button>
-                    <button class="btn primary" onclick={() => ((sendTo = p), (picked = new Set()))}><Send size={14} />Poslat…</button>
+                    <button class="btn primary" onclick={() => choose(p)}><Send size={14} />Poslat…</button>
                   {/if}
                   <button class="btn icon ghost" title="Zrušit spárování" aria-label="Zrušit spárování" onclick={() => unpair(p.id, p.name)}>
                     <Link2Off size={15} />

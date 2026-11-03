@@ -17,6 +17,7 @@ fn main() {
         .manage(jobs::Jobs::default())
         .manage(peer::OfferAsk::default())
         .manage(peer::MirrorAsk::default())
+        .manage(peer::AutoMirror::default())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
@@ -93,6 +94,7 @@ fn main() {
             peer::peer_answer_offer,
             peer::peer_mirror,
             peer::peer_mirror_answer,
+            peer::peer_set_auto_mirror,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stickwise");

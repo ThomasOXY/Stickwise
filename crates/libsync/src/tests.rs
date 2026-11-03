@@ -229,20 +229,54 @@ fn a_declined_offer_changes_nothing() {
 }
 
 #[test]
-fn stopping_midway_keeps_no_part_files() {
+fn a_broken_transfer_goes_on_where_it_stopped() {
     let w = world(true);
-    let offer = {
+    let offer = || {
         let l = w.ah.lib.lock().unwrap();
         l.offer(&[l.playlists().unwrap()[0].id], &[]).unwrap()
     };
     let mut s = w.a.connect(w.b.id()).unwrap();
-    let r = send(&mut s, &w.ah.lib, offer, |p| p.bytes_done < 300_000);
+    let r = send(&mut s, &w.ah.lib, offer(), |p| p.bytes_done < 300_000);
     assert!(r.is_err());
     drop(s);
     assert!(w.done.recv_timeout(Duration::from_secs(5)).unwrap().is_err());
     assert_eq!(titles(&w.host.lib), ["Tři"]);
-    let left: Vec<_> = walk(&w.host.music).into_iter().filter(|p| p.to_string_lossy().contains("stickwise-part")).collect();
-    assert!(left.is_empty(), "{left:?}");
+    let parts: Vec<_> = walk(&w.host.music).into_iter().filter(|p| p.to_string_lossy().contains("stickwise-part")).collect();
+    assert_eq!(parts.len(), 1, "the part stays for next time");
+
+    // Next time only the rest comes, and the file is whole.
+    let mut s = w.a.connect(w.b.id()).unwrap();
+    let mut total = 0;
+    let Outcome::Sent(r) = send(&mut s, &w.ah.lib, offer(), |p| {
+        total = p.bytes_total;
+        true
+    })
+    .unwrap() else {
+        panic!("declined")
+    };
+    assert_eq!(r.tracks_added, 2);
+    assert!(total < 700_000, "sent {total} bytes, not just the rest");
+    let b = w.host.lib.lock().unwrap();
+    let one = b.tracks().unwrap().into_iter().find(|t| t.title == "Jedna").unwrap();
+    assert_eq!(std::fs::read(&one.path).unwrap(), vec![1u8; 700_000]);
+    assert!(walk(&w.host.music).iter().all(|p| !p.to_string_lossy().contains("stickwise-part")));
+}
+
+#[test]
+fn artwork_comes_along() {
+    let w = world(true);
+    {
+        let l = w.ah.lib.lock().unwrap();
+        let art = w.a_src.join("cover.JPG");
+        std::fs::write(&art, b"jpeg").unwrap();
+        let id = l.tracks().unwrap().into_iter().find(|t| t.title == "Dva").unwrap().id;
+        l.set_artwork(id, &art.display().to_string()).unwrap();
+    }
+    send_all(&w);
+    let b = w.host.lib.lock().unwrap();
+    let two = b.tracks().unwrap().into_iter().find(|t| t.title == "Dva").unwrap();
+    assert!(two.artwork.ends_with("artwork.jpg"), "{}", two.artwork);
+    assert_eq!(std::fs::read(&two.artwork).unwrap(), b"jpeg");
 }
 
 fn walk(dir: &Path) -> Vec<PathBuf> {

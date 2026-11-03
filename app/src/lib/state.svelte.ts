@@ -73,6 +73,8 @@ class AppState {
   formatOpen = $state(false);
   /** Sync with Stickwise on other Macs. */
   peerOpen = $state(false);
+  /** Playlists to send, chosen before the sync sheet opened (from a playlist's menu). */
+  peerSendPreset = $state<number[] | null>(null);
   /** Another Mac asks to pair, waiting for the DJ's answer. */
   pairRequest = $state<PairRequest | null>(null);
   /** Another Mac offers playlists, waiting for the DJ's answer. */

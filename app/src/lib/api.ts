@@ -290,6 +290,8 @@ export interface PeerSettings {
   defaultMusicDir: boolean;
   fingerprinted: number;
   total: number;
+  /** Mirror with paired Macs by itself when they come on the network. */
+  autoMirror: boolean;
 }
 
 export interface Peer {
@@ -381,6 +383,7 @@ export interface MirrorRequest {
 export const peerApi = {
   settings: () => invoke<PeerSettings>("peer_settings"),
   setMusicDir: (path: string | null) => invoke<PeerSettings>("peer_set_music_dir", { path }),
+  setAutoMirror: (on: boolean) => invoke<PeerSettings>("peer_set_auto_mirror", { on }),
   list: () => invoke<PeerList>("peer_list"),
   /** Returns the code both Macs show. */
   pair: (id: string) => invoke<string>("peer_pair", { id }),

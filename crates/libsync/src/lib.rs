@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -67,9 +67,18 @@ enum Wire {
     Offer { offer: Offer },
     Declined { reason: String },
     Want { want: Vec<Want> },
-    /// Header of one track's files; `audio` bytes of audio, then each
-    /// analysis file's bytes, follow raw.
-    File { fingerprint: String, audio: u64, anlz: Vec<(String, u64)> },
+    /// Header of one track's files. Raw bytes follow: the audio file's
+    /// (`audio` long) from byte `from` on, each analysis file's, then the
+    /// artwork's (extension, length).
+    File {
+        fingerprint: String,
+        audio: u64,
+        #[serde(default)]
+        from: u64,
+        anlz: Vec<(String, u64)>,
+        #[serde(default)]
+        artwork: Option<(String, u64)>,
+    },
     /// The sender could not read this track's file.
     Skip { fingerprint: String, reason: String },
     Finished,
@@ -210,6 +219,15 @@ fn bytes_of(offer: &Offer, want: &[Want]) -> u64 {
     want.iter().filter(|w| w.audio).map(|w| sizes.get(w.fingerprint.as_str()).copied().unwrap_or(0)).sum()
 }
 
+/// One track's files to send.
+struct Outgoing<'a> {
+    want: &'a Want,
+    track: &'a TrackData,
+    audio: Option<PathBuf>,
+    anlz: Vec<(String, PathBuf)>,
+    artwork: Option<PathBuf>,
+}
+
 /// Stream the files of `want` (tracks of `offer` in this library) to the
 /// other side, then [`Wire::Finished`].
 fn push_files(
@@ -232,64 +250,79 @@ fn push_files(
                 None => None,
             }
         };
-        let Some(local) = local else {
-            plan.push((w, *t, None, Vec::new()));
-            continue;
-        };
-        let audio = w.audio.then(|| PathBuf::from(&local.path)).filter(|p| p.is_file());
-        let anlz: Vec<(String, PathBuf)> = if w.anlz && !local.anlz.is_empty() {
-            ["DAT", "EXT", "2EX"]
-                .iter()
-                .map(|e| (e.to_string(), Path::new(&local.anlz).with_extension(e)))
-                .filter(|(_, p)| p.is_file())
-                .collect()
-        } else {
-            Vec::new()
-        };
-        plan.push((w, *t, audio, anlz));
+        let mut out = Outgoing { want: w, track: t, audio: None, anlz: Vec::new(), artwork: None };
+        if let Some(local) = local {
+            out.audio = w.audio.then(|| PathBuf::from(&local.path)).filter(|p| p.is_file());
+            if w.anlz && !local.anlz.is_empty() {
+                out.anlz = ["DAT", "EXT", "2EX"]
+                    .iter()
+                    .map(|e| (e.to_string(), Path::new(&local.anlz).with_extension(e)))
+                    .filter(|(_, p)| p.is_file())
+                    .collect();
+            }
+            out.artwork = w.artwork.then(|| PathBuf::from(&local.artwork)).filter(|p| !local.artwork.is_empty() && p.is_file());
+        }
+        plan.push(out);
     }
     let size = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
     let mut p = Progress {
         files_total: plan.len(),
         bytes_total: plan
             .iter()
-            .map(|(_, _, a, z)| a.as_deref().map_or(0, size) + z.iter().map(|(_, f)| size(f)).sum::<u64>())
+            .map(|o| {
+                o.audio.as_deref().map_or(0, |a| size(a).saturating_sub(o.want.resume_from))
+                    + o.anlz.iter().map(|(_, f)| size(f)).sum::<u64>()
+                    + o.artwork.as_deref().map_or(0, size)
+            })
             .sum(),
         ..Default::default()
     };
     progress(&p);
 
-    for (w, t, audio, anlz) in plan {
-        p.current = label(t);
+    for o in plan {
+        p.current = label(o.track);
         if !progress(&p) {
             return other(STOPPED);
         }
-        if w.audio && audio.is_none() {
+        if o.want.audio && o.audio.is_none() {
             session.send(&Wire::Skip {
-                fingerprint: w.fingerprint.clone(),
+                fingerprint: o.want.fingerprint.clone(),
                 reason: "soubor na odesílajícím Macu chybí".into(),
             })?;
             p.files_done += 1;
             continue;
         }
         let mut files: Vec<(std::fs::File, u64)> = Vec::new();
+        let (mut audio_len, mut from) = (0, 0);
+        if let Some(a) = &o.audio {
+            let mut f = std::fs::File::open(a)?;
+            audio_len = f.metadata()?.len();
+            // Resume only where the bytes before still fit.
+            from = if o.want.resume_from < audio_len { o.want.resume_from } else { 0 };
+            f.seek(SeekFrom::Start(from))?;
+            files.push((f, audio_len - from));
+        }
         let mut header_anlz = Vec::new();
-        let audio_len = match &audio {
-            Some(a) => {
-                let f = std::fs::File::open(a)?;
-                let n = f.metadata()?.len();
-                files.push((f, n));
-                n
-            }
-            None => 0,
-        };
-        for (ext, path) in &anlz {
+        for (ext, path) in &o.anlz {
             let f = std::fs::File::open(path)?;
             let n = f.metadata()?.len();
             header_anlz.push((ext.clone(), n));
             files.push((f, n));
         }
-        session.send(&Wire::File { fingerprint: w.fingerprint.clone(), audio: audio_len, anlz: header_anlz })?;
+        let mut artwork = None;
+        if let Some(path) = &o.artwork {
+            let f = std::fs::File::open(path)?;
+            let n = f.metadata()?.len();
+            artwork = Some((o.track.artwork.clone().unwrap_or_default(), n));
+            files.push((f, n));
+        }
+        session.send(&Wire::File {
+            fingerprint: o.want.fingerprint.clone(),
+            audio: audio_len,
+            from,
+            anlz: header_anlz,
+            artwork,
+        })?;
         for (f, n) in files {
             copy_exact(f, session, n, |k| {
                 p.bytes_done += k;
@@ -325,17 +358,18 @@ fn pull_files(
     let mut failed = Vec::new();
     loop {
         match session.recv::<Wire>()? {
-            Wire::File { fingerprint, audio, anlz } => {
+            Wire::File { fingerprint, audio, from, anlz, artwork } => {
                 let Some(t) = tracks.get(fingerprint.as_str()) else {
                     return other("Druhý Mac poslal skladbu, kterou nenabídl.");
                 };
                 p.current = label(t);
+                p.bytes_done += from.min(audio);
                 if !progress(&p) {
                     return other(STOPPED);
                 }
                 let mut got = Received::default();
                 if audio > 0 {
-                    match take_audio(session, t, audio, music, |k| {
+                    match take_audio(session, t, audio, from, music, |k| {
                         p.bytes_done += k;
                         progress(&p)
                     })? {
@@ -345,6 +379,9 @@ fn pull_files(
                 }
                 if !anlz.is_empty() {
                     got.anlz = Some(take_anlz(session, anlz_dir, &fingerprint, &anlz)?);
+                }
+                if let Some((ext, n)) = artwork {
+                    got.artwork = Some(take_artwork(session, anlz_dir, &fingerprint, &ext, n)?);
                 }
                 received.insert(fingerprint, got);
                 p.files_done += 1;
@@ -486,9 +523,10 @@ pub fn summary(offer: &Offer, want: &[Want]) -> Summary {
 /// `None` when the DJ said no.
 fn receive(session: &mut Session, host: &dyn Host, offer: &Offer) -> Result<Option<ApplyReport>> {
     let from = session.peer_name.clone();
-    let want = host.library().lock().unwrap().wants(offer)?;
-    let sum = summary(offer, &want);
     let music = host.music_dir();
+    let mut want = host.library().lock().unwrap().wants(offer)?;
+    set_resume(&mut want, offer, &music);
+    let sum = summary(offer, &want);
     if !enough_room(&music, sum.new_bytes)? {
         let reason = format!("Na disku s {} není dost místa.", music.display());
         session.send(&Wire::Declined { reason })?;
@@ -547,7 +585,8 @@ pub fn mirror(
 
     let (want, preview) = {
         let mut l = lib.lock().unwrap();
-        let want = l.wants(&theirs)?;
+        let mut want = l.wants(&theirs)?;
+        set_resume(&mut want, &theirs, &host.music_dir());
         let new_bytes = bytes_of(&theirs, &want);
         let here = Changes { report: l.preview(&theirs, &want)?, new_bytes, left_out: mine_left };
         let preview = MirrorPreview {
@@ -606,13 +645,14 @@ fn mirror_respond(session: &mut Session, host: &dyn Host, mut theirs: Offer) -> 
     host.started(&from, true);
     let lib = host.library();
     let (mine, mine_left, tombstones) = whole_library(host, &from)?;
+    let music = host.music_dir();
     let (want, changes) = {
         let mut l = lib.lock().unwrap();
-        let want = l.wants(&theirs)?;
+        let mut want = l.wants(&theirs)?;
+        set_resume(&mut want, &theirs, &music);
         let new_bytes = bytes_of(&theirs, &want);
         (want.clone(), Changes { report: l.preview(&theirs, &want)?, new_bytes, left_out: mine_left })
     };
-    let music = host.music_dir();
     if !enough_room(&music, changes.new_bytes)? {
         return other(format!("Na {} není dost místa pro hudbu z {from}.", music.display()));
     }
@@ -650,27 +690,55 @@ fn mirror_respond(session: &mut Session, host: &dyn Host, mut theirs: Offer) -> 
     }
 }
 
-/// Read one audio file off the session into the music folder. The outer
-/// `Err` breaks the connection; the inner one only loses this track.
+/// Where a track's audio goes (its folder), and the hidden file it
+/// arrives in. A transfer that breaks leaves that file for the next one to
+/// go on from.
+fn part_path(music: &Path, t: &TrackData) -> (PathBuf, PathBuf) {
+    let dir = music.join(component(&t.entry.artist, "Neznámý interpret")).join(component(&t.entry.album, "Neznámé album"));
+    let part = dir.join(format!(".{}.stickwise-part", &t.entry.fingerprint[..16.min(t.entry.fingerprint.len())]));
+    (dir, part)
+}
+
+/// Ask for the rest only of audio files that arrived in part before.
+fn set_resume(want: &mut [Want], offer: &Offer, music: &Path) {
+    let tracks: HashMap<&str, &TrackData> = offer.tracks.iter().map(|t| (t.entry.fingerprint.as_str(), t)).collect();
+    for w in want.iter_mut().filter(|w| w.audio) {
+        if let Some(t) = tracks.get(w.fingerprint.as_str()) {
+            w.resume_from = std::fs::metadata(part_path(music, t).1).map_or(0, |m| m.len());
+        }
+    }
+}
+
+/// Read one audio file (`n` bytes, those from `from` on) off the session
+/// into the music folder. The outer `Err` breaks the connection; the inner
+/// one only loses this track.
 fn take_audio(
     session: &mut Session,
     t: &TrackData,
     n: u64,
+    from: u64,
     music: &Path,
     done: impl FnMut(u64) -> bool,
 ) -> Result<std::result::Result<(String, u64, i64), String>> {
-    let dir = music.join(component(&t.entry.artist, "Neznámý interpret")).join(component(&t.entry.album, "Neznámé album"));
+    let (dir, tmp) = part_path(music, t);
     std::fs::create_dir_all(&dir)?;
-    let tmp = dir.join(format!(".{}.stickwise-part", &t.entry.fingerprint[..16.min(t.entry.fingerprint.len())]));
     let mut hasher = blake3::Hasher::new();
+    let have = std::fs::metadata(&tmp).map_or(0, |m| m.len());
+    let mut f = if from == 0 {
+        std::fs::File::create(&tmp)?
+    } else if have == from && from <= n {
+        std::io::copy(&mut std::fs::File::open(&tmp)?, &mut hasher)?;
+        std::fs::OpenOptions::new().append(true).open(&tmp)?
+    } else {
+        // Not the part the sender went on from: take the bytes, drop them.
+        std::io::copy(&mut Read::take(&mut *session, n.saturating_sub(from)), &mut std::io::sink())?;
+        let _ = std::fs::remove_file(&tmp);
+        return Ok(Err("navázání přenosu se nepovedlo, příště přijde celý".into()));
+    };
     {
-        let mut f = std::fs::File::create(&tmp)?;
         let mut w = HashingWriter { inner: &mut f, hasher: &mut hasher };
-        let copied = copy_exact(Read::take(&mut *session, n), &mut w, n, done);
-        if copied.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        copied?;
+        // A break leaves the part for the next transfer.
+        copy_exact(Read::take(&mut *session, n - from), &mut w, n - from, done)?;
         f.sync_all()?;
     }
     if hasher.finalize().to_hex().as_str() != t.entry.fingerprint {
@@ -733,6 +801,22 @@ fn take_anlz(session: &mut Session, dir: &Path, fingerprint: &str, parts: &[(Str
         std::fs::rename(&tmp, &path)?;
     }
     Ok(dir.join("ANLZ0000.DAT").display().to_string())
+}
+
+/// A track's artwork into `dir/peer/<fingerprint>/artwork.<ext>`.
+fn take_artwork(session: &mut Session, dir: &Path, fingerprint: &str, ext: &str, n: u64) -> Result<String> {
+    let dir = dir.join("peer").join(&fingerprint[..16.min(fingerprint.len())]);
+    std::fs::create_dir_all(&dir)?;
+    let ext = if !ext.is_empty() && ext.len() <= 5 && ext.chars().all(|c| c.is_ascii_alphanumeric()) { ext } else { "jpg" };
+    let path = dir.join(format!("artwork.{ext}"));
+    let tmp = dir.join(format!("artwork.{ext}.part"));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        copy_exact(Read::take(&mut *session, n), &mut f, n, |_| true)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, &path)?;
+    Ok(path.display().to_string())
 }
 
 struct HashingWriter<'a, W: Write> {

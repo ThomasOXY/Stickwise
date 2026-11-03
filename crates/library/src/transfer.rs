@@ -93,6 +93,9 @@ pub struct TrackData {
     pub grid: Option<(f64, f64)>,
     /// Analysis files the sender has: `DAT`, `EXT`, `2EX`.
     pub anlz: Vec<String>,
+    /// Extension of the sender's artwork file (`jpg`), if it has one.
+    #[serde(default)]
+    pub artwork: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -118,6 +121,12 @@ pub struct Want {
     pub fingerprint: String,
     pub audio: bool,
     pub anlz: bool,
+    #[serde(default)]
+    pub artwork: bool,
+    /// Bytes of the audio file that arrived before the connection broke:
+    /// send the rest.
+    #[serde(default)]
+    pub resume_from: u64,
 }
 
 /// A track's files as they arrived.
@@ -127,6 +136,7 @@ pub struct Received {
     pub audio: Option<(String, u64, i64)>,
     /// `ANLZ0000.DAT` (its siblings next to it).
     pub anlz: Option<String>,
+    pub artwork: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -185,12 +195,13 @@ struct LocalStamps {
     grid: i64,
     anlz: i64,
     anlz_path: String,
+    artwork: String,
 }
 
 fn local_by_fingerprint(tx: &rusqlite::Connection, fp: &str) -> Result<Option<LocalStamps>> {
     Ok(tx
         .query_row(
-            "SELECT id, meta_modified, cues_modified, grid_modified, anlz_modified, anlz FROM tracks \
+            "SELECT id, meta_modified, cues_modified, grid_modified, anlz_modified, anlz, artwork FROM tracks \
              WHERE fingerprint = ?1 ORDER BY id LIMIT 1",
             [fp],
             |r| {
@@ -201,6 +212,7 @@ fn local_by_fingerprint(tx: &rusqlite::Connection, fp: &str) -> Result<Option<Lo
                     grid: r.get(3)?,
                     anlz: r.get(4)?,
                     anlz_path: r.get(5)?,
+                    artwork: r.get(6)?,
                 })
             },
         )
@@ -409,6 +421,10 @@ impl Library {
                 cues: self.cues(id)?.iter().map(CueData::from).collect(),
                 grid: self.grid(id)?,
                 anlz: anlz_files(&t.anlz),
+                artwork: Some(Path::new(&t.artwork))
+                    .filter(|p| !t.artwork.is_empty() && p.is_file())
+                    .and_then(|p| p.extension())
+                    .map(|e| e.to_string_lossy().to_lowercase()),
             });
         }
 
@@ -438,17 +454,27 @@ impl Library {
     }
 
     /// The files this library needs of an offer: tracks it lacks, and the
-    /// analysis of those it has without one (or with an older one).
+    /// analysis and artwork of those it has without (or with an older
+    /// analysis).
     pub fn wants(&self, offer: &Offer) -> Result<Vec<Want>> {
         let mut out = Vec::new();
         for t in &offer.tracks {
             let sender_anlz = t.anlz.iter().any(|e| e == "DAT");
+            let want = |audio, anlz, artwork| Want {
+                fingerprint: t.entry.fingerprint.clone(),
+                audio,
+                anlz,
+                artwork,
+                resume_from: 0,
+            };
             match local_by_fingerprint(&self.conn, &t.entry.fingerprint)? {
-                None => out.push(Want { fingerprint: t.entry.fingerprint.clone(), audio: true, anlz: sender_anlz }),
+                None => out.push(want(true, sender_anlz, t.artwork.is_some())),
                 Some(l) => {
                     let lacking = l.anlz_path.is_empty() || !Path::new(&l.anlz_path).is_file();
-                    if sender_anlz && (lacking || t.entry.anlz_modified > l.anlz) {
-                        out.push(Want { fingerprint: t.entry.fingerprint.clone(), audio: false, anlz: true });
+                    let anlz = sender_anlz && (lacking || t.entry.anlz_modified > l.anlz);
+                    let art = t.artwork.is_some() && (l.artwork.is_empty() || !Path::new(&l.artwork).is_file());
+                    if anlz || art {
+                        out.push(want(false, anlz, art));
                     }
                 }
             }
@@ -473,6 +499,7 @@ impl Library {
                 let got = Received {
                     audio: w.audio.then(|| (format!("stickwise-preview:{}", w.fingerprint), 0, 0)),
                     anlz: w.anlz.then(|| format!("stickwise-preview:{}.DAT", w.fingerprint)),
+                    artwork: w.artwork.then(|| format!("stickwise-preview:{}.jpg", w.fingerprint)),
                 };
                 (w.fingerprint.clone(), got)
             })
@@ -513,6 +540,9 @@ impl Library {
                     write_grid(tx, id, t.grid)?;
                     if let Some(dat) = got.and_then(|r| r.anlz.as_ref()) {
                         tx.execute("UPDATE tracks SET anlz = ?2 WHERE id = ?1", params![id, dat])?;
+                    }
+                    if let Some(art) = got.and_then(|r| r.artwork.as_ref()) {
+                        tx.execute("UPDATE tracks SET artwork = ?2 WHERE id = ?1", params![id, art])?;
                     }
                     report.tracks_added += 1;
                     for (c, v) in [
@@ -555,6 +585,10 @@ impl Library {
                     if let Some(dat) = got.and_then(|r| r.anlz.as_ref()) {
                         tx.execute("UPDATE tracks SET anlz = ?2 WHERE id = ?1", params![l.id, dat])?;
                         set_stamp(tx, l.id, "anlz_modified", e.anlz_modified.max(l.anlz))?;
+                        updated = true;
+                    }
+                    if let Some(art) = got.and_then(|r| r.artwork.as_ref()) {
+                        tx.execute("UPDATE tracks SET artwork = ?2 WHERE id = ?1", params![l.id, art])?;
                         updated = true;
                     }
                     if updated {
@@ -653,7 +687,7 @@ mod tests {
 
     fn arrived(fps: &[&str]) -> HashMap<String, Received> {
         fps.iter()
-            .map(|f| (f.to_string(), Received { audio: Some((format!("/new/{f}.mp3"), 1000, 5)), anlz: None }))
+            .map(|f| (f.to_string(), Received { audio: Some((format!("/new/{f}.mp3"), 1000, 5)), ..Default::default() }))
             .collect()
     }
 
@@ -689,7 +723,10 @@ mod tests {
 
         let mut b = library(1); // has f1 already
         let wants = b.wants(&offer).unwrap();
-        assert_eq!(wants, vec![Want { fingerprint: "f3".into(), audio: true, anlz: false }]);
+        assert_eq!(
+            wants,
+            vec![Want { fingerprint: "f3".into(), audio: true, anlz: false, artwork: false, resume_from: 0 }]
+        );
         let r = b.apply_offer(&offer, &arrived(&["f3"])).unwrap();
         assert_eq!((r.tracks_added, r.playlists_added), (1, 2));
         assert!(r.skipped.is_empty());
