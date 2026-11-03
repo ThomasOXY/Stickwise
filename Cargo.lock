@@ -46,11 +46,11 @@ dependencies = [
 
 [[package]]
 name = "analysis"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "analyzer"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "beat-this",
  "pioneer-formats",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "engine-library"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "flate2",
  "pioneer-formats",
@@ -2251,7 +2251,7 @@ dependencies = [
 
 [[package]]
 name = "library"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "lofty",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "libsync"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "libc",
@@ -2974,7 +2974,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peerlink"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "mdns-sd",
@@ -3063,7 +3063,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pioneer-formats"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "binrw",
  "fallible-iterator",
@@ -3281,7 +3281,7 @@ dependencies = [
 
 [[package]]
 name = "rbx"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "analysis",
  "anyhow",
@@ -3295,7 +3295,7 @@ dependencies = [
 
 [[package]]
 name = "rbx-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "analysis",
  "analyzer",
@@ -5295,7 +5295,7 @@ dependencies = [
 
 [[package]]
 name = "usb-tools"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "engine-library",
  "libc",
