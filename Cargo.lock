@@ -46,11 +46,11 @@ dependencies = [
 
 [[package]]
 name = "analysis"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "analyzer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "beat-this",
  "pioneer-formats",
@@ -998,7 +998,7 @@ dependencies = [
 
 [[package]]
 name = "engine-library"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "flate2",
  "pioneer-formats",
@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "library"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "lofty",
  "pioneer-formats",
@@ -2862,7 +2862,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pioneer-formats"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "binrw",
  "fallible-iterator",
@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "rbx"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "analysis",
  "anyhow",
@@ -3094,7 +3094,7 @@ dependencies = [
 
 [[package]]
 name = "rbx-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "analysis",
  "analyzer",
@@ -5037,7 +5037,7 @@ dependencies = [
 
 [[package]]
 name = "usb-tools"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "engine-library",
  "libc",
