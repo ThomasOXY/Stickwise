@@ -17,6 +17,7 @@
   import TrackTable from "./lib/TrackTable.svelte";
   import UpdateSheet from "./lib/UpdateSheet.svelte";
   import PeerSheet from "./lib/PeerSheet.svelte";
+  import PairPrompt from "./lib/PairPrompt.svelte";
   import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
   import { updates } from "./lib/updates.svelte";
@@ -52,7 +53,7 @@
         return;
       }
     }
-    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || updates.open || app.settingsFor !== undefined) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || updates.open || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -120,6 +121,9 @@
 {/if}
 {#if updates.open}
   <UpdateSheet />
+{/if}
+{#if app.pairRequest}
+  <PairPrompt />
 {/if}
 
 <style>

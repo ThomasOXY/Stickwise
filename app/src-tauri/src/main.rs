@@ -22,6 +22,7 @@ fn main() {
             app.manage(commands::VerifyCache::load(dir.join("verify-cache.json")));
             let lib = library::Library::open(&dir.join("library.sqlite"))?;
             app.manage(library_cmds::LibState(std::sync::Mutex::new(lib)));
+            app.manage(peer::start_node(app.handle(), dir.join("peer")));
             app.manage(sidecar::Sidecar::new(dir, app.path().resource_dir().ok()));
             peer::start_fingerprints(app.handle().clone());
             Ok(())
@@ -81,6 +82,11 @@ fn main() {
             player_cmds::format_start,
             peer::peer_settings,
             peer::peer_set_music_dir,
+            peer::peer_list,
+            peer::peer_pair,
+            peer::peer_answer,
+            peer::peer_unpair,
+            peer::peer_ping,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stickwise");

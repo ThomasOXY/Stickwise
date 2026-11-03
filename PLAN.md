@@ -37,7 +37,9 @@ Datum plánu: 2026-10-13
 **2026-11-03**
 - ✅ Přejmenováno na **Stickwise** (v0.2.0); identifikátor appky zůstal, knihovna i analýzy se přenesly. Zálohy nově v `~/Stickwise/backups`.
 - ✅ **Sync mezi Macy, fáze P1** (viz 5b): migrace schématu (`user_version`), BLAKE3 otisky skladeb na pozadí, UUID playlistů, značky změn triggery (tagy, cue, grid, analýza, playlisty), tombstones smazaných playlistů, manifest knihovny, nastavení složky pro hudbu ze syncu, okno „Sync mezi Macy“. Ověřeno na kopii skutečné knihovny (6 002 skladeb, 117 playlistů: migrace 50 ms, otisky ~300 MB/s).
-- ⏭ Další: P2 — hledání Maců v síti (Bonjour), spárování kódem, šifrované spojení.
+- ✅ **P2 — síť** (`crates/peerlink`): každý Mac má vlastní klíč a certifikát (id = hash certifikátu), Bonjour `_stickwise._tcp`, spárování 6místným kódem (oba Macy ukážou stejný kód odvozený z obou certifikátů, potvrzuje se na druhém Macu), TLS 1.3 s oboustrannými certifikáty, spojení jen mezi spárovanými Macy. V appce seznam Maců (v síti / mimo síť, spárováno), párování, ověření spojení, zrušení spárování, výzva k potvrzení odkudkoli v appce. `Info.plist`: oprávnění pro místní síť. Testy: párování, odmítnutí, zrušení na jedné straně, podvržená adresa, skutečný Bonjour na jednom Macu (~1 s).
+- ⏳ Neověřeno mezi dvěma fyzickými Macy (firewall / oprávnění místní sítě v macOS).
+- ⏭ Další: P3 — Poslat výběr (playlisty, sety, skladby).
 
 ## 1. Co už existuje (rešerše GitHubu)
 

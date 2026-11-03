@@ -292,9 +292,44 @@ export interface PeerSettings {
   total: number;
 }
 
+export interface Peer {
+  id: string;
+  name: string;
+  /** Seen on the network now. */
+  online: boolean;
+  paired: boolean;
+}
+
+export interface PeerList {
+  /** This Mac's name. */
+  name: string;
+  peers: Peer[];
+  /** Why sync between Macs is not running. */
+  error: string | null;
+}
+
+export interface PairRequest {
+  request: number;
+  peer: Peer;
+  code: string;
+}
+
+export interface PairResult {
+  peer: Peer;
+  accepted: boolean;
+  message: string;
+}
+
 export const peerApi = {
   settings: () => invoke<PeerSettings>("peer_settings"),
   setMusicDir: (path: string | null) => invoke<PeerSettings>("peer_set_music_dir", { path }),
+  list: () => invoke<PeerList>("peer_list"),
+  /** Returns the code both Macs show. */
+  pair: (id: string) => invoke<string>("peer_pair", { id }),
+  answer: (request: number, accept: boolean) => invoke<void>("peer_answer", { request, accept }),
+  unpair: (id: string) => invoke<void>("peer_unpair", { id }),
+  /** Milliseconds there and back. */
+  ping: (id: string) => invoke<number>("peer_ping", { id }),
 };
 
 export const libApi = {

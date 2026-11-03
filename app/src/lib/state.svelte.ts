@@ -7,6 +7,7 @@ import {
   type CueSummary,
   type JobEvent,
   type LibraryData,
+  type PairRequest,
   type PaletteColor,
   type Playlist,
   type SmartCue,
@@ -70,6 +71,8 @@ class AppState {
   formatOpen = $state(false);
   /** Sync with Stickwise on other Macs. */
   peerOpen = $state(false);
+  /** Another Mac asks to pair, waiting for the DJ's answer. */
+  pairRequest = $state<PairRequest | null>(null);
   /** Full-screen tool launcher. */
   toolsOpen = $state(false);
   importing = $state(false);
@@ -168,6 +171,10 @@ class AppState {
       else this.jobs.push(e.payload);
       if (e.payload.id === this.aiJob && e.payload.state !== "running") this.aiFinished(e.payload);
       if (e.payload.id === this.analyzeJob && e.payload.state !== "running") this.analyzeFinished(e.payload);
+    });
+    await listen<PairRequest>("peer-pair-request", (e) => (this.pairRequest = e.payload));
+    await listen<number>("peer-pair-gone", (e) => {
+      if (this.pairRequest?.request === e.payload) this.pairRequest = null;
     });
     this.palette = await api.cuePalette();
     await this.openLibrary();

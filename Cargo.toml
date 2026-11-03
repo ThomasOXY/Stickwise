@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pioneer-formats", "crates/usb-tools", "crates/analysis", "crates/analyzer", "crates/library", "crates/engine-library", "cli", "app/src-tauri"]
+members = ["crates/pioneer-formats", "crates/usb-tools", "crates/analysis", "crates/analyzer", "crates/library", "crates/engine-library", "crates/peerlink", "cli", "app/src-tauri"]
 
 [workspace.package]
 edition = "2024"
@@ -14,6 +14,7 @@ analysis = { path = "crates/analysis" }
 analyzer = { path = "crates/analyzer" }
 library = { path = "crates/library" }
 engine-library = { path = "crates/engine-library" }
+peerlink = { path = "crates/peerlink" }
 thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

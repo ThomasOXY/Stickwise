@@ -1,27 +1,73 @@
 <script lang="ts">
-  import { CircleCheck, Folder, Laptop, LoaderCircle, Wifi } from "@lucide/svelte";
+  import { CircleCheck, Folder, Laptop, Link2Off, LoaderCircle, Wifi, WifiOff } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { ask, open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
-  import { peerApi, type PeerSettings } from "./api";
+  import { peerApi, type PairResult, type PeerList, type PeerSettings } from "./api";
   import { plural } from "./format";
   import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
 
   let s = $state<PeerSettings | null>(null);
+  let list = $state<PeerList | null>(null);
   let error = $state("");
+  /** Pairing this Mac asked for: the code to compare, then the answer. */
+  let pairing = $state<{ id: string; name: string; code: string; result?: PairResult } | null>(null);
+  /** Connection checks: peer id → "…", milliseconds or the error. */
+  let checks = $state<Record<string, string>>({});
 
   const home = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
   const ready = $derived(!!s && s.fingerprinted >= s.total);
   const pct = $derived(s && s.total ? (s.fingerprinted / s.total) * 100 : 0);
 
+  const refresh = () => peerApi.list().then((v) => (list = v));
+
   onMount(() => {
     peerApi.settings().then((v) => (s = v), (e) => (error = String(e)));
-    const off = listen<{ fingerprinted: number; total: number }>("peer-fingerprints", (e) => {
-      if (s) s = { ...s, ...e.payload };
-    });
-    return () => off.then((f) => f());
+    refresh();
+    const offs = [
+      listen<{ fingerprinted: number; total: number }>("peer-fingerprints", (e) => {
+        if (s) s = { ...s, ...e.payload };
+      }),
+      listen("peer-peers", refresh),
+      listen<PairResult>("peer-pair-result", (e) => {
+        if (pairing?.id === e.payload.peer.id) pairing = { ...pairing, result: e.payload };
+        refresh();
+      }),
+    ];
+    return () => offs.forEach((o) => o.then((f) => f()));
   });
+
+  async function pair(id: string, name: string) {
+    error = "";
+    try {
+      pairing = { id, name, code: await peerApi.pair(id) };
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function check(id: string) {
+    checks[id] = "…";
+    try {
+      checks[id] = `Spojení funguje · ${await peerApi.ping(id)} ms`;
+    } catch (e) {
+      checks[id] = String(e);
+    }
+  }
+
+  async function unpair(id: string, name: string) {
+    const sure = await ask(`Knihovny se pak nebudou synchronizovat, dokud Macy znovu nespárujete.`, {
+      title: `Zrušit spárování s ${name}?`,
+      kind: "warning",
+      okLabel: "Zrušit spárování",
+      cancelLabel: "Nechat",
+    });
+    if (!sure) return;
+    await peerApi.unpair(id);
+    delete checks[id];
+    refresh();
+  }
 
   async function chooseDir() {
     const d = await open({ directory: true, defaultPath: s?.musicDir });
@@ -39,7 +85,14 @@
   }
 </script>
 
-<SheetFrame id="peer-title" icon={Laptop} title="Sync mezi Macy" sub="Knihovna s dalšími Stickwise ve stejné síti" width={620} onclose={() => (app.peerOpen = false)}>
+<SheetFrame
+  id="peer-title"
+  icon={Laptop}
+  title="Sync mezi Macy"
+  sub={list ? `Tento Mac: ${list.name}` : "Knihovna s dalšími Stickwise ve stejné síti"}
+  width={620}
+  onclose={() => (app.peerOpen = false)}
+>
   <div class="body">
     <section>
       <div class="eyebrow">Hudba z jiných Maců se ukládá do</div>
@@ -73,8 +126,51 @@
     </section>
 
     <section>
-      <div class="eyebrow">Macy poblíž</div>
-      <div class="empty"><Wifi size={18} />Hledání Maců ve stejné síti přijde v další verzi.</div>
+      <div class="eyebrow">Macy</div>
+      {#if pairing}
+        <div class="pairing">
+          {#if !pairing.result}
+            <div class="code readout">{pairing.code}</div>
+            <p><LoaderCircle size={14} class="spin" />Na <strong>{pairing.name}</strong> potvrď, že ukazuje stejný kód.</p>
+          {:else}
+            <p class:ok={pairing.result.accepted} class:err={!pairing.result.accepted}>
+              {#if pairing.result.accepted}<CircleCheck size={16} />{/if}{pairing.result.message}
+            </p>
+            <button class="btn" onclick={() => (pairing = null)}>OK</button>
+          {/if}
+        </div>
+      {/if}
+      {#if list?.error}
+        <div class="empty err"><WifiOff size={18} />{list.error}</div>
+      {:else if list && list.peers.length === 0}
+        <div class="empty">
+          <LoaderCircle size={18} class="spin" />Hledám další Macy… Na druhém Macu otevři Stickwise ve stejné síti.
+        </div>
+      {:else if list}
+        <div class="peers">
+          {#each list.peers as p (p.id)}
+            <div class="peer">
+              <span class="icon" class:off={!p.online}><Laptop size={18} /></span>
+              <div class="who">
+                <span class="name">{p.name}</span>
+                <span class="status">
+                  {#if checks[p.id]}{checks[p.id]}{:else if p.paired}Spárováno · {p.online ? "v síti" : "mimo síť"}{:else}Nespárováno{/if}
+                </span>
+              </div>
+              {#if p.paired}
+                {#if p.online}
+                  <button class="btn" onclick={() => check(p.id)} disabled={checks[p.id] === "…"}><Wifi size={14} />Ověřit spojení</button>
+                {/if}
+                <button class="btn icon ghost" title="Zrušit spárování" aria-label="Zrušit spárování" onclick={() => unpair(p.id, p.name)}>
+                  <Link2Off size={15} />
+                </button>
+              {:else}
+                <button class="btn primary" onclick={() => pair(p.id, p.name)} disabled={!!pairing && !pairing.result}>Spárovat</button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
     </section>
 
     {#if error}<p class="err">{error}</p>{/if}
@@ -165,6 +261,68 @@
     color: var(--success);
   }
   .err {
+    color: var(--danger);
+  }
+  .peers {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+  }
+  .peer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 8px 8px 10px;
+  }
+  .peer .icon {
+    color: var(--accent);
+  }
+  .peer .icon.off {
+    color: var(--text-3);
+  }
+  .who {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .name {
+    font-size: 14px;
+    color: var(--text);
+  }
+  .status {
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .pairing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 18px;
+    border-radius: var(--r-panel);
+    background: var(--surface-2);
+  }
+  .pairing p {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    color: var(--text-2);
+  }
+  .pairing strong {
+    color: var(--text);
+  }
+  .code {
+    font-size: 34px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+  .empty.err {
     color: var(--danger);
   }
   .empty {
