@@ -3,6 +3,7 @@
   import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { cueTime, keyColor, plural, time } from "./format";
+  import { PLAN_CURVES, PLAN_LEVELS, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   interface PlannedTrack {
@@ -40,29 +41,22 @@
     totalSeconds: number;
   }
 
-  const LEVELS = [
-    ["beginner", "Začátečník", "Jen harmonicky čisté páry, tempo ±3 %, dlouhé 32taktové přechody."],
-    ["advanced", "Pokročilý", "Energy boosty (+2), tempo ±6 %, 16taktové přechody."],
-    ["pro", "Profík", "Odvážnější tóniny a tempo, krátké 8taktové přechody, střihy."],
-  ] as const;
-  const CURVES = [
-    ["warmup", "Warm-up"],
-    ["peak", "Peak"],
-    ["journey", "Cesta"],
-    ["closing", "Closing"],
-  ] as const;
+  const LEVELS = PLAN_LEVELS;
+  const CURVES = PLAN_CURVES;
 
-  let minutes = $state(Number(localStorage.getItem("plan-minutes")) || 60);
-  let level = $state(localStorage.getItem("plan-level") || "advanced");
-  let curve = $state(localStorage.getItem("plan-curve") || "peak");
+  // From the settings; changed here, they hold for this plan.
+  const d = prefs.value.planner;
+  let minutes = $state(d.minutes);
+  let level = $state(d.level);
+  let curve = $state(d.curve);
   /** Keep the DJ's order (only plan transitions) or let the planner order the set. */
-  let keepOrder = $state(localStorage.getItem("plan-order") !== "suggest");
+  let keepOrder = $state(d.keepOrder);
   /**
    * Where the transition cues go: `only` = the track keeps just A = Mix in and
    * B = Mix out (other hot cues backed up), `hot` = added on pads G/H,
    * `memory` = memory cues.
    */
-  let cueMode = $state(localStorage.getItem("plan-cue-mode") || "only");
+  let cueMode = $state(d.cueMode);
   let backups = $state(0);
   let plan = $state<Plan | null>(null);
   let busy = $state(false);
@@ -74,14 +68,6 @@
   const poolMinutes = $derived(Math.round((set?.trackIds ?? []).reduce((s, id) => s + (app.trackById.get(id)?.duration ?? 0), 0) / 60));
   const title = (id: number) => app.trackById.get(id)?.title ?? "?";
   const artist = (id: number) => app.trackById.get(id)?.artist ?? "";
-
-  $effect(() => {
-    localStorage.setItem("plan-minutes", String(minutes));
-    localStorage.setItem("plan-level", level);
-    localStorage.setItem("plan-curve", curve);
-    localStorage.setItem("plan-order", keepOrder ? "mine" : "suggest");
-    localStorage.setItem("plan-cue-mode", cueMode);
-  });
 
   async function loadBackups() {
     if (set) backups = await invoke<number>("set_cue_backups", { setId: set.id }).catch(() => 0);

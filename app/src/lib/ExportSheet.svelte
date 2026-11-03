@@ -6,16 +6,19 @@
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import SheetSwitch from "./SheetSwitch.svelte";
+  import { DUPLICATES, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   const data = $derived(app.data!);
   let picked = $state<Set<number>>(new Set(app.data!.playlists.filter((p) => !p.isFolder).map((p) => p.id)));
   let dest = $state("");
-  let numbered = $state(true);
-  let artistTitle = $state(true);
-  let m3u = $state(true);
-  let history = $state(false);
-  let duplicates = $state<"clone" | "copy" | "symlink">("clone");
+  // From the settings; changed here, they hold for this export.
+  const d = prefs.value.export;
+  let numbered = $state(d.numbered);
+  let artistTitle = $state(d.artistTitle);
+  let m3u = $state(d.m3u);
+  let history = $state(d.history);
+  let duplicates = $state<"clone" | "copy" | "symlink">(d.duplicates);
   let jobId = $state<number | null>(null);
   let failed = $state<string | null>(null);
 
@@ -188,7 +191,7 @@
           <div class="eyebrow">Skladba ve více playlistech</div>
           <div class="dupes">
             <div class="seg" role="radiogroup" aria-label="Duplicity">
-              {#each [["clone", "Klon (nezabírá místo)"], ["copy", "Kopie"], ["symlink", "Odkaz"]] as [v, label]}
+              {#each DUPLICATES as [v, label] (v)}
                 <button role="radio" aria-checked={duplicates === v} class:on={duplicates === v} onclick={() => (duplicates = v as typeof duplicates)}>{label}</button>
               {/each}
             </div>

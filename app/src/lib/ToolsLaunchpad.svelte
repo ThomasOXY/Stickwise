@@ -15,9 +15,11 @@
     Search,
     ShieldCheck,
     SlidersHorizontal,
+    Settings,
     Sparkles,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
+  import { openSettings } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import { updates } from "./updates.svelte";
 
@@ -183,7 +185,8 @@
       group: "Flashka",
       blocked: "",
       run: () => {
-        app.settingsFor = app.isLibrary ? null : app.stickPath;
+        if (app.isLibrary || !app.stickPath) openSettings("player");
+        else app.settingsFor = app.stickPath;
       },
     },
     {
@@ -219,6 +222,15 @@
       run: () => {
         app.peerOpen = true;
       },
+    },
+    {
+      name: "Nastavení",
+      hint: "Přehrávač, flashka, plánovač, export a Sync mezi Macy na jednom místě (⌘,)",
+      icon: Settings,
+      tone: "#8b909c",
+      group: "Aplikace",
+      blocked: "",
+      run: () => openSettings(),
     },
     {
       name: "Aktualizace",

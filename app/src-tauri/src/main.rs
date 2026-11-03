@@ -7,6 +7,7 @@ mod jobs;
 mod library_cmds;
 mod peer;
 mod player_cmds;
+mod prefs;
 mod sidecar;
 
 fn main() {
@@ -19,6 +20,8 @@ fn main() {
         .manage(peer::MirrorAsk::default())
         .manage(peer::AutoMirror::default())
         .manage(peer::FingerprintGaps::default())
+        .menu(prefs::menu)
+        .on_menu_event(|app, e| prefs::on_menu(app, e.id().as_ref()))
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
@@ -44,6 +47,9 @@ fn main() {
             commands::home_dir,
             commands::full_disk_access,
             commands::open_full_disk_settings,
+            prefs::prefs_get,
+            prefs::prefs_set,
+            prefs::open_settings,
             commands::save_cues,
             commands::revert_cues,
             commands::pending_cues,

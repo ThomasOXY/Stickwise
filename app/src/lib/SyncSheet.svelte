@@ -23,6 +23,7 @@
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import SheetSwitch from "./SheetSwitch.svelte";
+  import { ENGINE, openSettings, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   let stick = $state<string | null>(app.sticks[0]?.path ?? null);
@@ -31,31 +32,27 @@
   let planning = $state(false);
   let jobId = $state<number | null>(null);
   let failed = $state<string | null>(null);
-  let writeSettings = $state(localStorage.getItem("syncSettings") !== "off");
-  $effect(() => localStorage.setItem("syncSettings", writeSettings ? "on" : "off"));
+  // From the settings; changed here, they hold for this sync.
+  let writeSettings = $state(prefs.value.stick.writeSettings);
   /** All playlists at the top of the stick, no folders to click through on the player. */
-  let flat = $state(localStorage.getItem("syncFlat") !== "off");
-  $effect(() => localStorage.setItem("syncFlat", flat ? "on" : "off"));
+  let flat = $state(prefs.value.stick.flat);
 
   // Hybrid stick: a Denon (Engine DJ) library over the same audio files.
-  const ENGINE: { schema: string; label: string; note: string }[] = [
-    { schema: "2.21.0", label: "Engine OS 3.1+", note: "i nejstarší Denony" },
-    { schema: "3.0.1", label: "Engine OS 4.3+", note: "doporučeno" },
-    { schema: "3.0.2", label: "Engine OS 5+", note: "jen nejnovější" },
-  ];
+  // A stick keeps its own choice; a new one starts from the settings.
   const engineKey = (s: string) => `syncEngine:${s.split("/").pop()}`;
   let engine = $state<string | null>(null);
   let engineStatus = $state<EngineStatus | null>(null);
   $effect(() => {
     const s = stick;
     if (!s) return;
-    engine = localStorage.getItem(engineKey(s)) || null;
+    const own = localStorage.getItem(engineKey(s));
+    engine = own === null ? prefs.value.stick.engine : own || null;
     engineStatus = null;
     libApi.engineStatus(s).then((st) => (engineStatus = st), () => {});
   });
   function setEngine(v: string | null) {
     engine = v;
-    if (stick) v ? localStorage.setItem(engineKey(stick), v) : localStorage.removeItem(engineKey(stick));
+    if (stick) localStorage.setItem(engineKey(stick), v ?? "");
   }
   const newer = (a: string, b: string) => {
     const [x, y] = [a, b].map((v) => v.split(".").map(Number));
@@ -294,7 +291,7 @@
               desc="Quantize, auto cue, jas, waveform a další, jak je máš uložené."
             >
               {#snippet extra()}
-                <button class="link" onclick={(e) => (e.preventDefault(), (app.settingsFor = null))}>upravit</button>
+                <button class="link" onclick={(e) => (e.preventDefault(), openSettings("player"))}>upravit</button>
               {/snippet}
             </SheetSwitch>
             <SheetSwitch

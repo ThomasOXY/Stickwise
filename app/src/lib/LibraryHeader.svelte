@@ -3,6 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import type { Track } from "./api";
   import { keyColor, plural, time } from "./format";
+  import { openSettings } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   const lib = $derived(app.library);
@@ -87,7 +88,7 @@
   </div>
 
   <div class="actions">
-    <button class="btn ghost icon" onclick={() => (app.settingsFor = null)} title="Nastavení přehrávače: tvoje My Settings pro CDJ/XDJ a mixer">
+    <button class="btn ghost icon" onclick={() => openSettings("player")} title="Nastavení přehrávače: tvoje My Settings pro CDJ/XDJ a mixer">
       <SlidersHorizontal size={15} />
     </button>
     {#if whole}

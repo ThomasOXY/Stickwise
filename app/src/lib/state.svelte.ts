@@ -69,7 +69,8 @@ class AppState {
   exportOpen = $state(false);
   syncOpen = $state(false);
   /** Player settings sheet: `undefined` closed, `null` the DJ's profile, else a stick path. */
-  settingsFor = $state<string | null | undefined>(undefined);
+  /** The stick whose My Settings are open; the DJ's own are in the Settings window. */
+  settingsFor = $state<string | undefined>(undefined);
   formatOpen = $state(false);
   /** Sync with Stickwise on other Macs. */
   peerOpen = $state(false);

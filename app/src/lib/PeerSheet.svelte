@@ -1,13 +1,13 @@
 <script lang="ts">
   import { ArrowLeftRight, CircleCheck, Folder, Laptop, Link2Off, ListMusic, LoaderCircle, Send, Wifi, WifiOff } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { ask, open } from "@tauri-apps/plugin-dialog";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
   import { peerApi, type PairResult, type Peer, type PeerList, type PeerSettings, type Playlist } from "./api";
   import { plural, size } from "./format";
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
-  import SheetSwitch from "./SheetSwitch.svelte";
+  import { openSettings } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   let s = $state<PeerSettings | null>(null);
@@ -107,7 +107,6 @@
     }
   }
 
-  const home = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
   /** Nothing left to fingerprint now: the rest is skipped or on a drive not plugged in. */
   const ready = $derived(!!s && s.fingerprinted + s.skipped + s.waiting >= s.total);
   const pct = $derived(s && s.total ? ((s.fingerprinted + s.skipped) / s.total) * 100 : 0);
@@ -176,21 +175,6 @@
     delete checks[id];
     refresh();
   }
-
-  async function chooseDir() {
-    const d = await open({ directory: true, defaultPath: s?.musicDir });
-    if (typeof d !== "string") return;
-    await save(d);
-  }
-
-  async function save(path: string | null) {
-    error = "";
-    try {
-      s = await peerApi.setMusicDir(path);
-    } catch (e) {
-      error = String(e);
-    }
-  }
 </script>
 
 <SheetFrame
@@ -231,34 +215,12 @@
       </section>
     {:else}
       <section>
-        <div class="eyebrow">Hudba z jiných Maců se ukládá do</div>
-        <div class="dest">
-          <Folder size={15} />
-          <span class="path">{s ? home(s.musicDir) : "…"}</span>
-          {#if s && !s.defaultMusicDir}
-            <button class="btn ghost" onclick={() => save(null)}>Výchozí</button>
-          {/if}
-          <button class="btn" onclick={chooseDir} disabled={!s}>Změnit…</button>
-        </div>
-        <p class="hint">Uvnitř podle interpreta a alba. Soubory, které už tu jsou, se nikdy nepřepíšou.</p>
+        <p class="more">
+          Kam se ukládá hudba z jiných Maců a automatické zrcadlení najdeš v<button class="link" onclick={() => openSettings("peer")}
+            >Nastavení</button
+          >.
+        </p>
       </section>
-
-      {#if s}
-        <section>
-          <SheetSwitch
-            checked={s.autoMirror}
-            label="Zrcadlit samo, když je spárovaný Mac v síti"
-            desc="Bez ptaní jen tehdy, když se nemá nic mazat; jinak ukáže, co se změní. Nejvýš jednou za 10 minut."
-            onchange={async (on) => {
-              try {
-                s = await peerApi.setAutoMirror(on);
-              } catch (e) {
-                error = String(e);
-              }
-            }}
-          />
-        </section>
-      {/if}
 
       <section>
         <div class="eyebrow">Příprava knihovny</div>
@@ -378,24 +340,21 @@
     flex-direction: column;
     gap: 8px;
   }
-  .dest {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: 44px;
-    padding: 0 6px 0 14px;
-    border-radius: var(--r-panel);
-    background: var(--surface-2);
-    color: var(--accent);
+  .more {
+    margin: 0;
+    color: var(--text-3);
+    font-size: 12.5px;
   }
-  .path {
-    flex: 1;
-    min-width: 0;
-    color: var(--text);
-    font-size: 13.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .link {
+    border: 0;
+    background: none;
+    color: var(--accent);
+    padding: 0 0 0 4px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .link:hover {
+    text-decoration: underline;
   }
   .hint {
     margin: 0;

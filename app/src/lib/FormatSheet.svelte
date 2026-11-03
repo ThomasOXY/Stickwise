@@ -4,6 +4,7 @@
   import { gb } from "./format";
   import SheetFrame from "./SheetFrame.svelte";
   import SheetSwitch from "./SheetSwitch.svelte";
+  import { openSettings, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   let disks = $state<Disk[] | null>(null);
@@ -11,7 +12,7 @@
   let fs = $state<"fat32" | "exfat">("fat32");
   let name = $state("");
   let confirm = $state("");
-  let writeSettings = $state(true);
+  let writeSettings = $state(prefs.value.stick.writeSettings);
   let jobId = $state<number | null>(null);
   let failed = $state<string | null>(null);
 
@@ -144,7 +145,7 @@
         <div class="sw">
           <SheetSwitch bind:checked={writeSettings} label="Nahrát moje nastavení přehrávače">
             {#snippet extra()}
-              <button class="link" onclick={(e) => (e.preventDefault(), (app.settingsFor = null))}>upravit</button>
+              <button class="link" onclick={(e) => (e.preventDefault(), openSettings("player"))}>upravit</button>
             {/snippet}
           </SheetSwitch>
         </div>

@@ -25,6 +25,8 @@
   import { app } from "./lib/state.svelte";
   import { updates } from "./lib/updates.svelte";
   import { access } from "./lib/access.svelte";
+  import { prefs } from "./lib/prefs.svelte";
+  import { listen } from "@tauri-apps/api/event";
 
   let deck = $state<ReturnType<typeof Deck>>();
 
@@ -32,6 +34,13 @@
     app.init();
     updates.init();
     access.init();
+    prefs.init().catch((e) => (app.error = String(e)));
+    // "Zkontrolovat aktualizace" in the Settings window.
+    const off = listen("open-updates", () => {
+      updates.open = true;
+      if (!updates.available) updates.check();
+    });
+    return () => off.then((f) => f());
   });
 
   function onKey(e: KeyboardEvent) {
@@ -112,7 +121,7 @@
 {#if app.syncOpen}
   <SyncSheet />
 {/if}
-{#if app.settingsFor !== undefined}
+{#if app.settingsFor}
   <PlayerSettingsSheet stick={app.settingsFor} />
 {/if}
 {#if app.formatOpen}

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Activity, ArrowDownToLine, Command, Disc3, LibraryBig, Route, ShieldCheck, Usb, WandSparkles } from "@lucide/svelte";
+  import { Activity, ArrowDownToLine, Command, Disc3, LibraryBig, Route, Settings, ShieldCheck, Usb, WandSparkles } from "@lucide/svelte";
+  import { openSettings } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import { updates } from "./updates.svelte";
 
@@ -64,6 +65,7 @@
     <Activity size={18} />
     {#if running}<span class="badge readout">{running}</span>{/if}
   </button>
+  <button onclick={() => openSettings()} title="Nastavení (⌘,)"><Settings size={18} /></button>
   <button class="cmdk" onclick={() => (app.toolsOpen = true)} title="Všechny nástroje (⌘K)"><Command size={16} /></button>
 </nav>
 
