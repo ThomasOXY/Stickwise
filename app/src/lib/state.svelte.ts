@@ -7,6 +7,9 @@ import {
   type CueSummary,
   type JobEvent,
   type LibraryData,
+  type MirrorRequest,
+  type OfferRequest,
+  type PairRequest,
   type PaletteColor,
   type Playlist,
   type SmartCue,
@@ -68,6 +71,16 @@ class AppState {
   /** Player settings sheet: `undefined` closed, `null` the DJ's profile, else a stick path. */
   settingsFor = $state<string | null | undefined>(undefined);
   formatOpen = $state(false);
+  /** Sync with Stickwise on other Macs. */
+  peerOpen = $state(false);
+  /** Playlists to send, chosen before the sync sheet opened (from a playlist's menu). */
+  peerSendPreset = $state<number[] | null>(null);
+  /** Another Mac asks to pair, waiting for the DJ's answer. */
+  pairRequest = $state<PairRequest | null>(null);
+  /** Another Mac offers playlists, waiting for the DJ's answer. */
+  offerRequest = $state<OfferRequest | null>(null);
+  /** A mirror this Mac started, waiting for the DJ to look over the changes. */
+  mirrorRequest = $state<MirrorRequest | null>(null);
   /** Full-screen tool launcher. */
   toolsOpen = $state(false);
   importing = $state(false);
@@ -167,6 +180,19 @@ class AppState {
       if (e.payload.id === this.aiJob && e.payload.state !== "running") this.aiFinished(e.payload);
       if (e.payload.id === this.analyzeJob && e.payload.state !== "running") this.analyzeFinished(e.payload);
     });
+    await listen<PairRequest>("peer-pair-request", (e) => (this.pairRequest = e.payload));
+    await listen<number>("peer-pair-gone", (e) => {
+      if (this.pairRequest?.request === e.payload) this.pairRequest = null;
+    });
+    await listen<OfferRequest>("peer-offer", (e) => (this.offerRequest = e.payload));
+    await listen<number>("peer-offer-gone", (e) => {
+      if (this.offerRequest?.request === e.payload) this.offerRequest = null;
+    });
+    await listen<MirrorRequest>("peer-mirror-preview", (e) => (this.mirrorRequest = e.payload));
+    await listen<number>("peer-mirror-gone", (e) => {
+      if (this.mirrorRequest?.request === e.payload) this.mirrorRequest = null;
+    });
+    await listen("library-changed", () => this.reloadLibrary());
     this.palette = await api.cuePalette();
     await this.openLibrary();
     await this.refreshSticks();

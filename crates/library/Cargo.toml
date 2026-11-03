@@ -6,6 +6,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+blake3 = "1"
 lofty = "0.25.5"
 pioneer-formats.workspace = true
 rusqlite = { version = "0.32", features = ["bundled"] }

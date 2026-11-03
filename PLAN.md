@@ -34,6 +34,18 @@ Datum plánu: 2026-10-13
 - ✅ **Hybridní flashka Pioneer + Denon**: nativní Engine knihovna (`Engine Library/Database2/m.db`) nad stejnými soubory v `/Contents` (cesty `../Contents/…`, hudba jen jednou). Schéma podle nejstaršího Denonu: 2.21.0 (Engine OS 3.1+), 3.0.1 (4.3+, výchozí), 3.0.2 (5.0+). Playlisty a složky, beatgrid, tónina, 8 hot cue s barvami a názvy (memory cue na volné pady), smyčky, overview waveform; identita knihovny (uuid) se drží, stará `m.db` do zálohy, journaly stranou. Ověřeno: schéma bajt po bajtu proti Engine DJ, bloby z Engine DJ dekódovány a znovu zakódovány shodně, sync 30 skutečných skladeb do zkušební složky. ⏳ Neověřeno na Denonu.
 - ⏭ Další: **OneLibrary zápis** (bez něj CDJ-3000X / XDJ-AZ / OPUS-QUAD po synchronizaci knihovnu neuvidí), vlastní analýza nových skladeb (bez rekordboxu), Set Planner.
 
+**2026-11-03**
+- ✅ Přejmenováno na **Stickwise** (v0.2.0); identifikátor appky zůstal, knihovna i analýzy se přenesly. Zálohy nově v `~/Stickwise/backups`.
+- ✅ **Sync mezi Macy, fáze P1** (viz 5b): migrace schématu (`user_version`), BLAKE3 otisky skladeb na pozadí, UUID playlistů, značky změn triggery (tagy, cue, grid, analýza, playlisty), tombstones smazaných playlistů, manifest knihovny, nastavení složky pro hudbu ze syncu, okno „Sync mezi Macy“. Ověřeno na kopii skutečné knihovny (6 002 skladeb, 117 playlistů: migrace 50 ms, otisky ~300 MB/s).
+- ✅ **P2 — síť** (`crates/peerlink`): každý Mac má vlastní klíč a certifikát (id = hash certifikátu), Bonjour `_stickwise._tcp`, spárování 6místným kódem (oba Macy ukážou stejný kód odvozený z obou certifikátů, potvrzuje se na druhém Macu), TLS 1.3 s oboustrannými certifikáty, spojení jen mezi spárovanými Macy. V appce seznam Maců (v síti / mimo síť, spárováno), párování, ověření spojení, zrušení spárování, výzva k potvrzení odkudkoli v appce. `Info.plist`: oprávnění pro místní síť. Testy: párování, odmítnutí, zrušení na jedné straně, podvržená adresa, skutečný Bonjour na jednom Macu (~1 s).
+- ⏳ Neověřeno mezi dvěma fyzickými Macy (firewall / oprávnění místní sítě v macOS).
+- ✅ **P3 — Poslat výběr** (`library::transfer`, `crates/libsync`): v okně „Sync mezi Macy“ u spárovaného Macu „Poslat…“ → výběr setů / playlistů / složek (celé), počet a velikost. Druhý Mac dostane výzvu (co, kolik nových, kolik GB, kam se uloží) → Přijmout / Odmítnout; kontrola volného místa. Posílá se jen chybějící hudba a analýzy; každý soubor se po příjmu ověří otiskem, uloží do `Interpret/Album/` v nastavené složce, obsazené jméno dostane „(2)“ (hard link, nikdy nepřepíše). Cue, grid, tagy a playlisty podle pravidla novější vyhrává (přepsané cue do zálohy); playlisty se párují přes uid, opakované poslání jen aktualizuje. Průběh a zrušení jako úloha na obou Macích; po příjmu se knihovna obnoví. Testy přes skutečné TLS spojení: celý playlist se soubory, cue a analýzou, nepřepsání cizího souboru, opakované poslání bez přenosu, odmítnutí, zastavení uprostřed (žádné `.part` soubory).
+- ⏳ Neověřeno mezi dvěma fyzickými Macy. Artwork se zatím neposílá.
+- ✅ **P4 — Zrcadlo 1:1**: u spárovaného Macu „Zrcadlit“. Obě strany si dopočítají otisky, vymění si celou knihovnu (playlisty se skladbami na odpojeném disku se vynechají, aby se na druhé straně neořezaly), každá spočítá nanečisto (transakce, která se vrátí), co by se u ní změnilo. DJ na Macu, kde zrcadlení spustil, vidí změny na obou stranách (nové skladby a GB, novější cue / tagy / gridy, playlisty) a playlisty smazané na jedné straně — zaškrtnuté se smažou i na druhé, odškrtnuté se vrátí. Pak soubory jedním směrem, potom druhým, pravidla stejná jako u P3. Druhý Mac zrcadlení od spárovaného Macu přijme bez ptaní a ukáže ho jako úlohu. Testy: obě knihovny stejné, druhé zrcadlení nic nepřenáší, novější cue z druhé strany (původní do zálohy), potvrzené a nepotvrzené mazání, zrušení. Kopie skutečné knihovny (6 002 skladeb): nabídka 0,9 s / 3,8 MB, náhled 25–300 ms.
+- ⏳ Neověřeno mezi dvěma fyzickými Macy.
+- ✅ **P5 — doladění**: přerušený přenos pokračuje tam, kde skončil (skrytý `.stickwise-part` zůstane, příjemce řekne, kolik už má, otisk se ověří přes celý soubor); artwork jde se skladbou (`analysis/peer/<otisk>/artwork.*`); „Poslat na Mac…“ v menu playlistu / setu / složky (s jedním Macem v síti rovnou výběr); volitelné **automatické zrcadlení**, když se spárovaný Mac objeví v síti — bez ptaní jen když se nic nemaže a je místo, jinak náhled; nejvýš jednou za 10 min, začne Mac s nižším id (druhý po 45 s, pokud mezitím nic neproběhlo).
+- ⏳ Neověřeno mezi dvěma fyzickými Macy. Rozpracované `.stickwise-part` soubory, které už nikdy nepřijdou, se zatím samy nemažou.
+
 ## 1. Co už existuje (rešerše GitHubu)
 
 ### 1.1 Dokumentace formátů (základ všeho)
@@ -362,6 +374,41 @@ Cíl: Smart Cue rozpozná i **vokály** a aplikace umí **naplánovat celý set*
 1. S1 — Set Planner nad tím, co máme (BPM, key, energie z waveformu, Smart Cue) → funguje hned.
 2. S2 — Python sidecar: Demucs (vokály) + CUE-DETR (+ allin1) → Smart Cue s vokály, přesnější cue, vokální kolize v přechodech.
 3. S3 — Náhled přechodů (dvě stopy přes sebe v aplikaci), učení z tvých úprav (porovnávat s tvými cue jako teď).
+
+---
+
+## 5b. Sync mezi Stickwise (Mac ⇄ Mac, jako AirDrop)
+
+Plán ze 2026-11-03. Dvě a více instancí Stickwise ve **stejné síti** se najdou samy a synchronizují knihovnu **oběma směry**: skladby (soubory), cue, gridy, tagy, playlisty, sety a analýzy.
+
+**Co uvidí uživatel**
+- **Nastavení:** složka pro novou hudbu ze syncu (výchozí `~/Music/Stickwise`, uvnitř `Interpret/Album/soubor`), jméno Macu, spárované Macy.
+- **Panel „Poblíž“:** Stickwise na stejné síti („Tomášův MacBook“).
+- **Dva režimy:**
+  1. **Zrcadlo 1:1:** obě knihovny skončí stejné, oběma směry. Vždy nejdřív náhled („přibude 120 skladeb ⇄ odejde 40, změněné cue u 15 skladeb, 1 playlist smazán → potvrdit?“).
+  2. **Poslat výběr:** označím playlisty / sety / skladby → „Poslat na…“, druhý Mac dostane výzvu „Tomáš posílá 2 sety (45 skladeb) – Přijmout?“.
+
+**Pravidla**
+- **Hudební soubory se nikdy nepřepisují.** Chybějící se stáhnou do nastavené složky; je-li tam soubor stejného jména s jiným obsahem, nový dostane „(2)“. Nic se nemaže.
+- **Data v knihovně** (cue, grid, tagy, rating, barva, obsah playlistu) se přepíší, **vyhrává novější úprava**. Přepsané cue jdou do `cue_backups` (vratné).
+- **Smazání** playlistu / setu se na druhý Mac propíše **jen po potvrzení**, se seznamem, co zmizí. Skladby ani soubory sync nemaže nikdy.
+- **Analýzy** (ANLZ, waveformy) jdou se skladbou, druhý Mac je nepočítá znovu.
+
+**Technika**
+- **Identita:** skladba = BLAKE3 otisk obsahu souboru (počítá se na pozadí, přepočítá se při změně velikosti / mtime) → stejná skladba se pozná i na jiné cestě. Playlist = UUID. Knihovna = UUID v `meta`.
+- **Změny:** časové značky (unix ms) `tracks.meta_modified`, `cues_modified`, `grid_modified`, `playlists.modified` nastavují **triggery v SQLite** — zachytí každý zápis (editace, import z rekordboxu, složky) bez úprav jednotlivých funkcí. Smazání se zapisují do `sync_tombstones`. Sync při zápisu cizích změn nastaví značky na hodnoty z druhého Macu.
+- **Migrace schématu** přes `PRAGMA user_version`.
+- **Síť:** Bonjour/mDNS `_stickwise._tcp` (crate `mdns-sd`); v `Info.plist` `NSLocalNetworkUsageDescription` + `NSBonjourServices`.
+- **Spárování:** každá instalace má vlastní klíč / certifikát; při prvním spojení oba Macy ukážou stejný 6místný kód odvozený z obou otisků certifikátů → potvrdit. Pak pinned TLS, nic dalšího se neptá.
+- **Přenos:** výměna manifestů (otisky + značky), posílá se jen rozdíl; soubory po částech s obnovením po výpadku Wi-Fi; průběh, rychlost a odhad jako u syncu na flashku.
+- **Testy:** dvě instance na jednom Macu s oddělenými daty a porty.
+
+**Fáze**
+1. **P1 — základ v knihovně:** migrace, otisky skladeb, UUID, značky změn, tombstones, manifest knihovny, nastavení složky pro hudbu.
+2. **P2 — síť:** hledání, spárování, šifrované spojení, panel „Poblíž“.
+3. **P3 — Poslat výběr** (AirDrop režim).
+4. **P4 — Zrcadlo 1:1:** oboustranný náhled rozdílů, konflikty (novější vyhrává), potvrzování mazání; skladby se stejným interpretem/názvem/délkou, ale jiným otiskem (např. upravené tagy) nabídnout ke spárování.
+5. **P5 — doladění:** obnova přerušeného přenosu, víc Maců, volitelně automatický sync, když jsou Macy poblíž.
 
 ---
 

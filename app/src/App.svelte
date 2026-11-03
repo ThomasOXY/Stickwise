@@ -16,6 +16,10 @@
   import ToolsLaunchpad from "./lib/ToolsLaunchpad.svelte";
   import TrackTable from "./lib/TrackTable.svelte";
   import UpdateSheet from "./lib/UpdateSheet.svelte";
+  import PeerSheet from "./lib/PeerSheet.svelte";
+  import PairPrompt from "./lib/PairPrompt.svelte";
+  import OfferPrompt from "./lib/OfferPrompt.svelte";
+  import MirrorSheet from "./lib/MirrorSheet.svelte";
   import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
   import { updates } from "./lib/updates.svelte";
@@ -51,7 +55,7 @@
         return;
       }
     }
-    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || updates.open || app.settingsFor !== undefined) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || app.offerRequest || app.mirrorRequest || updates.open || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -111,11 +115,21 @@
 {#if app.formatOpen}
   <FormatSheet />
 {/if}
+{#if app.peerOpen}
+  <PeerSheet />
+{/if}
 {#if app.toolsOpen}
   <ToolsLaunchpad />
 {/if}
 {#if updates.open}
   <UpdateSheet />
+{/if}
+{#if app.pairRequest}
+  <PairPrompt />
+{:else if app.offerRequest}
+  <OfferPrompt />
+{:else if app.mirrorRequest}
+  <MirrorSheet />
 {/if}
 
 <style>

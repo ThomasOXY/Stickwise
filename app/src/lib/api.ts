@@ -284,6 +284,123 @@ export const playerApi = {
     invoke<number>("format_start", { disk, filesystem, name, confirm, writeSettings }),
 };
 
+export interface PeerSettings {
+  /** Where music from another Mac is saved. */
+  musicDir: string;
+  defaultMusicDir: boolean;
+  fingerprinted: number;
+  total: number;
+  /** Mirror with paired Macs by itself when they come on the network. */
+  autoMirror: boolean;
+}
+
+export interface Peer {
+  id: string;
+  name: string;
+  /** Seen on the network now. */
+  online: boolean;
+  paired: boolean;
+}
+
+export interface PeerList {
+  /** This Mac's name. */
+  name: string;
+  peers: Peer[];
+  /** Why sync between Macs is not running. */
+  error: string | null;
+}
+
+export interface PairRequest {
+  request: number;
+  peer: Peer;
+  code: string;
+}
+
+export interface PairResult {
+  peer: Peer;
+  accepted: boolean;
+  message: string;
+}
+
+/** What another Mac offers to send. */
+export interface OfferRequest {
+  request: number;
+  from: string;
+  summary: {
+    /** Playlists and sets (not folders). */
+    playlists: string[];
+    sets: number;
+    tracks: number;
+    /** Tracks this Mac does not have yet, and their size. */
+    newTracks: number;
+    newBytes: number;
+  };
+}
+
+export interface ApplyReport {
+  tracksAdded: number;
+  tracksUpdated: number;
+  cuesUpdated: number;
+  playlistsAdded: number;
+  playlistsUpdated: number;
+  playlistsDeleted: number;
+  skipped: string[];
+}
+
+/** What mirroring would do to one Mac's library. */
+export interface MirrorChanges {
+  report: ApplyReport;
+  newBytes: number;
+  /** Playlists that cannot go along: some of their tracks are missing. */
+  leftOut: string[];
+}
+
+/** A playlist deleted on one Mac that the other still has. */
+export interface Deletion {
+  uid: string;
+  name: string;
+  isFolder: boolean;
+  isSet: boolean;
+  tracks: number;
+  /** Unix ms. */
+  deleted: number;
+}
+
+export interface MirrorRequest {
+  request: number;
+  peer: string;
+  preview: {
+    here: MirrorChanges;
+    there: MirrorChanges;
+    /** Playlists here that the other Mac deleted. */
+    deleteHere: Deletion[];
+    /** Playlists the other Mac has that were deleted here. */
+    deleteThere: Deletion[];
+    roomHere: boolean;
+  };
+}
+
+export const peerApi = {
+  settings: () => invoke<PeerSettings>("peer_settings"),
+  setMusicDir: (path: string | null) => invoke<PeerSettings>("peer_set_music_dir", { path }),
+  setAutoMirror: (on: boolean) => invoke<PeerSettings>("peer_set_auto_mirror", { on }),
+  list: () => invoke<PeerList>("peer_list"),
+  /** Returns the code both Macs show. */
+  pair: (id: string) => invoke<string>("peer_pair", { id }),
+  answer: (request: number, accept: boolean) => invoke<void>("peer_answer", { request, accept }),
+  unpair: (id: string) => invoke<void>("peer_unpair", { id }),
+  /** Milliseconds there and back. */
+  ping: (id: string) => invoke<number>("peer_ping", { id }),
+  /** Send playlists (folders whole) and tracks; returns the job id. */
+  send: (id: string, playlistIds: number[], trackIds: number[]) => invoke<number>("peer_send", { id, playlistIds, trackIds }),
+  answerOffer: (request: number, accept: boolean) => invoke<void>("peer_answer_offer", { request, accept }),
+  /** Mirror the library both ways; returns the job id. The preview comes as an event. */
+  mirror: (id: string) => invoke<number>("peer_mirror", { id }),
+  /** `null` calls the mirror off. */
+  mirrorAnswer: (request: number, choice: { deleteHere: string[]; deleteThere: string[] } | null) =>
+    invoke<void>("peer_mirror_answer", { request, choice }),
+};
+
 export const libApi = {
   data: () => invoke<LibraryData>("library_data"),
   import: (source: string) => invoke<ImportReport>("library_import", { source }),

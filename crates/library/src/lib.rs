@@ -9,6 +9,8 @@
 
 pub mod folders;
 mod import;
+pub mod peer;
+pub mod transfer;
 
 use std::path::Path;
 
@@ -180,16 +182,18 @@ impl Library {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA)?;
+        peer::migrate(&mut conn)?;
         Ok(Library { conn })
     }
 
     pub fn in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA)?;
+        peer::migrate(&mut conn)?;
         Ok(Library { conn })
     }
 
@@ -205,6 +209,17 @@ impl Library {
             "INSERT INTO meta(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],
         )?;
+        Ok(())
+    }
+
+    /// The image shown for a track (a file path, empty for none).
+    pub fn set_artwork(&self, track_id: i64, path: &str) -> Result<()> {
+        self.conn.execute("UPDATE tracks SET artwork = ?2 WHERE id = ?1", params![track_id, path])?;
+        Ok(())
+    }
+
+    pub fn clear_meta(&self, key: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM meta WHERE key = ?1", [key])?;
         Ok(())
     }
 
@@ -438,7 +453,11 @@ impl Library {
     }
 
     pub fn cues(&self, track_id: i64) -> Result<Vec<CuePoint>> {
-        let mut st = self.conn.prepare(
+        Self::cues_on(&self.conn, track_id)
+    }
+
+    pub(crate) fn cues_on(conn: &Connection, track_id: i64) -> Result<Vec<CuePoint>> {
+        let mut st = conn.prepare(
             "SELECT slot, time_ms, loop_end_ms, loop_num, loop_den, comment, hot_color, memory_color, active_loop \
              FROM cues WHERE track_id = ?1 ORDER BY slot = 0, slot, time_ms",
         )?;
@@ -462,7 +481,7 @@ impl Library {
         Ok(rows)
     }
 
-    fn write_cues(tx: &rusqlite::Transaction, track_id: i64, cues: &[CuePoint]) -> Result<()> {
+    pub(crate) fn write_cues(tx: &rusqlite::Transaction, track_id: i64, cues: &[CuePoint]) -> Result<()> {
         tx.execute("DELETE FROM cues WHERE track_id = ?1", [track_id])?;
         for c in cues {
             tx.execute(
@@ -500,8 +519,11 @@ impl Library {
     /// Keep the track's current cues so they can be restored; an existing
     /// backup is kept (it holds the cues from before the first replacement).
     pub fn backup_cues(&self, track_id: i64) -> Result<()> {
-        let cues: Vec<serde_json::Value> = self
-            .cues(track_id)?
+        Self::backup_cues_on(&self.conn, track_id)
+    }
+
+    pub(crate) fn backup_cues_on(conn: &Connection, track_id: i64) -> Result<()> {
+        let cues: Vec<serde_json::Value> = Self::cues_on(conn, track_id)?
             .iter()
             .map(|c| {
                 serde_json::json!({
@@ -511,7 +533,7 @@ impl Library {
                 })
             })
             .collect();
-        self.conn.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO cue_backups(track_id, cues, saved) VALUES (?1, ?2, datetime('now', 'localtime'))",
             params![track_id, serde_json::to_string(&cues)?],
         )?;

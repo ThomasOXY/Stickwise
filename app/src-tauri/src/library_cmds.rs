@@ -431,7 +431,7 @@ pub(crate) fn emit_job(app: &AppHandle, ev: &dto::JobEvent) {
 }
 
 /// Where this app keeps its own analysis files.
-fn analysis_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+pub(crate) fn analysis_dir(app: &AppHandle) -> CmdResult<PathBuf> {
     Ok(app.path().app_data_dir().map_err(err)?.join("analysis"))
 }
 

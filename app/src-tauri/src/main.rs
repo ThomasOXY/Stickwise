@@ -5,6 +5,7 @@ mod dto;
 mod edits;
 mod jobs;
 mod library_cmds;
+mod peer;
 mod player_cmds;
 mod sidecar;
 
@@ -14,6 +15,9 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(jobs::Jobs::default())
+        .manage(peer::OfferAsk::default())
+        .manage(peer::MirrorAsk::default())
+        .manage(peer::AutoMirror::default())
         .setup(|app| {
             use tauri::Manager;
             let dir = app.path().app_data_dir()?;
@@ -21,7 +25,9 @@ fn main() {
             app.manage(commands::VerifyCache::load(dir.join("verify-cache.json")));
             let lib = library::Library::open(&dir.join("library.sqlite"))?;
             app.manage(library_cmds::LibState(std::sync::Mutex::new(lib)));
+            app.manage(peer::start_node(app.handle(), dir.join("peer")));
             app.manage(sidecar::Sidecar::new(dir, app.path().resource_dir().ok()));
+            peer::start_fingerprints(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -77,6 +83,18 @@ fn main() {
             player_cmds::settings_write,
             player_cmds::list_disks,
             player_cmds::format_start,
+            peer::peer_settings,
+            peer::peer_set_music_dir,
+            peer::peer_list,
+            peer::peer_pair,
+            peer::peer_answer,
+            peer::peer_unpair,
+            peer::peer_ping,
+            peer::peer_send,
+            peer::peer_answer_offer,
+            peer::peer_mirror,
+            peer::peer_mirror_answer,
+            peer::peer_set_auto_mirror,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stickwise");
