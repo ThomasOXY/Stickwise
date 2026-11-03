@@ -46,8 +46,8 @@ else
         lines=$(git log "${prev:+$prev..}HEAD" --no-merges --pretty='%s' | grep -E "^($2)(\([^)]*\))?!?: " | sed -E 's/^[a-z]+(\([^)]*\))?!?: /- /' || true)
         [ -z "$lines" ] || printf '## %s\n%s\n\n' "$1" "$lines"
     }
-    { section "Novinky" "feat"; section "Opravy" "fix"; section "Rychlost" "perf"; } > "$notes"
-    [ -s "$notes" ] || echo "Drobné úpravy a vylepšení." > "$notes"
+    { section "New" "feat"; section "Fixes" "fix"; section "Performance" "perf"; } > "$notes"
+    [ -s "$notes" ] || echo "Minor changes and improvements." > "$notes"
 fi
 
 # The workspace version is the app's (app/src-tauri uses version.workspace).

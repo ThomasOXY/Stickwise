@@ -43,8 +43,8 @@ jobs:
               lines=$(git log "$range" --no-merges --pretty='%s' | grep -E "^($2)(\([^)]*\))?!?: " | sed -E 's/^[a-z]+(\([^)]*\))?!?: /- /' || true)
               [ -z "$lines" ] || printf '## %s\n%s\n\n' "$1" "$lines"
             }
-            { section "Novinky" "feat"; section "Opravy" "fix"; section "Rychlost" "perf"; } > notes.md
-            [ -s notes.md ] || echo "Drobné úpravy a vylepšení." > notes.md
+            { section "New" "feat"; section "Fixes" "fix"; section "Performance" "perf"; } > notes.md
+            [ -s notes.md ] || echo "Minor changes and improvements." > notes.md
           fi
           cat notes.md
           { echo 'body<<EOF_NOTES'; cat notes.md; echo 'EOF_NOTES'; } >> "$GITHUB_OUTPUT"
