@@ -284,6 +284,19 @@ export const playerApi = {
     invoke<number>("format_start", { disk, filesystem, name, confirm, writeSettings }),
 };
 
+export interface PeerSettings {
+  /** Where music from another Mac is saved. */
+  musicDir: string;
+  defaultMusicDir: boolean;
+  fingerprinted: number;
+  total: number;
+}
+
+export const peerApi = {
+  settings: () => invoke<PeerSettings>("peer_settings"),
+  setMusicDir: (path: string | null) => invoke<PeerSettings>("peer_set_music_dir", { path }),
+};
+
 export const libApi = {
   data: () => invoke<LibraryData>("library_data"),
   import: (source: string) => invoke<ImportReport>("library_import", { source }),

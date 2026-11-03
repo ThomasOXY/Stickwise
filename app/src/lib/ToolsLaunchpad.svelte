@@ -8,6 +8,7 @@
     Eraser,
     HardDriveDownload,
     LibraryBig,
+    Laptop,
     RefreshCw,
     Route,
     Save,
@@ -206,6 +207,17 @@
       blocked: "",
       run: () => {
         app.formatOpen = true;
+      },
+    },
+    {
+      name: "Sync mezi Macy",
+      hint: "Knihovna s dalšími Macy ve stejné síti",
+      icon: Laptop,
+      tone: "#4aa8ff",
+      group: "Knihovna",
+      blocked: "",
+      run: () => {
+        app.peerOpen = true;
       },
     },
     {

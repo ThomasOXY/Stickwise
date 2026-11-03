@@ -68,6 +68,8 @@ class AppState {
   /** Player settings sheet: `undefined` closed, `null` the DJ's profile, else a stick path. */
   settingsFor = $state<string | null | undefined>(undefined);
   formatOpen = $state(false);
+  /** Sync with Stickwise on other Macs. */
+  peerOpen = $state(false);
   /** Full-screen tool launcher. */
   toolsOpen = $state(false);
   importing = $state(false);

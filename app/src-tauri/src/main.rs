@@ -5,6 +5,7 @@ mod dto;
 mod edits;
 mod jobs;
 mod library_cmds;
+mod peer;
 mod player_cmds;
 mod sidecar;
 
@@ -22,6 +23,7 @@ fn main() {
             let lib = library::Library::open(&dir.join("library.sqlite"))?;
             app.manage(library_cmds::LibState(std::sync::Mutex::new(lib)));
             app.manage(sidecar::Sidecar::new(dir, app.path().resource_dir().ok()));
+            peer::start_fingerprints(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -77,6 +79,8 @@ fn main() {
             player_cmds::settings_write,
             player_cmds::list_disks,
             player_cmds::format_start,
+            peer::peer_settings,
+            peer::peer_set_music_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stickwise");
