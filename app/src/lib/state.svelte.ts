@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { gridBeats, normalize, type Grid } from "./grid";
 import {
@@ -549,6 +550,21 @@ class AppState {
       await this.reloadDeck();
     } catch (e) {
       this.error = String(e);
+    }
+  }
+
+  /** Put back the hot cues a set's plan replaced; returns how many tracks. */
+  async restoreSetCues(setId: number) {
+    try {
+      const n = await invoke<number>("restore_set_cues", { setId });
+      this.cues = {};
+      this.memCount = {};
+      if (this.selectedTrack != null) await this.selectTrack(this.selectedTrack, true);
+      this.notice = n ? `Původní cue jsou zpátky u ${n} skladeb.` : "Set nemá zálohované cue.";
+      return n;
+    } catch (e) {
+      this.error = String(e);
+      return 0;
     }
   }
 

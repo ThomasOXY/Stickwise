@@ -90,6 +90,15 @@
     {#if section === "general"}
       <div class="pane">
         <section>
+          <div class="eyebrow">Pomocníci</div>
+          <SheetSwitch
+            checked={p.general.helpers}
+            onchange={(on) => set("general", { helpers: on })}
+            label="Smart Cue, AI analýza cue a plánovač setu"
+            desc="Vypnuté jako za starých časů: cue i pořadí setu děláš sám. Cue, které už ve skladbách jsou, zůstanou; analýza a kontrola flashky běží dál."
+          />
+        </section>
+        <section>
           <div class="eyebrow">Verze</div>
           <div class="line">
             <span>Stickwise <strong class="readout">{version}</strong></span>

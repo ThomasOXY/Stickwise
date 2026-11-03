@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Activity, ArrowDownToLine, Command, Disc3, LibraryBig, Route, Settings, ShieldCheck, Usb, WandSparkles } from "@lucide/svelte";
-  import { openSettings } from "./prefs.svelte";
+  import { openSettings, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import { updates } from "./updates.svelte";
 
@@ -50,8 +50,10 @@
 <nav class="rail" data-tauri-drag-region>
   <div class="logo" data-tauri-drag-region><Disc3 size={20} /></div>
   <button class:on={onLibrary} onclick={library} title="Knihovna"><LibraryBig size={18} /></button>
-  <button class:on={onPlanner} onclick={planner} title="Plánovač setu"><Route size={18} /></button>
-  <button class:on={app.smartOpen} onclick={smart} title="Smart Cue"><WandSparkles size={18} /></button>
+  {#if prefs.value.general.helpers}
+    <button class:on={onPlanner} onclick={planner} title="Plánovač setu"><Route size={18} /></button>
+    <button class:on={app.smartOpen} onclick={smart} title="Smart Cue"><WandSparkles size={18} /></button>
+  {/if}
   <button class:on={onStick} onclick={() => stick(false)} title="Flashka" disabled={!firstStick}><Usb size={18} /></button>
   <button class:on={onHealth} onclick={() => stick(true)} title="Kontrola flashky" disabled={!firstStick}><ShieldCheck size={18} /></button>
   <div class="spacer" data-tauri-drag-region></div>

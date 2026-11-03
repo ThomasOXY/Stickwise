@@ -79,16 +79,8 @@
 
   async function restore() {
     if (!set) return;
-    try {
-      const n = await invoke<number>("restore_set_cues", { setId: set.id });
-      app.cues = {};
-      app.memCount = {};
-      if (app.selectedTrack != null) await app.selectTrack(app.selectedTrack, true);
-      app.notice = `Původní cue jsou zpátky u ${n} skladeb.`;
-      await loadBackups();
-    } catch (e) {
-      app.error = String(e);
-    }
+    await app.restoreSetCues(set.id);
+    await loadBackups();
   }
 
   async function run() {

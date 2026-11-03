@@ -43,6 +43,13 @@
     return () => off.then((f) => f());
   });
 
+  // Helpers switched off in the settings: close what is open of them.
+  $effect(() => {
+    if (prefs.value.general.helpers) return;
+    app.smartOpen = false;
+    if (app.view === "planner") app.view = "tracks";
+  });
+
   function onKey(e: KeyboardEvent) {
     // ⌘K or F4 (the Launchpad key) open the tools, anywhere.
     if ((e.metaKey && e.key.toLowerCase() === "k") || e.key === "F4") {
@@ -60,7 +67,7 @@
         app.syncOpen = true;
         return;
       }
-      if (k === "p" && app.isLibrary && (app.currentPlaylist?.trackIds.length ?? 0) > 1) {
+      if (k === "p" && prefs.value.general.helpers && app.isLibrary && (app.currentPlaylist?.trackIds.length ?? 0) > 1) {
         e.preventDefault();
         app.toolsOpen = false;
         app.view = "planner";

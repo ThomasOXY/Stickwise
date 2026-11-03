@@ -469,6 +469,11 @@
         Analyzovat znovu ({redo + todo})<span class="hint">mimo analýzy z rekordboxu</span>
       </button>
     {/if}
+    {#if node.isSet}
+      <button role="menuitem" onclick={() => app.restoreSetCues(node.id)} title="Vrátí hot cue, které nahradily cue přechodů z plánovače">
+        Obnovit původní cue
+      </button>
+    {/if}
     <button role="menuitem" onclick={() => ((app.peerSendPreset = [node.id]), (app.peerOpen = true))}>
       Poslat na Mac…<span class="hint">spárovaný ve stejné síti</span>
     </button>

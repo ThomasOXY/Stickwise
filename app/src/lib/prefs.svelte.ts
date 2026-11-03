@@ -6,6 +6,10 @@ import { listen } from "@tauri-apps/api/event";
  * them; what is changed in a sheet holds for that once.
  */
 export interface Prefs {
+  general: {
+    /** Smart Cue, AI cue analysis and the set planner; off = the DJ does it all by hand. */
+    helpers: boolean;
+  };
   stick: {
     /** All playlists at the top of the stick, no folders. */
     flat: boolean;
@@ -64,6 +68,7 @@ export const DUPLICATES = [
 ] as const;
 
 export const DEFAULTS: Prefs = {
+  general: { helpers: true },
   stick: { flat: true, writeSettings: true, engine: null },
   planner: { minutes: 60, level: "advanced", curve: "peak", keepOrder: true, cueMode: "only" },
   export: { numbered: true, artistTitle: true, m3u: true, history: false, duplicates: "clone" },
@@ -72,6 +77,7 @@ export const DEFAULTS: Prefs = {
 /** Saved settings over the defaults, so a setting added later has its default. */
 function merge(saved: Partial<Prefs> | null): Prefs {
   return {
+    general: { ...DEFAULTS.general, ...saved?.general },
     stick: { ...DEFAULTS.stick, ...saved?.stick },
     planner: { ...DEFAULTS.planner, ...saved?.planner },
     export: { ...DEFAULTS.export, ...saved?.export },

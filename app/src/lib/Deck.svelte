@@ -22,6 +22,7 @@
   import { api } from "./api";
   import { cssColor } from "./cues";
   import { cueTime, keyColor, size, time } from "./format";
+  import { prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import CuePads from "./CuePads.svelte";
   import GridPanel from "./GridPanel.svelte";
@@ -283,14 +284,16 @@
       </div>
 
       <div class="tools">
-        <button
-          class="tool"
-          class:on={app.smartOpen}
-          onclick={() => (app.smartOpen ? (app.smartOpen = false) : app.loadSmart())}
-          title="Smart Cue: najde dropy, breaky a další místa pro cue"
-        >
-          <WandSparkles size={14} /> Smart Cue
-        </button>
+        {#if prefs.value.general.helpers}
+          <button
+            class="tool"
+            class:on={app.smartOpen}
+            onclick={() => (app.smartOpen ? (app.smartOpen = false) : app.loadSmart())}
+            title="Smart Cue: najde dropy, breaky a další místa pro cue"
+          >
+            <WandSparkles size={14} /> Smart Cue
+          </button>
+        {/if}
         <button
           class="tool"
           class:on={app.gridOpen}

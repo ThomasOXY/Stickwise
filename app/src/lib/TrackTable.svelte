@@ -19,6 +19,7 @@
   import type { Track } from "./api";
   import { date, keyColor, keyOrder, plural, rgb, time } from "./format";
   import SetFlow from "./SetFlow.svelte";
+  import { prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
   const ROW = 46;
@@ -357,6 +358,7 @@
           Uložit toto pořadí
         </button>
       {/if}
+      {#if prefs.value.general.helpers}
       <div class="smart-wrap">
         <button class="btn ghost" onclick={() => (smartMenu = !smartMenu)} disabled={list.length === 0 || app.selection?.kind === "all"}>
           <Sparkles size={14} /> Smart Cue pro playlist
@@ -380,7 +382,8 @@
           </div>
         {/if}
       </div>
-      {#if app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
+      {/if}
+      {#if prefs.value.general.helpers && app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
         <button class="btn" onclick={() => (app.view = "planner")} disabled={list.length < 2} title="Seřadí skladby podle tóniny, tempa a energie a naplánuje přechody">
           <ListMusic size={14} /> Naplánovat set
         </button>

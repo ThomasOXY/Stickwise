@@ -19,7 +19,7 @@
     Sparkles,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
-  import { openSettings } from "./prefs.svelte";
+  import { openSettings, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import { updates } from "./updates.svelte";
 
@@ -36,6 +36,8 @@
     key?: string;
     /** Why it cannot run now; empty when it can. */
     blocked: string;
+    /** A helper (Smart Cue, AI, planner): hidden when they are off in the settings. */
+    helper?: boolean;
     run: () => void | Promise<void>;
   }
 
@@ -59,7 +61,7 @@
     if (!app.isLibrary) await app.openLibrary();
   }
 
-  const tools = $derived<Tool[]>([
+  const all = $derived<Tool[]>([
     {
       name: "Knihovna",
       hint: "Sety, playlisty a skladby na tomhle Macu",
@@ -86,6 +88,7 @@
     },
     {
       name: "Plánovač setu",
+      helper: true,
       hint: "Pořadí podle tóniny, tempa a energie, přechody",
       icon: Route,
       tone: "#9b5cf0",
@@ -119,6 +122,7 @@
     },
     {
       name: "Smart Cue",
+      helper: true,
       hint: "Dropy, breaky a další místa pro cue",
       icon: Sparkles,
       tone: "#ee5fb0",
@@ -128,6 +132,7 @@
     },
     {
       name: "AI analýza cue",
+      helper: true,
       hint: "CUE-DETR projde skladby v otevřeném seznamu",
       icon: BrainCircuit,
       tone: "#3fcfd4",
@@ -245,6 +250,7 @@
       },
     },
   ]);
+  const tools = $derived(all.filter((t) => !t.helper || prefs.value.general.helpers));
 
   const matches = (t: Tool, q: string) => !q || `${t.name} ${t.hint}`.toLowerCase().includes(q);
 
