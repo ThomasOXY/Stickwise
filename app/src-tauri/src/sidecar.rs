@@ -126,7 +126,7 @@ impl Sidecar {
         let uv = self
             .uv
             .as_ref()
-            .ok_or("Pomocné nástroje nejdou nainstalovat: chybí uv.")?;
+            .ok_or_else(|| i18n::t!("app.sidecar.noUv"))?;
         if let Some(src) = &self.bundled {
             std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
             for f in PROJECT_FILES {
@@ -147,7 +147,7 @@ impl Sidecar {
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("Instalaci nejde spustit: {e}"))?;
+            .map_err(|e| i18n::t!("app.sidecar.cantStart", error = e))?;
         let mut last = String::new();
         for line in BufReader::new(child.stderr.take().unwrap())
             .lines()
@@ -161,7 +161,7 @@ impl Sidecar {
         }
         let status = child.wait().map_err(|e| e.to_string())?;
         if !status.success() || !self.python().is_file() {
-            return Err(format!("Instalace pomocných nástrojů selhala: {last}"));
+            return Err(i18n::t!("app.sidecar.failed", error = last));
         }
         // The environment has its own copies; the download cache is ~1 GB.
         let _ = std::fs::remove_dir_all(self.data.join("uv-cache"));
@@ -207,7 +207,7 @@ impl Sidecar {
         mut progress: impl FnMut(usize, &str),
     ) -> Result<(usize, Vec<String>), String> {
         if !self.installed() {
-            return Err("AI analýza není nainstalovaná.".into());
+            return Err(i18n::t!("app.ai.notInstalled"));
         }
         let by_path: HashMap<String, &String> = jobs
             .iter()
@@ -222,7 +222,7 @@ impl Sidecar {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| format!("AI analýzu nejde spustit: {e}"))?;
+            .map_err(|e| i18n::t!("app.ai.cantStart", error = e))?;
         let stdout = child.stdout.take().unwrap();
         let (mut done, mut errors) = (0, Vec::new());
         for line in BufReader::new(stdout).lines() {
@@ -280,11 +280,11 @@ pub fn ensure_installed(app: &tauri::AppHandle) -> Result<(), String> {
     let (id, _) = jobs.start();
     let mut ev = crate::dto::JobEvent {
         id,
-        label: "Instalace nástrojů (jednorázově, ~1 GB)".into(),
+        label: i18n::t!("app.sidecar.label"),
         state: "running",
         files_total: 1,
         bytes_total: 1,
-        current: "Stahuji Python a knihovny".into(),
+        current: i18n::t!("app.sidecar.downloading"),
         phase: "install".into(),
         ..Default::default()
     };
@@ -298,7 +298,7 @@ pub fn ensure_installed(app: &tauri::AppHandle) -> Result<(), String> {
     ev.files_done = 1;
     ev.bytes_done = 1;
     ev.message = match &result {
-        Ok(()) => "Pomocné nástroje jsou připravené.".into(),
+        Ok(()) => i18n::t!("app.sidecar.ready"),
         Err(e) => e.clone(),
     };
     let _ = app.emit("job", ev);

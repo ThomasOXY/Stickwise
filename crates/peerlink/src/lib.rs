@@ -53,8 +53,8 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-fn refused<T>(why: &str) -> Result<T> {
-    Err(Error::Refused(why.to_string()))
+fn refused<T>(why: impl Into<String>) -> Result<T> {
+    Err(Error::Refused(why.into()))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,7 +86,7 @@ fn read_frame<T: DeserializeOwned>(r: &mut impl Read) -> Result<T> {
     r.read_exact(&mut n)?;
     let n = u32::from_be_bytes(n) as usize;
     if n > MAX_FRAME {
-        return refused("Zpráva z druhého Macu je moc velká.");
+        return refused(i18n::t!("peer.messageTooBig"));
     }
     let mut b = vec![0u8; n];
     r.read_exact(&mut b)?;
@@ -314,12 +314,12 @@ impl Node {
             let (accepted, message) = match read_frame::<Msg>(&mut stream) {
                 Ok(Msg::PairAccepted) => {
                     inner.remember(&id, &name);
-                    (true, format!("Spárováno s {name}."))
+                    (true, i18n::t!("peer.paired", name = name))
                 }
-                Ok(Msg::PairRejected) => (false, format!("{name} spárování odmítl.")),
-                Ok(Msg::Busy) => (false, format!("{name} zrovna páruje s jiným Macem, zkus to za chvíli.")),
-                Ok(Msg::Incompatible { .. }) => (false, format!("{name} má jinou verzi Stickwise, aktualizujte oba Macy.")),
-                _ => (false, format!("Na {name} nikdo spárování nepotvrdil.")),
+                Ok(Msg::PairRejected) => (false, i18n::t!("peer.pairRejected", name = name)),
+                Ok(Msg::Busy) => (false, i18n::t!("peer.pairBusy", name = name)),
+                Ok(Msg::Incompatible { .. }) => (false, i18n::t!("peer.pairIncompatible", name = name)),
+                _ => (false, i18n::t!("peer.pairUnconfirmed", name = name)),
             };
             let peer = Peer { id, name, online: true, paired: accepted };
             inner.emit(Event::PairResult { peer, accepted, message });
@@ -349,7 +349,7 @@ impl Node {
     /// A connection to a paired Mac.
     pub fn connect(&self, peer_id: &str) -> Result<Session> {
         if !self.inner.is_paired(peer_id) {
-            return refused("Tenhle Mac není spárovaný.");
+            return refused(i18n::t!("peer.notPaired"));
         }
         let (mut stream, id) = self.inner.dial(peer_id)?;
         write_frame(&mut stream, &self.inner.hello(false))?;
@@ -358,9 +358,9 @@ impl Node {
                 self.inner.remember(&id, &name);
                 Ok(Session { stream, peer_id: id, peer_name: name })
             }
-            Msg::NotPaired => refused("Druhý Mac tenhle nezná (spárování zrušené?). Spárujte je znovu."),
-            Msg::Incompatible { .. } => refused("Druhý Mac má jinou verzi Stickwise, aktualizujte oba."),
-            _ => refused("Druhý Mac odpověděl nesrozumitelně."),
+            Msg::NotPaired => refused(i18n::t!("peer.unknownToPeer")),
+            Msg::Incompatible { .. } => refused(i18n::t!("peer.incompatible")),
+            _ => refused(i18n::t!("peer.unclearAnswer")),
         }
     }
 
@@ -371,7 +371,7 @@ impl Node {
         s.send(&Msg::Ping)?;
         match s.recv::<Msg>()? {
             Msg::Pong => Ok(t.elapsed()),
-            _ => refused("Druhý Mac odpověděl nesrozumitelně."),
+            _ => refused(i18n::t!("peer.unclearAnswer")),
         }
     }
 }
@@ -421,7 +421,7 @@ impl Inner {
     fn dial(&self, peer_id: &str) -> Result<(tls::Stream, String)> {
         let addrs = match self.nearby.lock().unwrap().get(peer_id) {
             Some(n) => n.addrs.clone(),
-            None => return refused("Ten Mac teď není ve stejné síti."),
+            None => return refused(i18n::t!("peer.notOnNetwork")),
         };
         let mut last = None;
         for a in addrs {
@@ -432,14 +432,14 @@ impl Inner {
                     sock.set_nodelay(true)?;
                     let (stream, id) = tls::Stream::connect(self.tls.client.clone(), sock)?;
                     if id != peer_id {
-                        return refused("Na adrese toho Macu odpověděl jiný počítač.");
+                        return refused(i18n::t!("peer.impostor"));
                     }
                     return Ok((stream, id));
                 }
                 Err(e) => last = Some(e),
             }
         }
-        Err(last.map_or_else(|| Error::Refused("Ten Mac nemá žádnou adresu.".into()), Error::Io))
+        Err(last.map_or_else(|| Error::Refused(i18n::t!("peer.noAddress")), Error::Io))
     }
 
     /// One incoming connection.

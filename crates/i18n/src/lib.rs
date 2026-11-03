@@ -20,7 +20,15 @@ use serde_json::Value;
 pub const LANGS: [&str; 3] = ["cs", "en", "de"];
 
 /// The files in `locales`, by namespace.
-const FILES: &[(&str, &str)] = &[("app", include_str!("../locales/app.json"))];
+const FILES: &[(&str, &str)] = &[
+    ("app", include_str!("../locales/app.json")),
+    ("sync", include_str!("../locales/sync.json")),
+    ("peer", include_str!("../locales/peer.json")),
+    ("usb", include_str!("../locales/usb.json")),
+    ("analysis", include_str!("../locales/analysis.json")),
+    ("analyzer", include_str!("../locales/analyzer.json")),
+    ("library", include_str!("../locales/library.json")),
+];
 
 static DICTS: LazyLock<Vec<(&'static str, Value)>> = LazyLock::new(|| {
     FILES

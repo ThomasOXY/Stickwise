@@ -14,18 +14,20 @@
     Wrench,
   } from "@lucide/svelte";
   import { api } from "./api";
-  import { fsName, plural } from "./format";
+  import { fsName, num } from "./format";
+  import { i18n, t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   let showWarnings = $state(false);
   const r = $derived(app.verify);
   const errors = $derived(r?.issues.filter((i) => i.severity === "error") ?? []);
   const warnings = $derived(r?.issues.filter((i) => i.severity === "warning") ?? []);
+  const seconds = $derived(r?.seconds.toLocaleString(i18n.lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) ?? "");
 
   function result(p: NonNullable<typeof r>["players"][number]) {
-    if (!p.filesystemOk) return { cls: "fault", text: "Flashku nepřečte" };
-    if (p.unplayable.length > 0) return { cls: "warn", text: `Pojede, ${p.unplayable.length} skladeb ne` };
-    return { cls: "ok", text: "Pojede všechno" };
+    if (!p.filesystemOk) return { cls: "fault", text: t("sync.health.unreadable") };
+    if (p.unplayable.length > 0) return { cls: "warn", text: t("sync.health.partly", { count: num(p.unplayable.length) }) };
+    return { cls: "ok", text: t("sync.health.allPlay") };
   }
 
   function abs(devicePath: string) {
@@ -37,31 +39,31 @@
   {#if !r}
     <div class="loading">
       <LoaderCircle size={18} class="spin" />
-      Kontroluji skladby {app.verifyProgress[0]} / {app.verifyProgress[1]}
+      {t("sync.health.checking", { done: app.verifyProgress[0], total: app.verifyProgress[1] })}
     </div>
   {:else}
     <div class="stats">
       <div class="stat">
-        <div class="head">Skladeb <ListMusic size={15} /></div>
-        <div class="val"><span class="readout n">{r.tracks}</span><span class="sub">zkontrolováno za {r.seconds.toFixed(1).replace(".", ",")} s</span></div>
+        <div class="head">{t("sync.health.tracks")} <ListMusic size={15} /></div>
+        <div class="val"><span class="readout n">{r.tracks}</span><span class="sub">{t("sync.health.checkedIn", { seconds })}</span></div>
       </div>
       <div class="stat">
-        <div class="head">Chyby <CircleX size={15} class="fault" /></div>
-        <div class="val"><span class="readout n fault">{errors.length}</span><span class="sub">{errors.length ? "nepůjdou přehrát" : "žádná skladba"}</span></div>
+        <div class="head">{t("sync.health.errors")} <CircleX size={15} class="fault" /></div>
+        <div class="val"><span class="readout n fault">{errors.length}</span><span class="sub">{errors.length ? t("sync.health.errorsSub") : t("sync.health.errorsNone")}</span></div>
       </div>
       <div class="stat">
-        <div class="head">Varování <TriangleAlert size={15} class="warn" /></div>
-        <div class="val"><span class="readout n warn">{warnings.length}</span><span class="sub">{warnings.length ? "pojedou, ale…" : "nic"}</span></div>
+        <div class="head">{t("sync.health.warnings")} <TriangleAlert size={15} class="warn" /></div>
+        <div class="val"><span class="readout n warn">{warnings.length}</span><span class="sub">{warnings.length ? t("sync.health.warningsSub") : t("sync.health.warningsNone")}</span></div>
       </div>
       <div class="stat">
-        <div class="head">Úklid <Brush size={15} /></div>
-        <div class="val"><span class="readout n">{r.appleDouble}</span><span class="sub">souborů ._ od macOS</span></div>
+        <div class="head">{t("sync.health.cleanup")} <Brush size={15} /></div>
+        <div class="val"><span class="readout n">{r.appleDouble}</span><span class="sub">{t("sync.health.appleDoubleSub")}</span></div>
       </div>
     </div>
 
     <div class="cols">
       <div class="col">
-        <div class="title"><h3>Přehrávače</h3><span class="meta">Co na kterém pojede</span></div>
+        <div class="title"><h3>{t("sync.players")}</h3><span class="meta">{t("sync.health.playersMeta")}</span></div>
         <div class="card players">
           {#each r.players as p}
             {@const res = result(p)}
@@ -70,9 +72,9 @@
               <span class="pname">{p.player}</span>
               <span class="chips">
                 <span class="chip {p.filesystemOk ? 'ok' : 'fault'}" title={p.filesystemNote}>
-                  <i></i>{p.filesystemOk ? fsName(r.filesystem) : p.filesystemNote || `${fsName(r.filesystem)} nepřečte`}
+                  <i></i>{p.filesystemOk ? fsName(r.filesystem) : p.filesystemNote || t("sync.health.fsUnreadable", { fs: fsName(r.filesystem) })}
                 </span>
-                <span class="chip {p.formatNote ? 'fault' : 'ok'}"><i></i>{p.formatNote || "Všechny formáty"}</span>
+                <span class="chip {p.formatNote ? 'fault' : 'ok'}"><i></i>{p.formatNote || t("sync.health.allFormats")}</span>
               </span>
               <span class="res {res.cls}">
                 {#if res.cls === "ok"}<CircleCheck size={15} />{:else if res.cls === "warn"}<TriangleAlert size={15} />{:else}<CircleX size={15} />{/if}
@@ -84,21 +86,25 @@
       </div>
 
       <div class="col">
-        <div class="title"><h3>Je potřeba opravit</h3><span class="meta"><Lock size={11} /> Kontrola jen četla, nic se nezapsalo</span></div>
+        <div class="title"><h3>{t("sync.health.toFix")}</h3><span class="meta"><Lock size={11} /> {t("sync.health.readOnly")}</span></div>
         {#if errors.length === 0 && warnings.length === 0 && r.appleDouble === 0}
-          <div class="card fine"><CircleCheck size={16} /> Všechno je v pořádku, není co opravovat.</div>
+          <div class="card fine"><CircleCheck size={16} /> {t("sync.health.allFine")}</div>
         {/if}
         <div class="fixes">
           {#each errors as i, n (`${n}:${i.trackId}:${i.kind}`)}
-            {@const t = app.trackById.get(i.trackId)}
+            {@const tr = app.trackById.get(i.trackId)}
             <div class="fix error">
               <span class="tile fault"><FileX2 size={16} /></span>
               <div class="what">
-                <div class="ft">{t?.title ?? i.title}{#if t?.artist}<span class="artist"> · {t.artist}</span>{/if}</div>
-                <div class="sub" title={i.message}>{i.message} · {i.playlists.length ? `v ${i.playlists.join(", ")}` : "v žádném playlistu"}</div>
+                <div class="ft">{tr?.title ?? i.title}{#if tr?.artist}<span class="artist"> · {tr.artist}</span>{/if}</div>
+                <div class="sub" title={i.message}>
+                  {i.message} · {i.playlists.length
+                    ? t("sync.health.inPlaylists", { list: i.playlists.join(", ") })
+                    : t("sync.health.inNoPlaylist")}
+                </div>
               </div>
-              <button class="btn icon ghost" onclick={() => api.reveal(abs(i.filePath))} title="Ukázat ve Finderu" aria-label="Ukázat ve Finderu"><FolderSearch size={15} /></button>
-              <button class="btn" disabled title="Brzy"><Wrench size={14} /> Opravit…</button>
+              <button class="btn icon ghost" onclick={() => api.reveal(abs(i.filePath))} title={t("sync.health.reveal")} aria-label={t("sync.health.reveal")}><FolderSearch size={15} /></button>
+              <button class="btn" disabled title={t("sync.health.soon")}><Wrench size={14} /> {t("sync.health.fix")}</button>
             </div>
           {/each}
 
@@ -107,8 +113,8 @@
               <button class="toggle" onclick={() => (showWarnings = !showWarnings)} aria-expanded={showWarnings}>
                 <span class="tile warn"><TriangleAlert size={16} /></span>
                 <div class="what">
-                  <div class="ft">{warnings.length} {plural(warnings.length, "varování", "varování", "varování")}</div>
-                  <div class="sub">jiná velikost souboru v databázi · hrát půjdou</div>
+                  <div class="ft">{t("sync.health.warningCount", { count: num(warnings.length) })}</div>
+                  <div class="sub">{t("sync.health.warningsDetail")}</div>
                 </div>
                 <ChevronDown size={16} class={showWarnings ? "chev open" : "chev"} />
               </button>
@@ -126,8 +132,8 @@
             <div class="fix">
               <span class="tile"><Brush size={16} /></span>
               <div class="what">
-                <div class="ft">{r.appleDouble} souborů ._</div>
-                <div class="sub" title="Soubory ._ od macOS zbytečně zabírají místo a na CDJ vypadají jako rozbité skladby.">od macOS, zbytečné, na CDJ vypadají jako rozbité skladby</div>
+                <div class="ft">{t("sync.health.appleDoubleCount", { count: num(r.appleDouble) })}</div>
+                <div class="sub" title={t("sync.health.appleDoubleWhy")}>{t("sync.health.appleDoubleHint")}</div>
               </div>
             </div>
           {/if}

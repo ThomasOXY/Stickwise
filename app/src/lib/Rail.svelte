@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Activity, ArrowDownToLine, Command, Disc3, LibraryBig, Route, Settings, ShieldCheck, Usb, WandSparkles } from "@lucide/svelte";
+  import { t } from "./i18n.svelte";
   import { openSettings, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import { updates } from "./updates.svelte";
@@ -21,7 +22,7 @@
     if (!app.isLibrary) await app.openLibrary();
     const p = app.currentPlaylist?.trackIds.length ? app.currentPlaylist : app.data?.playlists.find((x) => x.isSet && x.trackIds.length > 1);
     if (!p) {
-      app.notice = "Vyber set nebo playlist s aspoň dvěma skladbami, pak otevři plánovač.";
+      app.notice = t("shell.plannerNeedsSet");
       return;
     }
     app.select({ kind: "playlist", id: p.id });
@@ -30,7 +31,7 @@
 
   async function stick(health: boolean) {
     if (!firstStick) {
-      app.notice = "Vlož flashku.";
+      app.notice = t("shell.rail.insertStick");
       return;
     }
     if (app.isLibrary || app.stickPath !== firstStick) await app.open(firstStick);
@@ -40,7 +41,7 @@
 
   function smart() {
     if (!app.deck) {
-      app.notice = "Nejdřív vyber skladbu.";
+      app.notice = t("shell.rail.pickTrack");
       return;
     }
     app.smartOpen ? (app.smartOpen = false) : app.loadSmart();
@@ -49,26 +50,26 @@
 
 <nav class="rail" data-tauri-drag-region>
   <div class="logo" data-tauri-drag-region><Disc3 size={20} /></div>
-  <button class:on={onLibrary} onclick={library} title="Knihovna"><LibraryBig size={18} /></button>
+  <button class:on={onLibrary} onclick={library} title={t("shell.tools.library.name")}><LibraryBig size={18} /></button>
   {#if prefs.value.general.helpers}
-    <button class:on={onPlanner} onclick={planner} title="Plánovač setu"><Route size={18} /></button>
+    <button class:on={onPlanner} onclick={planner} title={t("shell.tools.planner.name")}><Route size={18} /></button>
     <button class:on={app.smartOpen} onclick={smart} title="Smart Cue"><WandSparkles size={18} /></button>
   {/if}
-  <button class:on={onStick} onclick={() => stick(false)} title="Flashka" disabled={!firstStick}><Usb size={18} /></button>
-  <button class:on={onHealth} onclick={() => stick(true)} title="Kontrola flashky" disabled={!firstStick}><ShieldCheck size={18} /></button>
+  <button class:on={onStick} onclick={() => stick(false)} title={t("shell.rail.stick")} disabled={!firstStick}><Usb size={18} /></button>
+  <button class:on={onHealth} onclick={() => stick(true)} title={t("shell.tools.verify.name")} disabled={!firstStick}><ShieldCheck size={18} /></button>
   <div class="spacer" data-tauri-drag-region></div>
   {#if updates.available}
-    <button class="update" onclick={() => (updates.open = true)} title="Nová verze {updates.update?.version}">
+    <button class="update" onclick={() => (updates.open = true)} title={t("shell.rail.newVersion", { version: updates.update?.version ?? "" })}>
       <ArrowDownToLine size={18} />
       <span class="pip"></span>
     </button>
   {/if}
-  <button class="jobs" class:busy={running > 0} class:on={app.jobsOpen} title={running ? `Běží ${running} úloh` : "Úlohy"} onclick={() => (app.jobsOpen = !app.jobsOpen)}>
+  <button class="jobs" class:busy={running > 0} class:on={app.jobsOpen} title={running ? t("shell.rail.jobsRunning", { count: running }) : t("shell.rail.jobs")} onclick={() => (app.jobsOpen = !app.jobsOpen)}>
     <Activity size={18} />
     {#if running}<span class="badge readout">{running}</span>{/if}
   </button>
-  <button onclick={() => openSettings()} title="Nastavení (⌘,)"><Settings size={18} /></button>
-  <button class="cmdk" onclick={() => (app.toolsOpen = true)} title="Všechny nástroje (⌘K)"><Command size={16} /></button>
+  <button onclick={() => openSettings()} title={t("shell.rail.settings")}><Settings size={18} /></button>
+  <button class="cmdk" onclick={() => (app.toolsOpen = true)} title={t("shell.rail.allTools")}><Command size={16} /></button>
 </nav>
 
 <style>

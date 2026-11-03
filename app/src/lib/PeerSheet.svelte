@@ -4,7 +4,8 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
   import { peerApi, type PairResult, type Peer, type PeerList, type PeerSettings, type Playlist } from "./api";
-  import { plural, size } from "./format";
+  import { size } from "./format";
+  import { t } from "./i18n.svelte";
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { openSettings } from "./prefs.svelte";
@@ -88,7 +89,7 @@
     error = "";
     try {
       await peerApi.mirror(p.id);
-      app.notice = `Porovnávám knihovnu s ${p.name}. Než se cokoli změní, ukážu, co se stane.`;
+      app.notice = t("peer.sheet.mirrorStarted", { name: p.name });
       app.peerOpen = false;
     } catch (e) {
       error = String(e);
@@ -100,7 +101,7 @@
     error = "";
     try {
       await peerApi.send(sendTo.id, [...picked], []);
-      app.notice = `Posílám na ${sendTo.name}. Průběh je v úlohách, ${sendTo.name} to musí přijmout.`;
+      app.notice = t("peer.sheet.sending", { name: sendTo.name });
       app.peerOpen = false;
     } catch (e) {
       error = String(e);
@@ -157,31 +158,38 @@
   async function check(id: string) {
     checks[id] = "…";
     try {
-      checks[id] = `Spojení funguje · ${await peerApi.ping(id)} ms`;
+      checks[id] = t("peer.sheet.pingOk", { ms: await peerApi.ping(id) });
     } catch (e) {
       checks[id] = String(e);
     }
   }
 
   async function unpair(id: string, name: string) {
-    const sure = await ask(`Knihovny se pak nebudou synchronizovat, dokud Macy znovu nespárujete.`, {
-      title: `Zrušit spárování s ${name}?`,
+    const sure = await ask(t("peer.sheet.unpairBody"), {
+      title: t("peer.sheet.unpairTitle", { name }),
       kind: "warning",
-      okLabel: "Zrušit spárování",
-      cancelLabel: "Nechat",
+      okLabel: t("peer.sheet.unpair"),
+      cancelLabel: t("peer.sheet.keep"),
     });
     if (!sure) return;
     await peerApi.unpair(id);
     delete checks[id];
     refresh();
   }
+
+  /** A sentence split around one placeholder, for markup in its place. */
+  const around = (text: string, name: string) => {
+    const [a, b = ""] = text.split(`{${name}}`);
+    return [a.trimEnd(), b];
+  };
+  const more = $derived(around(t("peer.sheet.moreInSettings"), "settings"));
 </script>
 
 <SheetFrame
   id="peer-title"
   icon={Laptop}
-  title="Sync mezi Macy"
-  sub={list ? `Tento Mac: ${list.name}` : "Knihovna s dalšími Stickwise ve stejné síti"}
+  title={t("peer.title")}
+  sub={list ? t("peer.thisMacName", { name: list.name }) : t("peer.sub")}
   width={620}
   onclose={() => (app.peerOpen = false)}
 >
@@ -189,9 +197,9 @@
     {#if sendTo}
       <section class="send">
         <div class="sec-head">
-          <span class="eyebrow">Co poslat na {sendTo.name}</span>
+          <span class="eyebrow">{t("peer.sheet.sendWhat", { name: sendTo.name })}</span>
           <span class="count">
-            {sendIds.size} {plural(sendIds.size, "skladba", "skladby", "skladeb")} · {size(sendBytes)}
+            {t("common.tracks", { count: sendIds.size })} · {size(sendBytes)}
           </span>
         </div>
         {#if rows.length}
@@ -201,68 +209,66 @@
                 <SheetCheck state={rowState(p)} />
                 {#if p.isFolder}<Folder size={14} />{:else}<ListMusic size={14} />{/if}
                 <span class="pname">{p.name}</span>
-                {#if p.isSet}<span class="tag">set</span>{/if}
+                {#if p.isSet}<span class="tag">{t("peer.sheet.setTag")}</span>{/if}
                 <span class="pcount">{p.isFolder ? "" : p.trackIds.length}</span>
               </button>
             {/each}
           </div>
         {:else}
-          <div class="empty">V knihovně nejsou žádné playlisty ani sety.</div>
+          <div class="empty">{t("peer.sheet.noPlaylists")}</div>
         {/if}
         <p class="hint">
-          Druhý Mac pošle jen to, co mu chybí. Skladby, které už má, se nepřenášejí; přijdou k nim jen novější cue, gridy a tagy.
+          {t("peer.sheet.sendHint")}
         </p>
       </section>
     {:else}
       <section>
         <p class="more">
-          Kam se ukládá hudba z jiných Maců a automatické zrcadlení najdeš v<button class="link" onclick={() => openSettings("peer")}
-            >Nastavení</button
-          >.
+          {more[0]}<button class="link" onclick={() => openSettings("peer")}>{t("peer.sheet.settingsLink")}</button>{more[1]}
         </p>
       </section>
 
       <section>
-        <div class="eyebrow">Příprava knihovny</div>
+        <div class="eyebrow">{t("peer.sheet.prepTitle")}</div>
         {#if s}
           {#if ready && s.fingerprinted >= s.total}
-            <p class="ok"><CircleCheck size={16} />Všech {s.total} {plural(s.total, "skladba má", "skladby mají", "skladeb má")} otisk, knihovna je připravená.</p>
+            <p class="ok"><CircleCheck size={16} />{t("peer.sheet.allFingerprinted", { count: s.total })}</p>
           {:else if ready}
-            <p class="ok"><CircleCheck size={16} />Knihovna je připravená, otisk má {s.fingerprinted} z {s.total} skladeb.</p>
+            <p class="ok"><CircleCheck size={16} />{t("peer.sheet.partFingerprinted", { done: s.fingerprinted, count: s.total })}</p>
           {:else}
             <div class="progress">
               <div class="bar"><span style:width="{pct}%"></span></div>
               <span class="readout">{s.fingerprinted} / {s.total}</span>
             </div>
             <p class="hint">
-              <LoaderCircle size={13} class="spin" />Počítají se otisky skladeb. Podle nich druhý Mac pozná stejnou skladbu, i když leží
-              jinde. Běží na pozadí, skladby na odpojeném disku přijdou na řadu po připojení.
+              <LoaderCircle size={13} class="spin" />{t("peer.sheet.fingerprinting")}
             </p>
           {/if}
           {#if s.skipped}
             <p class="hint">
-              {s.skipped} {plural(s.skipped, "skladba se nedá přečíst a je přeskočená", "skladby se nedají přečíst a jsou přeskočené", "skladeb se nedá přečíst a jsou přeskočené")}.
-              Zkusí se znovu, když se soubor změní nebo po restartu.
+              {t("peer.sheet.skipped", { count: s.skipped })}
+              {t("peer.sheet.skippedRetry")}
             </p>
           {/if}
           {#if s.waiting}
             <p class="hint">
-              {s.waiting} {plural(s.waiting, "skladba čeká", "skladby čekají", "skladeb čeká")} na připojení disku.
+              {t("peer.sheet.waiting", { count: s.waiting })}
             </p>
           {/if}
         {/if}
       </section>
 
       <section>
-        <div class="eyebrow">Macy</div>
+        <div class="eyebrow">{t("peer.sheet.macs")}</div>
         {#if preset}
-          <p class="hint">Vyber Mac, kam poslat „{presetNames}“. Posílat jde jen na spárovaný Mac ve stejné síti.</p>
+          <p class="hint">{t("peer.sheet.pickMac", { names: presetNames })}</p>
         {/if}
         {#if pairing}
           <div class="pairing">
             {#if !pairing.result}
               <div class="code readout">{pairing.code}</div>
-              <p><LoaderCircle size={14} class="spin" />Na <strong>{pairing.name}</strong> potvrď, že ukazuje stejný kód.</p>
+              {@const code = around(t("peer.sheet.confirmCode"), "name")}
+              <p><LoaderCircle size={14} class="spin" />{code[0]} <strong>{pairing.name}</strong>{code[1]}</p>
             {:else}
               <p class:ok={pairing.result.accepted} class:err={!pairing.result.accepted}>
                 {#if pairing.result.accepted}<CircleCheck size={16} />{/if}{pairing.result.message}
@@ -275,7 +281,7 @@
           <div class="empty err"><WifiOff size={18} />{list.error}</div>
         {:else if list && list.peers.length === 0}
           <div class="empty">
-            <LoaderCircle size={18} class="spin" />Hledám další Macy… Na druhém Macu otevři Stickwise ve stejné síti.
+            <LoaderCircle size={18} class="spin" />{t("peer.sheet.searching")}
           </div>
         {:else if list}
           <div class="peers">
@@ -285,22 +291,22 @@
                 <div class="who">
                   <span class="name">{p.name}</span>
                   <span class="status">
-                    {#if checks[p.id]}{checks[p.id]}{:else if p.paired}Spárováno · {p.online ? "v síti" : "mimo síť"}{:else}Nespárováno{/if}
+                    {#if checks[p.id]}{checks[p.id]}{:else if p.paired}{t(p.online ? "peer.sheet.pairedOnline" : "peer.sheet.pairedOffline")}{:else}{t("peer.sheet.notPaired")}{/if}
                   </span>
                 </div>
                 {#if p.paired}
                   {#if p.online}
-                    <button class="btn icon ghost" title="Ověřit spojení" aria-label="Ověřit spojení" onclick={() => check(p.id)} disabled={checks[p.id] === "…"}>
+                    <button class="btn icon ghost" title={t("peer.sheet.checkConnection")} aria-label={t("peer.sheet.checkConnection")} onclick={() => check(p.id)} disabled={checks[p.id] === "…"}>
                       <Wifi size={15} />
                     </button>
-                    <button class="btn" title="Obě knihovny budou stejné" onclick={() => mirror(p)}><ArrowLeftRight size={14} />Zrcadlit</button>
-                    <button class="btn primary" onclick={() => choose(p)}><Send size={14} />Poslat…</button>
+                    <button class="btn" title={t("peer.sheet.mirrorHint")} onclick={() => mirror(p)}><ArrowLeftRight size={14} />{t("peer.sheet.mirror")}</button>
+                    <button class="btn primary" onclick={() => choose(p)}><Send size={14} />{t("peer.sheet.send")}</button>
                   {/if}
-                  <button class="btn icon ghost" title="Zrušit spárování" aria-label="Zrušit spárování" onclick={() => unpair(p.id, p.name)}>
+                  <button class="btn icon ghost" title={t("peer.sheet.unpair")} aria-label={t("peer.sheet.unpair")} onclick={() => unpair(p.id, p.name)}>
                     <Link2Off size={15} />
                   </button>
                 {:else}
-                  <button class="btn primary" onclick={() => pair(p.id, p.name)} disabled={!!pairing && !pairing.result}>Spárovat</button>
+                  <button class="btn primary" onclick={() => pair(p.id, p.name)} disabled={!!pairing && !pairing.result}>{t("peer.sheet.pair")}</button>
                 {/if}
               </div>
             {/each}
@@ -315,12 +321,12 @@
 
   {#snippet foot()}
     {#if sendTo}
-      <button class="btn ghost lg" onclick={() => (sendTo = null)}>Zpět</button>
+      <button class="btn ghost lg" onclick={() => (sendTo = null)}>{t("peer.sheet.back")}</button>
       <button class="btn primary lg" onclick={startSend} disabled={sendIds.size === 0 && picked.size === 0}>
-        <Send size={16} />Poslat na {sendTo.name}
+        <Send size={16} />{t("peer.sheet.sendTo", { name: sendTo.name })}
       </button>
     {:else}
-      <button class="btn primary lg" onclick={() => (app.peerOpen = false)}>Hotovo</button>
+      <button class="btn primary lg" onclick={() => (app.peerOpen = false)}>{t("common.done")}</button>
     {/if}
   {/snippet}
 </SheetFrame>

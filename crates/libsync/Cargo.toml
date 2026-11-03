@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 blake3 = "1"
 libc = "0.2"
+i18n = { path = "../i18n" }
 library.workspace = true
 peerlink.workspace = true
 serde = { version = "1", features = ["derive"] }

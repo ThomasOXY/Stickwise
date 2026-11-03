@@ -1,5 +1,593 @@
 {
-  "cs": {},
-  "en": {},
-  "de": {}
+  "cs": {
+    "title": "Synchronizovat na flashku",
+    "titleRunning": "Synchronizuji {name}",
+    "stickNamed": "Flashka {name}",
+    "sub": "Vybrané sety a playlisty budou na flashce přesně tak, jak je máš v knihovně. Hudba se kopíruje jen tam, kde chybí.",
+    "ejected": "Flashka je vysunutá, můžeš ji vytáhnout.",
+    "ejectFailed": "Flashku nejde vysunout: {error}",
+    "steps": {
+      "analyze": "Analýza",
+      "backup": "Záloha",
+      "copy": "Kopírování",
+      "analysis": "Cue a waveformy",
+      "database": "Databáze",
+      "settings": "Nastavení",
+      "engine": "Denon",
+      "verify": "Kontrola"
+    },
+    "stick": "Flashka",
+    "noStick": "Připoj flashku. Objeví se tady sama.",
+    "stickMeta": "{fs} · volných {free} z {total} GB",
+    "content": "Co na ní bude",
+    "sets": {
+      "one": "{count} set",
+      "few": "{count} sety",
+      "other": "{count} setů"
+    },
+    "playlists": {
+      "one": "{count} playlist",
+      "few": "{count} playlisty",
+      "other": "{count} playlistů"
+    },
+    "picked": "{sets} · {playlists} vybrané",
+    "setTag": "set",
+    "partial": "částečně",
+    "options": "Možnosti",
+    "engineNote": "Vyber nejstarší firmware Denonu, na kterém budeš hrát; novější ho přečtou taky. Denon si knihovnu při prvním použití převede na svou verzi a starší přehrávač ji pak nepřečte, další synchronizace ji ale vrátí zpátky.",
+    "engineExisting": {
+      "one": "Na flashce už je Denon knihovna {version} ({count} skladba): nahradí se, stará půjde do zálohy.",
+      "few": "Na flashce už je Denon knihovna {version} ({count} skladby): nahradí se, stará půjde do zálohy.",
+      "other": "Na flashce už je Denon knihovna {version} ({count} skladeb): nahradí se, stará půjde do zálohy."
+    },
+    "engineConverted": "Převedl ji novější Engine OS, zapíšu zpátky {version}.",
+    "whatHappens": "Co se stane",
+    "tracksUnit": {
+      "one": "skladba",
+      "few": "skladby",
+      "other": "skladeb"
+    },
+    "inPlaylists": {
+      "one": "v {count} playlistu",
+      "few": "v {count} playlistech",
+      "other": "v {count} playlistech"
+    },
+    "copy": "Zkopírovat",
+    "copyHint": "nové nebo změněné soubory",
+    "reuse": "Už na flashce",
+    "reuseHint": "stejný soubor, nic se nekopíruje",
+    "analyze": "Analyzovat",
+    "analyzeHint": "před zápisem: waveform, beatgrid, tónina",
+    "missing": "Chybí na Macu",
+    "missingHint": "nemají soubor, vynechají se",
+    "spaceAfter": "Místo na flashce po synchronizaci",
+    "spaceFree": "{gb} GB volných",
+    "noFit": "nevejde se",
+    "spaceUsed": "obsazeno {gb} GB",
+    "lowSpace": "Na flashce je málo místa ({size} volných).",
+    "missingNote": {
+      "one": "{count} skladba nemá soubor na Macu, vynechá se.",
+      "few": "{count} skladby nemají soubor na Macu, vynechají se.",
+      "other": "{count} skladeb nemá soubor na Macu, vynechají se."
+    },
+    "noAnalysisNote": {
+      "one": "{count} skladba nemá analýzu: před zápisem ji zanalyzuju (waveform, beatgrid, tónina).",
+      "few": "{count} skladby nemají analýzu: před zápisem je zanalyzuju (waveform, beatgrid, tónina).",
+      "other": "{count} skladeb nemá analýzu: před zápisem je zanalyzuju (waveform, beatgrid, tónina)."
+    },
+    "planning": "Počítám, co je potřeba zkopírovat…",
+    "pickPrompt": "Vyber flashku a aspoň jeden set nebo playlist.",
+    "safety": "Bezpečné: nejdřív záloha, databáze se přepíše až nakonec. Vytažení flashky nic nerozbije.",
+    "safetyText": "Knihovna na flashce se vymění celá: playlisty, které nevybereš, z přehrávače zmizí. Hudba na flashce zůstane, nic se nemaže. Stará databáze se nejdřív zazálohuje do ~/Stickwise/backups a nová se zapíše až nakonec, takže vytažení flashky uprostřed nic nerozbije. Historie hraní z přehrávače zůstane jen v záloze.",
+    "safetyExfat": "Flashka je exFAT: CDJ-2000NXS2 a starší ji nepřečtou.",
+    "safetyOneLibrary": "OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) zatím nezapisujeme.",
+    "timeLeft": "zbývá {time}",
+    "trackProgress": "Skladba {progress}",
+    "dontUnplug": "Flashku nevytahuj. Kdyby se to stalo, zůstane na ní předchozí knihovna.",
+    "stopped": "Synchronizace zastavena",
+    "failed": "Synchronizace skončila s problémem",
+    "remember": "Výběr si pamatuju pro {name}",
+    "start": "Synchronizovat",
+    "startCount": {
+      "one": "Synchronizovat {count} skladbu",
+      "few": "Synchronizovat {count} skladby",
+      "other": "Synchronizovat {count} skladeb"
+    },
+    "eject": "Vysunout flashku",
+    "players": "Přehrávače",
+    "format": {
+      "title": "Formátovat flashku",
+      "titleRunning": "Formátuji {name}",
+      "sub": "Flashka dostane jeden oddíl (MBR) a prázdnou rekordbox knihovnu, takže ji přehrávače hned poznají.",
+      "disk": "Disk",
+      "reload": "Načíst znovu",
+      "searching": "Hledám flashky…",
+      "none": "Žádná USB flashka ani karta. Připoj ji a klikni na obnovit.",
+      "untitled": "Bez názvu",
+      "filesystem": "Souborový systém",
+      "fat32Hint": "Přečtou ho všechny CDJ a XDJ (i CDJ-2000NXS, NXS2, XDJ-1000), Denon i rekordbox. Soubor max. 4 GB.",
+      "exfatHint": "CDJ-3000, CDJ-3000X, XDJ-AZ, OPUS-QUAD, Denon. CDJ-2000NXS2 a starší ji nepřečtou.",
+      "name": "Název flashky",
+      "onPlayer": "Na přehrávači: {name}",
+      "nameRule": "1–11 znaků: písmena bez diakritiky, číslice, mezera, _ -",
+      "writeSettings": "Nahrát moje nastavení přehrávače",
+      "erase": "**Všechno na {name} ({gb} GB) se smaže**: hudba, playlisty, historie hraní. Databáze a nastavení se předtím zazálohují do ~/Stickwise/backups, hudba ne.",
+      "external": "Tohle je externí disk, ne flashka. Zkontroluj, že je to opravdu ten správný.",
+      "confirm": "Pro potvrzení napiš název flashky: {name}",
+      "dontUnplug": "Flashku nevytahuj, dokud to neskončí.",
+      "failed": "Formátování se nepovedlo",
+      "start": "Smazat a naformátovat"
+    },
+    "writeCues": {
+      "title": "Zapsat cue na {name}",
+      "sub": {
+        "one": "Upravené cue u {count} skladby se zapíšou do souborů s analýzou na flashce. Databáze ani hudba se nemění.",
+        "few": "Upravené cue u {count} skladeb se zapíšou do souborů s analýzou na flashce. Databáze ani hudba se nemění.",
+        "other": "Upravené cue u {count} skladeb se zapíšou do souborů s analýzou na flashce. Databáze ani hudba se nemění."
+      },
+      "more": {
+        "one": "a {count} další",
+        "few": "a {count} další",
+        "other": "a {count} dalších"
+      },
+      "backupNote": "Původní soubory se nejdřív zazálohují do ~/Stickwise/backups. Každý soubor se zapíše vedle originálu, ověří a teprve pak vymění, takže vytažení flashky uprostřed nic nerozbije.",
+      "oneLibraryNote": "CDJ-3000X, XDJ-AZ a OPUS-QUAD čtou cue z OneLibrary, tu zatím neumíme zapsat. Tam se změny projeví až po exportu. NXS2, CDJ-3000 a Denon je uvidí hned.",
+      "writing": "Zapisuji…",
+      "write": {
+        "one": "Zapsat {count} skladbu",
+        "few": "Zapsat {count} skladby",
+        "other": "Zapsat {count} skladeb"
+      }
+    },
+    "health": {
+      "unreadable": "Flashku nepřečte",
+      "partly": {
+        "one": "Pojede, {count} skladba ne",
+        "few": "Pojede, {count} skladby ne",
+        "other": "Pojede, {count} skladeb ne"
+      },
+      "allPlay": "Pojede všechno",
+      "checking": "Kontroluji skladby {done} / {total}",
+      "tracks": "Skladeb",
+      "checkedIn": "zkontrolováno za {seconds} s",
+      "errors": "Chyby",
+      "errorsSub": "nepůjdou přehrát",
+      "errorsNone": "žádná skladba",
+      "warnings": "Varování",
+      "warningsSub": "pojedou, ale…",
+      "warningsNone": "nic",
+      "cleanup": "Úklid",
+      "appleDoubleSub": "souborů ._ od macOS",
+      "playersMeta": "Co na kterém pojede",
+      "fsUnreadable": "{fs} nepřečte",
+      "allFormats": "Všechny formáty",
+      "toFix": "Je potřeba opravit",
+      "readOnly": "Kontrola jen četla, nic se nezapsalo",
+      "allFine": "Všechno je v pořádku, není co opravovat.",
+      "inPlaylists": "v {list}",
+      "inNoPlaylist": "v žádném playlistu",
+      "reveal": "Ukázat ve Finderu",
+      "soon": "Brzy",
+      "fix": "Opravit…",
+      "warningCount": {
+        "one": "{count} varování",
+        "few": "{count} varování",
+        "other": "{count} varování"
+      },
+      "warningsDetail": "jiná velikost souboru v databázi · hrát půjdou",
+      "appleDoubleCount": {
+        "one": "{count} soubor ._",
+        "few": "{count} soubory ._",
+        "other": "{count} souborů ._"
+      },
+      "appleDoubleWhy": "Soubory ._ od macOS zbytečně zabírají místo a na CDJ vypadají jako rozbité skladby.",
+      "appleDoubleHint": "od macOS, zbytečné, na CDJ vypadají jako rozbité skladby"
+    },
+    "header": {
+      "mounted": "· připojená · {fs}",
+      "capacity": "{used} z {total} GB",
+      "formatTitle": "Formátovat flashku (FAT32 / exFAT)",
+      "clone": "Klonovat (brzy)",
+      "eject": "Vysunout",
+      "settingsTitle": "My Settings pro CDJ/XDJ a mixer na této flashce",
+      "export": "Export na disk",
+      "writeCues": "Zapsat cue na flashku",
+      "check": "Zkontrolovat flashku",
+      "tracks": "Skladby",
+      "checkTab": "Kontrola",
+      "playerTitle": "Skladby, které na tomto přehrávači nepůjdou",
+      "checkFirst": "Nejdřív zkontroluj flashku",
+      "checking": "Kontroluji {progress}",
+      "unplayable": {
+        "one": "{count} skladba nepůjde přehrát",
+        "few": "{count} skladby nepůjdou přehrát",
+        "other": "{count} skladeb nepůjde přehrát"
+      },
+      "allPlayable": "Všechno půjde přehrát"
+    }
+  },
+  "en": {
+    "title": "Sync to a stick",
+    "titleRunning": "Syncing {name}",
+    "stickNamed": "Stick {name}",
+    "sub": "The sets and playlists you pick end up on the stick exactly as they are in your library. Music is only copied where it's missing.",
+    "ejected": "The stick is ejected, you can unplug it.",
+    "ejectFailed": "Can't eject the stick: {error}",
+    "steps": {
+      "analyze": "Analysis",
+      "backup": "Backup",
+      "copy": "Copying",
+      "analysis": "Cues and waveforms",
+      "database": "Database",
+      "settings": "Settings",
+      "engine": "Denon",
+      "verify": "Check"
+    },
+    "stick": "Stick",
+    "noStick": "Plug in a stick. It shows up here by itself.",
+    "stickMeta": "{fs} · {free} of {total} GB free",
+    "content": "What goes on it",
+    "sets": {
+      "one": "{count} set",
+      "other": "{count} sets"
+    },
+    "playlists": {
+      "one": "{count} playlist",
+      "other": "{count} playlists"
+    },
+    "picked": "{sets} · {playlists} selected",
+    "setTag": "set",
+    "partial": "partly",
+    "options": "Options",
+    "engineNote": "Pick the oldest Denon firmware you'll play on; newer ones read it too. On first use, Denon converts the library to its own version and an older player can't read it after that, but the next sync puts it back.",
+    "engineExisting": {
+      "one": "The stick already has a Denon library {version} ({count} track): it gets replaced, the old one goes into the backup.",
+      "other": "The stick already has a Denon library {version} ({count} tracks): it gets replaced, the old one goes into the backup."
+    },
+    "engineConverted": "A newer Engine OS converted it, I'll write {version} back.",
+    "whatHappens": "What happens",
+    "tracksUnit": {
+      "one": "track",
+      "other": "tracks"
+    },
+    "inPlaylists": {
+      "one": "in {count} playlist",
+      "other": "in {count} playlists"
+    },
+    "copy": "Copy",
+    "copyHint": "new or changed files",
+    "reuse": "Already on the stick",
+    "reuseHint": "same file, nothing gets copied",
+    "analyze": "Analyze",
+    "analyzeHint": "before writing: waveform, beat grid, key",
+    "missing": "Missing on the Mac",
+    "missingHint": "no file, they get skipped",
+    "spaceAfter": "Space on the stick after the sync",
+    "spaceFree": "{gb} GB free",
+    "noFit": "won't fit",
+    "spaceUsed": "{gb} GB used",
+    "lowSpace": "Not enough space on the stick ({size} free).",
+    "missingNote": {
+      "one": "{count} track has no file on the Mac and gets skipped.",
+      "other": "{count} tracks have no file on the Mac and get skipped."
+    },
+    "noAnalysisNote": {
+      "one": "{count} track isn't analyzed: I'll analyze it before writing (waveform, beat grid, key).",
+      "other": "{count} tracks aren't analyzed: I'll analyze them before writing (waveform, beat grid, key)."
+    },
+    "planning": "Working out what needs copying…",
+    "pickPrompt": "Pick a stick and at least one set or playlist.",
+    "safety": "Safe: backup first, the database is replaced only at the end. Pulling out the stick breaks nothing.",
+    "safetyText": "The library on the stick is replaced as a whole: playlists you don't pick disappear from the player. The music on the stick stays, nothing is deleted. The old database is backed up to ~/Stickwise/backups first and the new one is written only at the end, so pulling out the stick midway breaks nothing. The player's play history stays only in the backup.",
+    "safetyExfat": "The stick is exFAT: CDJ-2000NXS2 and older can't read it.",
+    "safetyOneLibrary": "We don't write OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) yet.",
+    "timeLeft": "{time} left",
+    "trackProgress": "Track {progress}",
+    "dontUnplug": "Don't pull out the stick. If it happens, the previous library stays on it.",
+    "stopped": "Sync stopped",
+    "failed": "The sync ran into a problem",
+    "remember": "I'll remember the selection for {name}",
+    "start": "Sync",
+    "startCount": {
+      "one": "Sync {count} track",
+      "other": "Sync {count} tracks"
+    },
+    "eject": "Eject stick",
+    "players": "Players",
+    "format": {
+      "title": "Format a stick",
+      "titleRunning": "Formatting {name}",
+      "sub": "The stick gets one partition (MBR) and an empty rekordbox library, so players recognize it right away.",
+      "disk": "Disk",
+      "reload": "Reload",
+      "searching": "Looking for sticks…",
+      "none": "No USB stick or card. Plug one in and click reload.",
+      "untitled": "Untitled",
+      "filesystem": "File system",
+      "fat32Hint": "Every CDJ and XDJ reads it (even CDJ-2000NXS, NXS2, XDJ-1000), Denon and rekordbox too. Files up to 4 GB.",
+      "exfatHint": "CDJ-3000, CDJ-3000X, XDJ-AZ, OPUS-QUAD, Denon. CDJ-2000NXS2 and older can't read it.",
+      "name": "Stick name",
+      "onPlayer": "On the player: {name}",
+      "nameRule": "1–11 characters: letters without accents, digits, space, _ -",
+      "writeSettings": "Put my player settings on it",
+      "erase": "**Everything on {name} ({gb} GB) gets deleted**: music, playlists, play history. The database and settings are backed up to ~/Stickwise/backups first, the music isn't.",
+      "external": "This is an external drive, not a stick. Make sure it's really the right one.",
+      "confirm": "To confirm, type the stick's name: {name}",
+      "dontUnplug": "Don't pull out the stick until it's done.",
+      "failed": "Formatting failed",
+      "start": "Erase and format"
+    },
+    "writeCues": {
+      "title": "Write cues to {name}",
+      "sub": {
+        "one": "The edited cues of {count} track get written to the analysis files on the stick. The database and music stay as they are.",
+        "other": "The edited cues of {count} tracks get written to the analysis files on the stick. The database and music stay as they are."
+      },
+      "more": {
+        "one": "and {count} more",
+        "other": "and {count} more"
+      },
+      "backupNote": "The original files are backed up to ~/Stickwise/backups first. Each file is written next to the original, verified and only then swapped in, so pulling out the stick midway breaks nothing.",
+      "oneLibraryNote": "CDJ-3000X, XDJ-AZ and OPUS-QUAD read cues from OneLibrary, which we can't write yet. There the changes only show up after an export. NXS2, CDJ-3000 and Denon see them right away.",
+      "writing": "Writing…",
+      "write": {
+        "one": "Write {count} track",
+        "other": "Write {count} tracks"
+      }
+    },
+    "health": {
+      "unreadable": "Can't read the stick",
+      "partly": {
+        "one": "Works, except {count} track",
+        "other": "Works, except {count} tracks"
+      },
+      "allPlay": "Everything plays",
+      "checking": "Checking tracks {done} / {total}",
+      "tracks": "Tracks",
+      "checkedIn": "checked in {seconds} s",
+      "errors": "Errors",
+      "errorsSub": "won't play",
+      "errorsNone": "no tracks",
+      "warnings": "Warnings",
+      "warningsSub": "will play, but…",
+      "warningsNone": "none",
+      "cleanup": "Cleanup",
+      "appleDoubleSub": "._ files from macOS",
+      "playersMeta": "What plays on which",
+      "fsUnreadable": "Can't read {fs}",
+      "allFormats": "All formats",
+      "toFix": "Needs fixing",
+      "readOnly": "The check only read, nothing was written",
+      "allFine": "All good, nothing to fix.",
+      "inPlaylists": "in {list}",
+      "inNoPlaylist": "in no playlist",
+      "reveal": "Show in Finder",
+      "soon": "Coming soon",
+      "fix": "Fix…",
+      "warningCount": {
+        "one": "{count} warning",
+        "other": "{count} warnings"
+      },
+      "warningsDetail": "different file size in the database · they will play",
+      "appleDoubleCount": {
+        "one": "{count} ._ file",
+        "other": "{count} ._ files"
+      },
+      "appleDoubleWhy": "._ files from macOS waste space and look like broken tracks on a CDJ.",
+      "appleDoubleHint": "from macOS, not needed, look like broken tracks on a CDJ"
+    },
+    "header": {
+      "mounted": "· connected · {fs}",
+      "capacity": "{used} of {total} GB",
+      "formatTitle": "Format the stick (FAT32 / exFAT)",
+      "clone": "Clone (coming soon)",
+      "eject": "Eject",
+      "settingsTitle": "My Settings for CDJ/XDJ and mixer on this stick",
+      "export": "Export to disk",
+      "writeCues": "Write cues to the stick",
+      "check": "Check the stick",
+      "tracks": "Tracks",
+      "checkTab": "Check",
+      "playerTitle": "Tracks that won't play on this player",
+      "checkFirst": "Check the stick first",
+      "checking": "Checking {progress}",
+      "unplayable": {
+        "one": "{count} track won't play",
+        "other": "{count} tracks won't play"
+      },
+      "allPlayable": "Everything will play"
+    }
+  },
+  "de": {
+    "title": "Auf den Stick synchronisieren",
+    "titleRunning": "{name} wird synchronisiert",
+    "stickNamed": "Stick {name}",
+    "sub": "Die gewählten Sets und Playlists landen genau so auf dem Stick, wie sie in deiner Bibliothek sind. Musik wird nur kopiert, wo sie fehlt.",
+    "ejected": "Der Stick ist ausgeworfen, du kannst ihn abziehen.",
+    "ejectFailed": "Der Stick lässt sich nicht auswerfen: {error}",
+    "steps": {
+      "analyze": "Analyse",
+      "backup": "Backup",
+      "copy": "Kopieren",
+      "analysis": "Cues und Waveforms",
+      "database": "Datenbank",
+      "settings": "Einstellungen",
+      "engine": "Denon",
+      "verify": "Prüfung"
+    },
+    "stick": "Stick",
+    "noStick": "Steck einen Stick ein. Er erscheint hier von selbst.",
+    "stickMeta": "{fs} · {free} von {total} GB frei",
+    "content": "Was draufkommt",
+    "sets": {
+      "one": "{count} Set",
+      "other": "{count} Sets"
+    },
+    "playlists": {
+      "one": "{count} Playlist",
+      "other": "{count} Playlists"
+    },
+    "picked": "{sets} · {playlists} ausgewählt",
+    "setTag": "Set",
+    "partial": "teilweise",
+    "options": "Optionen",
+    "engineNote": "Wähl die älteste Denon-Firmware, auf der du spielst; neuere lesen sie auch. Denon wandelt die Bibliothek beim ersten Einsatz in seine Version um, danach kann ein älterer Player sie nicht mehr lesen – der nächste Sync stellt sie aber wieder her.",
+    "engineExisting": {
+      "one": "Auf dem Stick ist schon eine Denon-Bibliothek {version} ({count} Track): Sie wird ersetzt, die alte kommt ins Backup.",
+      "other": "Auf dem Stick ist schon eine Denon-Bibliothek {version} ({count} Tracks): Sie wird ersetzt, die alte kommt ins Backup."
+    },
+    "engineConverted": "Ein neueres Engine OS hat sie umgewandelt, ich schreibe {version} zurück.",
+    "whatHappens": "Was passiert",
+    "tracksUnit": {
+      "one": "Track",
+      "other": "Tracks"
+    },
+    "inPlaylists": {
+      "one": "in {count} Playlist",
+      "other": "in {count} Playlists"
+    },
+    "copy": "Kopieren",
+    "copyHint": "neue oder geänderte Dateien",
+    "reuse": "Schon auf dem Stick",
+    "reuseHint": "gleiche Datei, nichts wird kopiert",
+    "analyze": "Analysieren",
+    "analyzeHint": "vor dem Schreiben: Waveform, Beatgrid, Tonart",
+    "missing": "Fehlt auf dem Mac",
+    "missingHint": "keine Datei, werden übersprungen",
+    "spaceAfter": "Platz auf dem Stick nach dem Sync",
+    "spaceFree": "{gb} GB frei",
+    "noFit": "passt nicht",
+    "spaceUsed": "{gb} GB belegt",
+    "lowSpace": "Zu wenig Platz auf dem Stick ({size} frei).",
+    "missingNote": {
+      "one": "{count} Track hat keine Datei auf dem Mac und wird übersprungen.",
+      "other": "{count} Tracks haben keine Datei auf dem Mac und werden übersprungen."
+    },
+    "noAnalysisNote": {
+      "one": "{count} Track ist nicht analysiert: Ich analysiere ihn vor dem Schreiben (Waveform, Beatgrid, Tonart).",
+      "other": "{count} Tracks sind nicht analysiert: Ich analysiere sie vor dem Schreiben (Waveform, Beatgrid, Tonart)."
+    },
+    "planning": "Ich rechne aus, was kopiert werden muss…",
+    "pickPrompt": "Wähl einen Stick und mindestens ein Set oder eine Playlist.",
+    "safety": "Sicher: zuerst ein Backup, die Datenbank wird erst ganz am Ende ersetzt. Den Stick abzuziehen macht nichts kaputt.",
+    "safetyText": "Die Bibliothek auf dem Stick wird komplett ersetzt: Playlists, die du nicht auswählst, verschwinden vom Player. Die Musik auf dem Stick bleibt, nichts wird gelöscht. Die alte Datenbank wird zuerst nach ~/Stickwise/backups gesichert und die neue erst ganz am Ende geschrieben, daher macht es nichts kaputt, wenn du den Stick mittendrin abziehst. Der Verlauf des Players bleibt nur im Backup.",
+    "safetyExfat": "Der Stick ist exFAT: CDJ-2000NXS2 und ältere können ihn nicht lesen.",
+    "safetyOneLibrary": "OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) schreiben wir noch nicht.",
+    "timeLeft": "noch {time}",
+    "trackProgress": "Track {progress}",
+    "dontUnplug": "Zieh den Stick nicht ab. Falls doch, bleibt die vorherige Bibliothek drauf.",
+    "stopped": "Sync gestoppt",
+    "failed": "Beim Sync gab es ein Problem",
+    "remember": "Ich merke mir die Auswahl für {name}",
+    "start": "Synchronisieren",
+    "startCount": {
+      "one": "{count} Track synchronisieren",
+      "other": "{count} Tracks synchronisieren"
+    },
+    "eject": "Stick auswerfen",
+    "players": "Player",
+    "format": {
+      "title": "Stick formatieren",
+      "titleRunning": "{name} wird formatiert",
+      "sub": "Der Stick bekommt eine Partition (MBR) und eine leere rekordbox-Bibliothek, damit Player ihn sofort erkennen.",
+      "disk": "Laufwerk",
+      "reload": "Neu laden",
+      "searching": "Suche nach Sticks…",
+      "none": "Kein USB-Stick und keine Karte. Steck einen ein und klick auf Neu laden.",
+      "untitled": "Ohne Namen",
+      "filesystem": "Dateisystem",
+      "fat32Hint": "Alle CDJs und XDJs lesen es (auch CDJ-2000NXS, NXS2, XDJ-1000), Denon und rekordbox ebenso. Dateien max. 4 GB.",
+      "exfatHint": "CDJ-3000, CDJ-3000X, XDJ-AZ, OPUS-QUAD, Denon. CDJ-2000NXS2 und ältere können es nicht lesen.",
+      "name": "Name des Sticks",
+      "onPlayer": "Am Player: {name}",
+      "nameRule": "1–11 Zeichen: Buchstaben ohne Umlaute und Akzente, Ziffern, Leerzeichen, _ -",
+      "writeSettings": "Meine Player-Einstellungen aufspielen",
+      "erase": "**Alles auf {name} ({gb} GB) wird gelöscht**: Musik, Playlists, Verlauf. Datenbank und Einstellungen werden vorher nach ~/Stickwise/backups gesichert, die Musik nicht.",
+      "external": "Das ist eine externe Festplatte, kein Stick. Prüf, ob es wirklich die richtige ist.",
+      "confirm": "Zur Bestätigung tipp den Namen des Sticks ein: {name}",
+      "dontUnplug": "Zieh den Stick nicht ab, bis es fertig ist.",
+      "failed": "Formatieren fehlgeschlagen",
+      "start": "Löschen und formatieren"
+    },
+    "writeCues": {
+      "title": "Cues auf {name} schreiben",
+      "sub": {
+        "one": "Die bearbeiteten Cues von {count} Track werden in die Analysedateien auf dem Stick geschrieben. Datenbank und Musik bleiben unverändert.",
+        "other": "Die bearbeiteten Cues von {count} Tracks werden in die Analysedateien auf dem Stick geschrieben. Datenbank und Musik bleiben unverändert."
+      },
+      "more": {
+        "one": "und {count} weitere",
+        "other": "und {count} weitere"
+      },
+      "backupNote": "Die Originaldateien werden zuerst nach ~/Stickwise/backups gesichert. Jede Datei wird neben das Original geschrieben, geprüft und erst dann ausgetauscht, daher macht es nichts kaputt, wenn du den Stick mittendrin abziehst.",
+      "oneLibraryNote": "CDJ-3000X, XDJ-AZ und OPUS-QUAD lesen Cues aus der OneLibrary, die wir noch nicht schreiben können. Dort erscheinen die Änderungen erst nach einem Export. NXS2, CDJ-3000 und Denon sehen sie sofort.",
+      "writing": "Wird geschrieben…",
+      "write": {
+        "one": "{count} Track schreiben",
+        "other": "{count} Tracks schreiben"
+      }
+    },
+    "health": {
+      "unreadable": "Kann den Stick nicht lesen",
+      "partly": {
+        "one": "Läuft, außer {count} Track",
+        "other": "Läuft, außer {count} Tracks"
+      },
+      "allPlay": "Alles läuft",
+      "checking": "Prüfe Tracks {done} / {total}",
+      "tracks": "Tracks",
+      "checkedIn": "in {seconds} s geprüft",
+      "errors": "Fehler",
+      "errorsSub": "spielen nicht",
+      "errorsNone": "keine Tracks",
+      "warnings": "Warnungen",
+      "warningsSub": "laufen, aber…",
+      "warningsNone": "keine",
+      "cleanup": "Aufräumen",
+      "appleDoubleSub": "._-Dateien von macOS",
+      "playersMeta": "Was auf welchem läuft",
+      "fsUnreadable": "Liest kein {fs}",
+      "allFormats": "Alle Formate",
+      "toFix": "Muss repariert werden",
+      "readOnly": "Die Prüfung hat nur gelesen, nichts wurde geschrieben",
+      "allFine": "Alles in Ordnung, nichts zu reparieren.",
+      "inPlaylists": "in {list}",
+      "inNoPlaylist": "in keiner Playlist",
+      "reveal": "Im Finder zeigen",
+      "soon": "Demnächst",
+      "fix": "Reparieren…",
+      "warningCount": {
+        "one": "{count} Warnung",
+        "other": "{count} Warnungen"
+      },
+      "warningsDetail": "andere Dateigröße in der Datenbank · lassen sich abspielen",
+      "appleDoubleCount": {
+        "one": "{count} ._-Datei",
+        "other": "{count} ._-Dateien"
+      },
+      "appleDoubleWhy": "._-Dateien von macOS belegen unnötig Platz und sehen am CDJ wie kaputte Tracks aus.",
+      "appleDoubleHint": "von macOS, unnötig, sehen am CDJ wie kaputte Tracks aus"
+    },
+    "header": {
+      "mounted": "· verbunden · {fs}",
+      "capacity": "{used} von {total} GB",
+      "formatTitle": "Stick formatieren (FAT32 / exFAT)",
+      "clone": "Klonen (demnächst)",
+      "eject": "Auswerfen",
+      "settingsTitle": "My Settings für CDJ/XDJ und Mixer auf diesem Stick",
+      "export": "Auf Festplatte exportieren",
+      "writeCues": "Cues auf den Stick schreiben",
+      "check": "Stick prüfen",
+      "tracks": "Tracks",
+      "checkTab": "Prüfung",
+      "playerTitle": "Tracks, die auf diesem Player nicht laufen",
+      "checkFirst": "Prüf zuerst den Stick",
+      "checking": "Prüfe {progress}",
+      "unplayable": {
+        "one": "{count} Track lässt sich nicht abspielen",
+        "other": "{count} Tracks lassen sich nicht abspielen"
+      },
+      "allPlayable": "Alles lässt sich abspielen"
+    }
+  }
 }

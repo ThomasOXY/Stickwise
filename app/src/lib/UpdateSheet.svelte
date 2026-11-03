@@ -1,5 +1,7 @@
 <script lang="ts">
   import { ArrowRight, CircleCheck, Download, LoaderCircle, RotateCw, Sparkles, TriangleAlert } from "@lucide/svelte";
+  import { date } from "./format";
+  import { t } from "./i18n.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { updates as u } from "./updates.svelte";
 
@@ -32,11 +34,6 @@
     return blocks;
   }
 
-  function day(d?: string): string {
-    const m = d?.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return m ? `${+m[3]}. ${+m[2]}. ${m[1]}` : "";
-  }
-
   const mb = (b: number) => (b / 1024 / 1024).toFixed(1);
 
   const notes = $derived(parse(u.installed?.notes ?? u.update?.body ?? ""));
@@ -45,16 +42,16 @@
 
   const title = $derived(
     u.installed
-      ? `Aktualizováno na ${u.installed.version}`
+      ? t("shell.update.updatedTo", { version: u.installed.version })
       : u.update && u.available
-        ? `Nová verze ${u.update.version}`
-        : "Aktualizace",
+        ? t("shell.update.newVersion", { version: u.update.version })
+        : t("shell.update.title"),
   );
   const sub = $derived(
     u.installed
-      ? "Tohle je nového"
+      ? t("shell.update.whatsNew")
       : u.update && u.available
-        ? [`Máš ${u.current}`, day(u.update.date)].filter(Boolean).join(" · ")
+        ? [t("shell.update.youHave", { version: u.current }), date(u.update.date ?? "")].filter(Boolean).join(" · ")
         : `Stickwise ${u.current}`,
   );
 </script>
@@ -77,7 +74,7 @@
           {/each}
         </div>
       {:else}
-        <p class="quiet">K téhle verzi nejsou poznámky.</p>
+        <p class="quiet">{t("shell.update.noNotes")}</p>
       {/if}
 
       {#if u.phase === "downloading"}
@@ -86,35 +83,35 @@
           <span class="readout">{u.total ? `${mb(u.got)} / ${mb(u.total)} MB` : `${mb(u.got)} MB`}</span>
         </div>
       {:else if u.phase === "ready"}
-        <p class="ok"><CircleCheck size={16} />Nainstalováno. Nová verze naběhne po restartu.</p>
+        <p class="ok"><CircleCheck size={16} />{t("shell.update.installed")}</p>
       {/if}
       {#if u.error && !u.installed}
         <p class="err"><TriangleAlert size={16} />{u.error}</p>
       {/if}
     {:else if u.phase === "checking"}
-      <p class="state"><LoaderCircle size={18} class="spin" />Hledám novou verzi…</p>
+      <p class="state"><LoaderCircle size={18} class="spin" />{t("shell.update.checking")}</p>
     {:else if u.phase === "error"}
-      <p class="state err"><TriangleAlert size={18} />Nepodařilo se zjistit novou verzi.</p>
+      <p class="state err"><TriangleAlert size={18} />{t("shell.update.checkFailed")}</p>
       <p class="quiet small">{u.error}</p>
     {:else}
-      <p class="state"><CircleCheck size={18} class="good" />Máš nejnovější verzi.</p>
+      <p class="state"><CircleCheck size={18} class="good" />{t("shell.update.upToDate")}</p>
     {/if}
   </div>
 
   {#snippet foot()}
     {#if u.installed}
-      <button class="btn primary lg" onclick={() => u.close()}>Pokračovat</button>
+      <button class="btn primary lg" onclick={() => u.close()}>{t("common.continue")}</button>
     {:else if u.phase === "available"}
-      <button class="btn ghost lg" onclick={() => u.skip()}>Později</button>
-      <button class="btn primary lg" onclick={() => u.install()}><Download size={16} />Stáhnout a nainstalovat</button>
+      <button class="btn ghost lg" onclick={() => u.skip()}>{t("common.later")}</button>
+      <button class="btn primary lg" onclick={() => u.install()}><Download size={16} />{t("shell.update.install")}</button>
     {:else if u.phase === "downloading"}
-      <button class="btn primary lg" disabled><LoaderCircle size={16} class="spin" />Stahuji…</button>
+      <button class="btn primary lg" disabled><LoaderCircle size={16} class="spin" />{t("shell.update.downloading")}</button>
     {:else if u.phase === "ready"}
-      <button class="btn ghost lg" onclick={() => u.close()}>Později</button>
-      <button class="btn primary lg" onclick={() => u.restart()}><RotateCw size={16} />Restartovat</button>
+      <button class="btn ghost lg" onclick={() => u.close()}>{t("common.later")}</button>
+      <button class="btn primary lg" onclick={() => u.restart()}><RotateCw size={16} />{t("common.restart")}</button>
     {:else}
-      <button class="btn lg" onclick={() => u.check()} disabled={u.phase === "checking"}><RotateCw size={16} />Zkontrolovat znovu</button>
-      <button class="btn primary lg" onclick={() => u.close()}>Hotovo</button>
+      <button class="btn lg" onclick={() => u.check()} disabled={u.phase === "checking"}><RotateCw size={16} />{t("common.checkAgain")}</button>
+      <button class="btn primary lg" onclick={() => u.close()}>{t("common.done")}</button>
     {/if}
   {/snippet}
 </SheetFrame>

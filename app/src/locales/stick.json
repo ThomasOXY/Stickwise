@@ -11,7 +11,8 @@
       "oldest": "i nejstarší Denony",
       "recommended": "doporučeno",
       "newest": "jen nejnovější"
-    }
+    },
+    "edit": "upravit"
   },
   "en": {
     "flat": "All playlists at the top, no folders",
@@ -25,7 +26,8 @@
       "oldest": "even the oldest Denons",
       "recommended": "recommended",
       "newest": "newest only"
-    }
+    },
+    "edit": "edit"
   },
   "de": {
     "flat": "Alle Playlists oben, ohne Ordner",
@@ -39,6 +41,7 @@
       "oldest": "auch die ältesten Denons",
       "recommended": "empfohlen",
       "newest": "nur die neuesten"
-    }
+    },
+    "edit": "bearbeiten"
   }
 }

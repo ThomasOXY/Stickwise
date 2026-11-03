@@ -221,15 +221,15 @@ fn describe(
         return Ok(None);
     }
     let blocked = if card && !removable {
-        Some("Vestavěný disk, ne karta.".to_string())
+        Some(i18n::t!("usb.builtInDisk"))
     } else if !b(&info, "WholeDisk") {
-        Some("Není to celý disk.".to_string())
+        Some(i18n::t!("usb.notWholeDisk"))
     } else if size > MAX_SIZE {
-        Some("Větší než 2 TB, to není flashka pro přehrávač.".to_string())
+        Some(i18n::t!("usb.tooBig"))
     } else if !removable && !image && size > MAX_FIXED_SIZE {
-        Some("Externí disk s daty, ne flashka.".to_string())
+        Some(i18n::t!("usb.dataDisk"))
     } else if protected_disks.iter().any(|d| d == id) {
-        Some("Je na něm knihovna nebo hudba z tohoto Macu.".to_string())
+        Some(i18n::t!("usb.hasLibrary"))
     } else {
         None
     };
@@ -288,18 +288,13 @@ pub fn volume_name(name: &str, fs: Filesystem) -> Result<String, FormatError> {
         Filesystem::ExFat => name.to_string(),
     };
     if name.is_empty() || name.chars().count() > 11 {
-        return Err(FormatError::Refused(
-            "Název flashky musí mít 1 až 11 znaků.".into(),
-        ));
+        return Err(FormatError::Refused(i18n::t!("usb.nameLength")));
     }
     if !name
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-'))
     {
-        return Err(FormatError::Refused(
-            "Název flashky smí obsahovat jen písmena bez diakritiky, číslice, mezeru, _ a -."
-                .into(),
-        ));
+        return Err(FormatError::Refused(i18n::t!("usb.nameChars")));
     }
     Ok(name)
 }
@@ -315,21 +310,19 @@ pub fn format(
     mut progress: impl FnMut(&str),
 ) -> Result<PathBuf, FormatError> {
     if !valid_id(disk) {
-        return Err(FormatError::Refused(format!("Neplatný disk {disk}.")));
+        return Err(FormatError::Refused(i18n::t!("usb.invalidDisk", disk = disk)));
     }
     let name = volume_name(name, fs)?;
     // Check again right before erasing: the list the DJ saw may be stale.
     let current = list(protected)?
         .into_iter()
         .find(|d| d.id == disk)
-        .ok_or_else(|| FormatError::Refused("Flashka už není připojená.".into()))?;
+        .ok_or_else(|| FormatError::Refused(i18n::t!("usb.stickGone")))?;
     if let Some(why) = &current.blocked {
         return Err(FormatError::Refused(why.clone()));
     }
     if confirm != current.confirm_name() {
-        return Err(FormatError::Refused(
-            "Potvrzovací název nesedí, nic se nesmazalo.".into(),
-        ));
+        return Err(FormatError::Refused(i18n::t!("usb.confirmMismatch")));
     }
 
     let mut child = Command::new("diskutil")
@@ -372,7 +365,7 @@ pub fn format(
         .and_then(|p| p.get("MountPoint"))
         .and_then(Value::as_str)
         .map(PathBuf::from)
-        .ok_or_else(|| FormatError::Io("Naformátovaná flashka se nepřipojila.".into()))?;
+        .ok_or_else(|| FormatError::Io(i18n::t!("usb.notMounted")))?;
     Ok(mount)
 }
 

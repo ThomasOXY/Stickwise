@@ -162,15 +162,15 @@ pub async fn library_import(app: AppHandle, source: String) -> CmdResult<library
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .output()
-            .map_err(|e| format!("Import nejde spustit: {e}"))?;
+            .map_err(|e| i18n::t!("app.library.importCantStart", error = e))?;
         if !status.status.success() {
             let msg = String::from_utf8_lossy(&status.stderr);
             let last = msg
                 .lines()
                 .rev()
                 .find(|l| !l.trim().is_empty())
-                .unwrap_or("neznámá chyba");
-            return Err(format!("Databázi rekordboxu nejde přečíst: {last}"));
+                .map_or_else(|| i18n::t!("app.library.unknownError"), str::to_string);
+            return Err(i18n::t!("app.library.rekordboxUnreadable", error = last));
         }
         let dump: RekordboxDump =
             serde_json::from_slice(&std::fs::read(&out).map_err(err)?).map_err(err)?;
@@ -246,7 +246,7 @@ pub async fn library_add_folders(
 }
 
 fn track(app: &AppHandle, id: i64) -> CmdResult<library::Track> {
-    lib(app, |l| l.track(id))?.ok_or_else(|| format!("skladba {id} není v knihovně"))
+    lib(app, |l| l.track(id))?.ok_or_else(|| i18n::t!("app.library.trackNotFound", id = id))
 }
 
 fn ai_key(t: &library::Track) -> String {
@@ -297,7 +297,7 @@ pub async fn library_track_detail(app: AppHandle, id: i64) -> CmdResult<dto::Tra
 #[tauri::command]
 pub fn library_set_grid(app: AppHandle, id: i64, bpm: f64, anchor_ms: f64) -> CmdResult<()> {
     if !(20.0..=400.0).contains(&bpm) || !anchor_ms.is_finite() {
-        return Err(format!("Neplatný grid: {bpm} BPM"));
+        return Err(i18n::t!("app.library.invalidGrid", bpm = bpm));
     }
     lib(&app, |l| l.set_grid(id, bpm, anchor_ms))
 }
@@ -367,7 +367,7 @@ pub async fn library_smart_cue(app: AppHandle, id: i64) -> CmdResult<Vec<dto::Sm
     blocking(move || {
         let t = track(&app, id)?;
         let s = suggestions_for(&app, Path::new(&t.anlz), t.bpm as f32, &ai_key(&t), edited_beats(&app, &t).as_deref())
-            .ok_or("Skladba nemá analýzu z rekordboxu, Smart Cue ji zatím neumí rozebrat.")?;
+            .ok_or_else(|| i18n::t!("app.smartCue.noAnalysis"))?;
         Ok(smart_dto(&s))
     })
     .await
@@ -482,7 +482,7 @@ fn analyze_from(
     progress: impl Fn(usize, &str) + Sync,
 ) -> (usize, Vec<String>, bool) {
     let Ok(dir) = analysis_dir(app) else {
-        return (0, vec!["chybí složka dat aplikace".into()], false);
+        return (0, vec![i18n::t!("app.analysis.noDataFolder")], false);
     };
     let tracker = beat_tracker(app);
     let done = std::sync::atomic::AtomicUsize::new(0);
@@ -573,7 +573,7 @@ pub fn library_analyze(
         todo: Default::default(),
         ids: HashSet::new(),
         done: 0,
-        event: dto::JobEvent { id, label: "Analýza skladeb".into(), state: "running", ..Default::default() },
+        event: dto::JobEvent { id, label: i18n::t!("app.analysis.label"), state: "running", ..Default::default() },
     };
     a.add(todo);
     emit_job(&app, &a.event);
@@ -609,17 +609,18 @@ pub fn library_analyze(
         event.files_done = n;
         event.bytes_done = event.bytes_total;
         (event.state, event.message) = if cancel.load(Ordering::Relaxed) {
-            ("cancelled", format!("Analýza zastavena po {n} skladbách"))
+            ("cancelled", i18n::t!("app.analysis.stopped", count = n))
         } else if errors.is_empty() {
             (
                 "done",
-                format!(
-                    "Analyzováno {n} skladeb: waveform, beatgrid a tónina{}",
-                    if model { "" } else { " (bez modelu Beat This!, grid jen přibližný)" }
-                ),
+                if model {
+                    i18n::t!("app.analysis.done", count = n)
+                } else {
+                    i18n::t!("app.analysis.doneNoModel", count = n)
+                },
             )
         } else {
-            ("error", format!("{} skladeb nešlo analyzovat: {}", errors.len(), errors.join("; ")))
+            ("error", i18n::t!("app.analysis.failed", count = errors.len(), errors = errors.join("; ")))
         };
         emit_job(&app, &event);
         app.state::<Jobs>().finish(id);
@@ -670,7 +671,7 @@ pub fn library_ai_analyze(
     std::thread::spawn(move || {
         let mut ev = dto::JobEvent {
             id,
-            label: "AI analýza cue".into(),
+            label: i18n::t!("app.ai.label"),
             state: "running",
             files_done: 0,
             files_total: total,
@@ -703,13 +704,9 @@ pub fn library_ai_analyze(
                     "error"
                 };
                 ev.message = if errors.is_empty() {
-                    format!("AI analýza hotová u {done} skladeb")
+                    i18n::t!("app.ai.done", count = done)
                 } else {
-                    format!(
-                        "{} skladeb nešlo analyzovat: {}",
-                        errors.len(),
-                        errors.join("; ")
-                    )
+                    i18n::t!("app.analysis.failed", count = errors.len(), errors = errors.join("; "))
                 };
             }
             Err(e) => {
@@ -911,15 +908,16 @@ pub async fn sync_plan(
     .await
 }
 
+/// Sync phases and the keys of their names.
 const PHASES: [(&str, &str); 8] = [
-    ("analyze", "Analýza skladeb"),
-    ("backup", "Záloha databáze"),
-    ("copy", "Kopírování skladeb"),
-    ("analysis", "Cue a waveformy"),
-    ("database", "Databáze"),
-    ("settings", "Nastavení přehrávače"),
-    ("engine", "Denon knihovna"),
-    ("verify", "Kontrola"),
+    ("analyze", "app.sync.phase.analyze"),
+    ("backup", "app.sync.phase.backup"),
+    ("copy", "app.sync.phase.copy"),
+    ("analysis", "app.sync.phase.analysis"),
+    ("database", "app.sync.phase.database"),
+    ("settings", "app.sync.phase.settings"),
+    ("engine", "app.sync.phase.engine"),
+    ("verify", "app.sync.phase.verify"),
 ];
 
 #[tauri::command]
@@ -938,7 +936,7 @@ pub fn sync_start(
         None
     };
     let engine = match &engine {
-        Some(e) => Some(engine_library::Schema::parse(e).ok_or("Neznámá verze Engine knihovny.")?),
+        Some(e) => Some(engine_library::Schema::parse(e).ok_or_else(|| i18n::t!("app.sync.unknownEngine"))?),
         None => None,
     };
     let request = {
@@ -996,7 +994,7 @@ pub fn sync_start(
                 dest: req.stick.display().to_string(),
                 phase: "analyze".into(),
                 fraction: Some(0.0),
-                current: PHASES[0].1.into(),
+                current: i18n::t!(PHASES[0].1),
                 ..Default::default()
             };
             emit_job(&app, &ev);
@@ -1005,7 +1003,7 @@ pub fn sync_start(
                 e.files_done = k;
                 e.bytes_done = k as u64;
                 e.fraction = Some(w * k as f64 / n as f64);
-                e.current = format!("{}: {track}", PHASES[0].1);
+                e.current = format!("{}: {track}", i18n::t!(PHASES[0].1));
                 emit_job(&app, &e);
             });
             // The library now points at the new analysis files.
@@ -1023,9 +1021,9 @@ pub fn sync_start(
                     return;
                 }
             }
-            analysed = format!(" Před zápisem zanalyzováno {} skladeb.", n - errors.len());
+            analysed = format!(" {}", i18n::t!("app.sync.analysedFirst", count = n - errors.len()));
             if !errors.is_empty() {
-                analysed += &format!(" Bez analýzy zůstalo {}: {}.", errors.len(), errors.join("; "));
+                analysed += &format!(" {}", i18n::t!("app.sync.leftUnanalysed", count = errors.len(), errors = errors.join("; ")));
             }
         }
         let mut ev = dto::JobEvent {
@@ -1059,8 +1057,7 @@ pub fn sync_start(
             let phase = PHASES
                 .iter()
                 .find(|x| x.0 == p.phase)
-                .map(|x| x.1)
-                .unwrap_or("");
+                .map_or_else(String::new, |x| i18n::t!(x.1));
             e.current = if p.current.is_empty() {
                 phase.to_string()
             } else {
@@ -1072,7 +1069,7 @@ pub fn sync_start(
             Ok(r) if r.cancelled => {
                 ev.state = "cancelled";
                 ev.message =
-                    "Synchronizace zastavena. Flashka má dál svou předchozí knihovnu.".into();
+                    i18n::t!("app.sync.stopped");
             }
             Ok(r) => {
                 // Written: what could not go along is told, not a failure.
@@ -1080,45 +1077,45 @@ pub fn sync_start(
                 ev.files_done = ev.files_total;
                 ev.bytes_done = ev.bytes_total;
                 ev.fraction = Some(1.0);
-                let mut msg = format!(
-                    "Na flashce je {} skladeb v {} playlistech. Zkopírováno {}, použito z flashky {}.",
-                    r.tracks, r.playlists, r.copied, r.reused
+                let mut msg = i18n::t!(
+                    "app.sync.onStick",
+                    count = r.tracks,
+                    playlists = r.playlists,
+                    copied = r.copied,
+                    reused = r.reused
                 );
-                msg += &format!(
-                    " Cue a waveformy: zapsáno {}, beze změny {}.",
-                    r.anlz_written, r.anlz_unchanged
-                );
+                msg += " ";
+                msg += &i18n::t!("app.sync.anlz", written = r.anlz_written, unchanged = r.anlz_unchanged);
                 if !r.skipped.is_empty() {
-                    msg += &format!(
-                        " Vynecháno {} skladeb, jejich soubor nejde přečíst (poškozený nebo nedostupný): {}.",
-                        r.skipped.len(),
-                        r.skipped.join("; ")
-                    );
+                    msg += " ";
+                    msg += &i18n::t!("app.sync.skipped", count = r.skipped.len(), tracks = r.skipped.join("; "));
                 }
                 msg += &analysed;
                 if r.settings_written {
-                    msg += " Nastavení přehrávače je na flashce.";
+                    msg += " ";
+                    msg += &i18n::t!("app.sync.settingsOnStick");
                 }
                 if let Some(e) = &r.engine {
                     let schema = e.schema.unwrap_or(engine_library::Schema::DEFAULT);
-                    msg += &format!(
-                        " Denon (Engine OS {} a novější): {} skladeb, {} playlistů nad stejnými soubory.",
-                        schema.min_firmware(),
-                        e.tracks,
-                        e.playlists
+                    msg += " ";
+                    msg += &i18n::t!(
+                        "app.sync.denon",
+                        firmware = schema.min_firmware(),
+                        count = e.tracks,
+                        playlists = e.playlists
                     );
                     if e.dropped_cues > 0 {
-                        msg += &format!(
-                            " {} cue se na Denon nevešlo (8 padů a 8 smyček na skladbu).",
-                            e.dropped_cues
-                        );
+                        msg += " ";
+                        msg += &i18n::t!("app.sync.droppedCues", count = e.dropped_cues);
                     }
                 }
                 if !r.moved_aside.is_empty() {
-                    msg += &format!(" Odsunuto stranou: {}.", r.moved_aside.join(", "));
+                    msg += " ";
+                    msg += &i18n::t!("app.sync.movedAside", files = r.moved_aside.join(", "));
                 }
                 if !r.warnings.is_empty() {
-                    msg += &format!(" Upozornění: {}", r.warnings.join("; "));
+                    msg += " ";
+                    msg += &i18n::t!("app.sync.warnings", warnings = r.warnings.join("; "));
                 }
                 ev.message = msg;
             }
@@ -1272,7 +1269,7 @@ pub async fn plan_set(
             .map(|t| plan_track(&app, t))
             .collect();
         if pool.len() < 2 {
-            return Err("Do setu dej aspoň dvě skladby, ze kterých se má vybírat.".into());
+            return Err(i18n::t!("app.library.setTooSmall"));
         }
         let params = Params {
             minutes,
@@ -1330,14 +1327,16 @@ pub async fn plan_set(
                     cue_in_ms: t.cue_in_ms,
                     energy_step: (t.energy_step * 10.0).round() / 10.0,
                     technique: t.technique.id().into(),
-                    technique_name: t.technique.name().into(),
+                    technique_name: t.technique.name(),
                     // Labels that point at the next track get its title.
                     a_marks: t
                         .a_marks
                         .iter()
                         .map(|m| {
                             let next = by_id.get(&t.to).map(|x| x.title.as_str()).unwrap_or("");
-                            let label = if m.label.ends_with('→') || m.label.ends_with("pusť") {
+                            // Cue labels are English in every app language: they
+                            // end up on the player, next to Mix in, Drop and the like.
+                            let label = if m.label.ends_with('→') || m.label.ends_with(": play") {
                                 format!("{} {next}", m.label)
                             } else {
                                 m.label.clone()
@@ -1365,7 +1364,7 @@ fn mark_color(label: &str) -> u8 {
     let l = label.to_lowercase();
     if l.starts_with("echo") {
         0x3c // purple: echo out
-    } else if l.contains('→') || l.contains("pusť") {
+    } else if l.contains('→') || l.contains(": play") {
         0x2d // pink: hand over to the next track
     } else if l.starts_with("mix in") || l.starts_with("start") {
         0x16 // green: start here

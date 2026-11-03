@@ -1,0 +1,47 @@
+{
+  "cs": {
+    "messageTooBig": "Zpráva z druhého Macu je moc velká.",
+    "paired": "Spárováno s {name}.",
+    "pairRejected": "{name} spárování odmítl.",
+    "pairBusy": "{name} zrovna páruje s jiným Macem, zkus to za chvíli.",
+    "pairIncompatible": "{name} má jinou verzi Stickwise, aktualizujte oba Macy.",
+    "pairUnconfirmed": "Na {name} nikdo spárování nepotvrdil.",
+    "notPaired": "Tenhle Mac není spárovaný.",
+    "unknownToPeer": "Druhý Mac tenhle nezná (spárování zrušené?). Spárujte je znovu.",
+    "incompatible": "Druhý Mac má jinou verzi Stickwise, aktualizujte oba.",
+    "unclearAnswer": "Druhý Mac odpověděl nesrozumitelně.",
+    "notOnNetwork": "Ten Mac teď není ve stejné síti.",
+    "impostor": "Na adrese toho Macu odpověděl jiný počítač.",
+    "noAddress": "Ten Mac nemá žádnou adresu."
+  },
+  "en": {
+    "messageTooBig": "The message from the other Mac is too big.",
+    "paired": "Paired with {name}.",
+    "pairRejected": "{name} declined pairing.",
+    "pairBusy": "{name} is pairing with another Mac right now, try again in a moment.",
+    "pairIncompatible": "{name} has a different version of Stickwise, update both Macs.",
+    "pairUnconfirmed": "Nobody confirmed the pairing on {name}.",
+    "notPaired": "This Mac isn't paired.",
+    "unknownToPeer": "The other Mac doesn't know this one (pairing removed?). Pair them again.",
+    "incompatible": "The other Mac has a different version of Stickwise, update both.",
+    "unclearAnswer": "The other Mac gave an answer that makes no sense.",
+    "notOnNetwork": "That Mac isn't on the same network right now.",
+    "impostor": "A different computer answered at that Mac's address.",
+    "noAddress": "That Mac has no address."
+  },
+  "de": {
+    "messageTooBig": "Die Nachricht vom anderen Mac ist zu groß.",
+    "paired": "Mit {name} gekoppelt.",
+    "pairRejected": "{name} hat das Koppeln abgelehnt.",
+    "pairBusy": "{name} koppelt gerade mit einem anderen Mac, versuch es gleich noch mal.",
+    "pairIncompatible": "{name} hat eine andere Stickwise-Version, aktualisiere beide Macs.",
+    "pairUnconfirmed": "Auf {name} hat niemand das Koppeln bestätigt.",
+    "notPaired": "Dieser Mac ist nicht gekoppelt.",
+    "unknownToPeer": "Der andere Mac kennt diesen nicht (Kopplung aufgehoben?). Kopple sie neu.",
+    "incompatible": "Der andere Mac hat eine andere Stickwise-Version, aktualisiere beide.",
+    "unclearAnswer": "Der andere Mac hat unverständlich geantwortet.",
+    "notOnNetwork": "Dieser Mac ist gerade nicht im selben Netzwerk.",
+    "impostor": "An der Adresse dieses Macs hat ein anderer Computer geantwortet.",
+    "noAddress": "Dieser Mac hat keine Adresse."
+  }
+}

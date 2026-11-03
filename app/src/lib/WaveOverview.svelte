@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Cue, Waveform } from "./api";
   import { time } from "./format";
+  import { t } from "./i18n.svelte";
   import { DETAIL_RATE, columnCount, paint } from "./waveform";
 
   interface Props {
@@ -60,7 +61,7 @@
     class="track"
     role="slider"
     tabindex="-1"
-    aria-label="Pozice ve skladbě"
+    aria-label={t("deck.wave.position")}
     aria-valuemin={0}
     aria-valuemax={Math.round(duration)}
     aria-valuenow={Math.round(position)}
@@ -86,7 +87,7 @@
     {#if hover != null}
       <span class="tip readout" style:left={pct(hover)}>{time(hover)}</span>
     {/if}
-    {#if !wave}<span class="none">Skladba nemá analýzu waveformu</span>{/if}
+    {#if !wave}<span class="none">{t("deck.wave.none")}</span>{/if}
   </div>
   <div class="mems">
     {#each cues.filter((c) => c.slot === 0) as c}

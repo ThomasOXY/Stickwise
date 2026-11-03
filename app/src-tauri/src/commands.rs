@@ -432,40 +432,35 @@ fn issue_text(
     audio: Option<&probe::AudioInfo>,
 ) -> (&'static str, &'static str, String) {
     match p {
-        Problem::MissingAudio => ("error", "missing", "Soubor chybí na flashce.".into()),
-        Problem::MissingAnalysis(m) => ("error", "analysis", format!("Chybí analýza: {m}")),
+        Problem::MissingAudio => ("error", "missing", i18n::t!("app.verify.missingAudio")),
+        Problem::MissingAnalysis(m) => ("error", "analysis", i18n::t!("app.verify.missingAnalysis", path = m)),
         Problem::SizeMismatch { database, actual } => (
             "warning",
             "size",
-            format!("Soubor má {actual} B, databáze uvádí {database} B. Hrát půjde."),
+            i18n::t!("app.verify.sizeMismatch", actual = actual, database = database),
         ),
         Problem::BrokenTag { junk } => (
             "error",
             "broken-tag",
-            format!(
-                "Poškozený tag MP3 ({junk} B smetí před zvukem). Přehrávač skladbu může odmítnout."
-            ),
+            i18n::t!("app.verify.brokenTag", junk = junk),
         ),
         Problem::WrongExtension { extension, actual } => (
             "error",
             "extension",
-            format!("Soubor .{extension} je ve skutečnosti {actual}."),
+            i18n::t!("app.verify.wrongExtension", extension = extension, actual = actual),
         ),
         Problem::Unsupported { reason, .. } => {
             if audio.is_some_and(|a| a.codec == Codec::Float) {
                 (
                     "error",
                     "float",
-                    format!(
-                        "{}-bit float WAV. CDJ přehraje jen 16 a 24 bitů.",
-                        audio.and_then(|a| a.bits).unwrap_or(32)
-                    ),
+                    i18n::t!("app.verify.floatWav", bits = audio.and_then(|a| a.bits).unwrap_or(32)),
                 )
             } else {
                 ("error", "unsupported", reason.clone())
             }
         }
-        Problem::Unreadable(e) => ("error", "unreadable", format!("Soubor nejde přečíst: {e}")),
+        Problem::Unreadable(e) => ("error", "unreadable", i18n::t!("app.verify.unreadable", error = e)),
     }
 }
 
@@ -533,7 +528,7 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
                         let label = if kind == "float" {
                             "WAV 32f".to_string()
                         } else {
-                            "nepodporovaný formát".into()
+                            i18n::t!("app.verify.noteUnsupported")
                         };
                         *notes.entry(*p).or_default().entry(label).or_default() += 1;
                     }
@@ -544,15 +539,15 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
                 | Problem::Unreadable(_) => {
                     unplayable_everywhere.push(i.track_id);
                     let label = match kind {
-                        "broken-tag" => "poškozený tag",
-                        "missing" => "chybí soubor",
-                        _ => "nečitelný soubor",
+                        "broken-tag" => i18n::t!("app.verify.noteBrokenTag"),
+                        "missing" => i18n::t!("app.verify.noteMissing"),
+                        _ => i18n::t!("app.verify.noteUnreadable"),
                     };
                     for p in Player::ALL {
                         *notes
                             .entry(p)
                             .or_default()
-                            .entry(label.to_string())
+                            .entry(label.clone())
                             .or_default() += 1;
                     }
                 }
@@ -590,8 +585,8 @@ pub async fn verify_stick(app: AppHandle, path: String) -> CmdResult<dto::Verify
                     player: p.name().into(),
                     filesystem_ok: mount.is_ok(),
                     filesystem_note: match mount {
-                        Ok(()) => format!("{} podporuje", fs_name(&fs)),
-                        Err(_) => format!("{} nepodporuje, použij FAT32", fs_name(&fs)),
+                        Ok(()) => i18n::t!("app.verify.fsSupported", fs = fs_name(&fs)),
+                        Err(_) => i18n::t!("app.verify.fsUnsupported", fs = fs_name(&fs)),
                     },
                     unplayable,
                     format_note,
@@ -690,12 +685,14 @@ pub fn start_extract(
                     "error"
                 };
                 ev.message = if report.errors.is_empty() {
-                    format!(
-                        "Zkopírováno {}, klonováno {}, už existovalo {}",
-                        report.copied, report.cloned, report.skipped_existing
+                    i18n::t!(
+                        "app.extract.done",
+                        copied = report.copied,
+                        cloned = report.cloned,
+                        existing = report.skipped_existing
                     )
                 } else {
-                    format!("{} chyb: {}", report.errors.len(), report.errors.join("; "))
+                    i18n::t!("app.extract.errors", count = report.errors.len(), errors = report.errors.join("; "))
                 };
             }
             Err(e) => {
@@ -1028,7 +1025,7 @@ pub async fn smart_cue(
         let stick = Stick::open(&path).map_err(err)?;
         let t = find_track(&stick, track_id)?;
         let s = suggestions(&app, &stick, t)
-            .ok_or("Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.")?;
+            .ok_or_else(|| i18n::t!("app.smartCue.noGrid"))?;
         Ok(smart_dto(&s))
     })
     .await
@@ -1129,7 +1126,7 @@ pub fn ai_analyze(
     std::thread::spawn(move || {
         let mut ev = dto::JobEvent {
             id,
-            label: "AI analýza cue".into(),
+            label: i18n::t!("app.ai.label"),
             state: "running",
             files_done: 0,
             files_total: total,
@@ -1162,13 +1159,9 @@ pub fn ai_analyze(
                     "error"
                 };
                 ev.message = if errors.is_empty() {
-                    format!("AI analýza hotová u {done} skladeb")
+                    i18n::t!("app.ai.done", count = done)
                 } else {
-                    format!(
-                        "{} skladeb nešlo analyzovat: {}",
-                        errors.len(),
-                        errors.join("; ")
-                    )
+                    i18n::t!("app.analysis.failed", count = errors.len(), errors = errors.join("; "))
                 };
             }
             Err(e) => {

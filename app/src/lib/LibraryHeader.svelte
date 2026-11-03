@@ -2,7 +2,8 @@
   import { Download, FolderPlus, Library, ListMusic, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Usb } from "@lucide/svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import type { Track } from "./api";
-  import { keyColor, plural, time } from "./format";
+  import { keyColor, num, time } from "./format";
+  import { t } from "./i18n.svelte";
   import { openSettings } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
@@ -44,19 +45,19 @@
   <div class="left" data-tauri-drag-region>
     <div class="crumb">
       {#if whole}
-        <span class="eyebrow kind"><Library size={12} /> Knihovna</span>
+        <span class="eyebrow kind"><Library size={12} /> {t("library.header.library")}</span>
         <span class="dim">·
-          {#if app.library?.lastImport}poslední import z rekordboxu {app.library.lastImport}
-          {:else if tracks > 0}skladby zůstávají ve svých složkách na Macu
-          {:else if source}prázdná, importuj ji z rekordboxu ({source}), skladby zůstanou, kde jsou
-          {:else}rekordbox knihovna nenalezena{/if}
+          {#if app.library?.lastImport}{t("library.header.lastImport", { date: app.library.lastImport })}
+          {:else if tracks > 0}{t("library.header.tracksStay")}
+          {:else if source}{t("library.header.emptyImport", { source })}
+          {:else}{t("library.header.noRekordbox")}{/if}
         </span>
       {:else if pl?.isSet}
-        <span class="eyebrow kind"><Sparkles size={12} /> Set</span>
-        <span class="dim">· {parent ? parent.name : "tvůj set"}</span>
+        <span class="eyebrow kind"><Sparkles size={12} /> {t("library.header.set")}</span>
+        <span class="dim">· {parent ? parent.name : t("library.header.yourSet")}</span>
       {:else}
-        <span class="eyebrow kind"><ListMusic size={12} /> Playlist</span>
-        <span class="dim">· {parent ? parent.name : pl?.source === "rekordbox" ? "z rekordboxu" : "vlastní playlist"}</span>
+        <span class="eyebrow kind"><ListMusic size={12} /> {t("library.header.playlist")}</span>
+        <span class="dim">· {parent ? parent.name : pl?.source === "rekordbox" ? t("library.header.fromRekordbox") : t("library.header.ownPlaylist")}</span>
       {/if}
     </div>
 
@@ -64,23 +65,23 @@
 
     <div class="stats">
       {#if whole}
-        <span><b class="readout">{tracks.toLocaleString("cs")}</b> {plural(tracks, "skladba", "skladby", "skladeb")}</span>
-        <span><b class="readout">{hours}</b> h hudby</span>
-        <span><b class="readout">{withArt.toLocaleString("cs")}</b> s obalem</span>
-        <span><b class="readout">{own}</b> vlastní analýza</span>
+        <span><b class="readout">{num(tracks)}</b> {t("library.stats.tracks", { count: tracks })}</span>
+        <span><b class="readout">{num(hours)}</b> {t("library.stats.hoursOfMusic")}</span>
+        <span><b class="readout">{num(withArt)}</b> {t("library.stats.withArtwork")}</span>
+        <span><b class="readout">{num(own)}</b> {t("library.stats.ownAnalysis")}</span>
         {#if missing > 0}
-          <span class="warn"><b class="readout">{missing}</b> bez souboru</span>
+          <span class="warn"><b class="readout">{num(missing)}</b> {t("library.stats.noFile")}</span>
         {/if}
       {:else}
-        <span><b class="readout">{listTracks.length}</b> {plural(listTracks.length, "skladba", "skladby", "skladeb")}</span>
-        <span><b class="readout">{time(length)}</b> délka</span>
+        <span><b class="readout">{listTracks.length}</b> {t("library.stats.tracks", { count: listTracks.length })}</span>
+        <span><b class="readout">{time(length)}</b> {t("library.stats.length")}</span>
         {#if bpmRange}<span><b class="readout">{bpmRange}</b> BPM</span>{/if}
         {#if keys.length > 1}
           <span>
             <b class="readout" style:color={keyColor(keys[0])}>{keys[0]}</b>
             <b class="readout arrow">→</b>
             <b class="readout" style:color={keyColor(keys[keys.length - 1])}>{keys[keys.length - 1]}</b>
-            tóniny
+            {t("library.stats.keys")}
           </span>
         {/if}
       {/if}
@@ -88,12 +89,12 @@
   </div>
 
   <div class="actions">
-    <button class="btn ghost icon" onclick={() => openSettings("player")} title="Nastavení přehrávače: tvoje My Settings pro CDJ/XDJ a mixer">
+    <button class="btn ghost icon" onclick={() => openSettings("player")} title={t("library.header.playerSettings")}>
       <SlidersHorizontal size={15} />
     </button>
     {#if whole}
-      <button class="btn" onclick={addFolder} disabled={app.addingFolders} title="Složka s hudbou se stane playlistem, skladby se zanalyzují">
-        {#if app.addingFolders}<LoaderCircle size={14} class="spin" />{:else}<FolderPlus size={14} />{/if} Přidat složku
+      <button class="btn" onclick={addFolder} disabled={app.addingFolders} title={t("library.header.addFolderHint")}>
+        {#if app.addingFolders}<LoaderCircle size={14} class="spin" />{:else}<FolderPlus size={14} />{/if} {t("library.header.addFolder")}
       </button>
     {/if}
     {#if source}
@@ -102,13 +103,13 @@
         class:primary={whole}
         disabled={app.importing}
         onclick={() => app.importRekordbox(source)}
-        title="Načte skladby, playlisty a cue z rekordboxu ({source}). Tvoje sety a úpravy zůstanou."
+        title={t("library.header.importHint", { source })}
       >
-        {#if app.importing}<LoaderCircle size={14} class="spin" /> Načítám z rekordboxu…{:else if tracks > 0}<RefreshCw size={14} /> Aktualizovat z rekordboxu{:else}<Download size={14} /> Importovat z rekordboxu{/if}
+        {#if app.importing}<LoaderCircle size={14} class="spin" /> {t("library.header.importing")}{:else if tracks > 0}<RefreshCw size={14} /> {t("library.header.update")}{:else}<Download size={14} /> {t("library.header.import")}{/if}
       </button>
     {/if}
     <button class="btn" class:primary={!whole || !source} onclick={() => (app.syncOpen = true)} disabled={tracks === 0}>
-      <Usb size={14} /> {whole ? "Synchronizovat na flashku" : "Na flashku"}
+      <Usb size={14} /> {whole ? t("library.header.syncToStick") : t("library.header.toStick")}
     </button>
   </div>
 </header>

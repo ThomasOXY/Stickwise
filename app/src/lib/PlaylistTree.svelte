@@ -3,6 +3,8 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { onMount } from "svelte";
   import { libApi, type Playlist } from "./api";
+  import { collator } from "./format";
+  import { t, type Key } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   let collapsed = $state<Record<number, boolean>>({});
@@ -57,13 +59,13 @@
   // ---- sorting the list -------------------------------------------------
 
   type Order = "manual" | "name" | "name-desc" | "date-desc" | "date" | "tracks-desc";
-  const ORDERS: [Order, string][] = [
-    ["manual", "Vlastní pořadí"],
-    ["name", "Název A → Z"],
-    ["name-desc", "Název Z → A"],
-    ["date-desc", "Datum v názvu: nejnovější"],
-    ["date", "Datum v názvu: nejstarší"],
-    ["tracks-desc", "Počet skladeb"],
+  const ORDERS: [Order, Key][] = [
+    ["manual", "library.tree.orders.manual"],
+    ["name", "library.tree.orders.name"],
+    ["name-desc", "library.tree.orders.nameDesc"],
+    ["date-desc", "library.tree.orders.dateDesc"],
+    ["date", "library.tree.orders.date"],
+    ["tracks-desc", "library.tree.orders.tracksDesc"],
   ];
   /** Separate for sets and playlists; kept across restarts. */
   let order = $state<Record<"sets" | "lists", Order>>({
@@ -75,8 +77,6 @@
     localStorage.setItem("order-lists", order.lists);
   });
   let orderMenu = $state<{ which: "sets" | "lists"; x: number; y: number } | null>(null);
-
-  const coll = new Intl.Collator("cs", { numeric: true, sensitivity: "base" });
 
   /** A date in the name ("17.4.2026", "22.3.26 - MID", "2026-04-17") as yyyymmdd. */
   function nameDate(name: string): number | null {
@@ -91,6 +91,7 @@
 
   function arrange(list: Playlist[], o: Order): Playlist[] {
     if (o === "manual") return list;
+    const coll = collator();
     const byName = (a: Playlist, b: Playlist) => coll.compare(a.name, b.name);
     const sorted = [...list].sort((a, b) => {
       // Folders stay on top, as in Finder.
@@ -123,7 +124,7 @@
       await libApi.orderPlaylists(groups);
       await app.reloadLibrary();
       order[which] = "manual";
-      app.notice = which === "sets" ? "Pořadí setů uloženo." : "Pořadí playlistů uloženo, takhle půjdou i na flashku.";
+      app.notice = which === "sets" ? t("library.tree.setsOrderSaved") : t("library.tree.listsOrderSaved");
     } catch (e) {
       app.error = String(e);
     }
@@ -328,7 +329,7 @@
         role="button"
         tabindex="-1"
         class:off={!app.canShiftPlaylist(node.id, -1)}
-        title="Posunout nahoru (⌥↑)"
+        title={`${t("library.tree.moveUp")} (⌥↑)`}
         onclick={(e) => (e.stopPropagation(), app.shiftPlaylist(node.id, -1))}
         onkeydown={() => {}}
       ><ArrowUp size={12} /></span>
@@ -336,7 +337,7 @@
         role="button"
         tabindex="-1"
         class:off={!app.canShiftPlaylist(node.id, 1)}
-        title="Posunout dolů (⌥↓)"
+        title={`${t("library.tree.moveDown")} (⌥↓)`}
         onclick={(e) => (e.stopPropagation(), app.shiftPlaylist(node.id, 1))}
         onkeydown={() => {}}
       ><ArrowDown size={12} /></span>
@@ -349,7 +350,7 @@
     class="add"
     class:sorted={order[which] !== "manual"}
     onclick={(e) => openOrderMenu(e, which)}
-    title="Řadit: {ORDERS.find(([o]) => o === order[which])?.[1]}"
+    title={t("library.tree.sortedBy", { order: t(ORDERS.find(([o]) => o === order[which])?.[1] ?? "library.tree.orders.manual") })}
   ><ArrowDownUp size={13} /></button>
 {/snippet}
 
@@ -357,18 +358,18 @@
   {#if fileDrag || app.addingFolders}
     <div class="dropnote">
       {#if app.addingFolders}
-        Načítám složky a tagy skladeb…
+        {t("library.tree.loadingFolders")}
       {:else if fileTarget != null}
-        {@const t = app.library?.playlists.find((p) => p.id === fileTarget)}
-        {t?.isFolder ? `Složky půjdou do „${t.name}“` : `Skladby přidám do „${t?.name}“, složky vedle`}
+        {@const target = app.library?.playlists.find((p) => p.id === fileTarget)}
+        {target?.isFolder ? t("library.tree.dropIntoFolder", { name: target.name }) : t("library.tree.dropIntoPlaylist", { name: target?.name ?? "" })}
       {:else}
-        Pusť složky: z každé bude playlist
+        {t("library.tree.dropHere")}
       {/if}
     </div>
   {/if}
   <label class="search">
     <Search size={14} />
-    <input type="search" placeholder="Hledat playlist" bind:value={app.playlistFilter} />
+    <input type="search" placeholder={t("library.tree.search")} bind:value={app.playlistFilter} />
   </label>
 
   {#if lib}
@@ -378,32 +379,32 @@
       onclick={() => app.select({ kind: "all" })}
     >
       <Library size={14} class="icon" />
-      <span class="name">Celá knihovna</span>
+      <span class="name">{t("library.tree.wholeLibrary")}</span>
       <span class="readout n">{app.data?.tracks.length ?? 0}</span>
     </button>
 
     <div class="head">
-      <span>Sety</span>
+      <span>{t("library.tree.sets")}</span>
       <span class="tools">
         {@render orderButton("sets")}
-        <button class="add" onclick={() => app.createPlaylist(0, "set")} title="Nový set"><ListPlus size={13} /></button>
+        <button class="add" onclick={() => app.createPlaylist(0, "set")} title={t("library.tree.newSet")}><ListPlus size={13} /></button>
       </span>
     </div>
     {#each sets.filter((s) => !q || s.name.toLowerCase().includes(q)) as s (s.id)}
       {@render item(s, 0)}
     {/each}
     {#if sets.length === 0}
-      <button class="hint" onclick={() => app.createPlaylist(0, "set")}>Vytvoř si první set a přetáhni do něj skladby.</button>
+      <button class="hint" onclick={() => app.createPlaylist(0, "set")}>{t("library.tree.firstSet")}</button>
     {/if}
   {/if}
 
   <div class="head">
-    <span>Playlisty</span>
+    <span>{t("library.tree.playlists")}</span>
     {#if lib}
       <span class="tools">
         {@render orderButton("lists")}
-        <button class="add" onclick={() => app.createPlaylist(0, "playlist")} title="Nový playlist"><ListPlus size={13} /></button>
-        <button class="add" onclick={() => app.createPlaylist(0, "folder")} title="Nová složka"><FolderPlus size={13} /></button>
+        <button class="add" onclick={() => app.createPlaylist(0, "playlist")} title={t("library.tree.newPlaylist")}><ListPlus size={13} /></button>
+        <button class="add" onclick={() => app.createPlaylist(0, "folder")} title={t("library.tree.newFolder")}><FolderPlus size={13} /></button>
       </span>
     {:else}
       <span class="tools">
@@ -420,7 +421,7 @@
   </div>
 
   {#if (app.data?.history.length ?? 0) > 0}
-    <div class="head history"><span>Historie</span><span class="readout">{app.data!.history.length}</span></div>
+    <div class="head history"><span>{t("library.tree.history")}</span><span class="readout">{app.data!.history.length}</span></div>
     {#each app.data!.history as h (h.id)}
       <button class="item" class:selected={selected("history", h.id)} onclick={() => app.select({ kind: "history", id: h.id })}>
         <Clock size={14} class="icon" />
@@ -434,15 +435,15 @@
 {#if orderMenu}
   {@const which = orderMenu.which}
   <div class="menu" style:left="{orderMenu.x}px" style:top="{orderMenu.y}px" role="menu">
-    <p class="note">Řadit {which === "sets" ? "sety" : "playlisty"}</p>
+    <p class="note">{which === "sets" ? t("library.tree.sortSets") : t("library.tree.sortLists")}</p>
     {#each ORDERS as [o, label]}
       <button role="menuitemradio" aria-checked={order[which] === o} onclick={() => ((order[which] = o), (orderMenu = null))}>
-        <span class="check">{#if order[which] === o}<Check size={12} />{/if}</span>{label}
+        <span class="check">{#if order[which] === o}<Check size={12} />{/if}</span>{t(label)}
       </button>
     {/each}
     {#if lib && order[which] !== "manual"}
       <div class="sep"></div>
-      <button role="menuitem" onclick={() => keepOrder(which)}>Uložit jako vlastní pořadí</button>
+      <button role="menuitem" onclick={() => keepOrder(which)}>{t("library.tree.keepOrder")}</button>
     {/if}
   </div>
 {/if}
@@ -453,44 +454,44 @@
   {@const todo = app.unanalyzed(tracks).length}
   {@const redo = app.unanalyzed(tracks, true).length - todo}
   <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px" role="menu">
-    <button role="menuitem" onclick={() => (app.renaming = node.id)}>Přejmenovat</button>
+    <button role="menuitem" onclick={() => (app.renaming = node.id)}>{t("library.tree.rename")}</button>
     <button role="menuitem" disabled={!manual(node) || !app.canShiftPlaylist(node.id, -1)} onclick={() => app.shiftPlaylist(node.id, -1)}>
-      Posunout nahoru <kbd>⌥↑</kbd>
+      {t("library.tree.moveUp")} <kbd>⌥↑</kbd>
     </button>
     <button role="menuitem" disabled={!manual(node) || !app.canShiftPlaylist(node.id, 1)} onclick={() => app.shiftPlaylist(node.id, 1)}>
-      Posunout dolů <kbd>⌥↓</kbd>
+      {t("library.tree.moveDown")} <kbd>⌥↓</kbd>
     </button>
     <div class="sep"></div>
     <button role="menuitem" disabled={todo === 0} onclick={() => app.analyzeTracks(tracks)}>
-      Analyzovat {todo ? `(${todo})` : ""}<span class="hint">{todo ? "waveform, grid, tónina" : "vše analyzováno"}</span>
+      {todo ? t("library.analyze", { count: todo }) : t("library.tree.analyzeAll")}<span class="hint">{todo ? t("library.analyzeHint") : t("library.tree.allAnalyzed")}</span>
     </button>
     {#if redo > 0}
       <button role="menuitem" onclick={() => app.analyzeTracks(tracks, true)}>
-        Analyzovat znovu ({redo + todo})<span class="hint">mimo analýzy z rekordboxu</span>
+        {t("library.tree.reanalyze", { count: redo + todo })}<span class="hint">{t("library.tree.reanalyzeHint")}</span>
       </button>
     {/if}
     {#if node.isSet}
-      <button role="menuitem" onclick={() => app.restoreSetCues(node.id)} title="Vrátí hot cue, které nahradily cue přechodů z plánovače">
-        Obnovit původní cue
+      <button role="menuitem" onclick={() => app.restoreSetCues(node.id)} title={t("library.tree.restoreCuesHint")}>
+        {t("library.tree.restoreCues")}
       </button>
     {/if}
     <button role="menuitem" onclick={() => ((app.peerSendPreset = [node.id]), (app.peerOpen = true))}>
-      Poslat na Mac…<span class="hint">spárovaný ve stejné síti</span>
+      {t("library.tree.sendToMac")}<span class="hint">{t("library.tree.sendToMacHint")}</span>
     </button>
     <div class="sep"></div>
     {#if node.isFolder}
-      <button role="menuitem" onclick={() => app.createPlaylist(node.id, "playlist")}>Nový playlist ve složce</button>
-      <button role="menuitem" onclick={() => app.createPlaylist(node.id, "folder")}>Nová složka ve složce</button>
+      <button role="menuitem" onclick={() => app.createPlaylist(node.id, "playlist")}>{t("library.tree.newPlaylistIn")}</button>
+      <button role="menuitem" onclick={() => app.createPlaylist(node.id, "folder")}>{t("library.tree.newFolderIn")}</button>
     {:else if !node.isSet}
       <button role="menuitem" onclick={() => app.createPlaylist(0, "set").then(() => {
         const id = app.renaming;
         if (id != null) app.setPlaylistTracks(id, node.trackIds);
-      })}>Udělat z něj set</button>
+      })}>{t("library.tree.makeSet")}</button>
     {/if}
     <button role="menuitem" class="danger" onclick={() => app.deletePlaylist(node.id)}>
-      Smazat{node.isFolder ? " složku i obsah" : ""}
+      {node.isFolder ? t("library.tree.deleteFolder") : t("library.tree.delete")}
     </button>
-    <p class="note">Skladby z knihovny se nemažou.</p>
+    <p class="note">{t("library.tree.tracksKept")}</p>
   </div>
 {/if}
 

@@ -20,12 +20,15 @@
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import { openSettings, prefs } from "./prefs.svelte";
+  import { t as tr, type Key } from "./i18n.svelte";
   import { app } from "./state.svelte";
   import { updates } from "./updates.svelte";
 
-  type Group = "Knihovna" | "Flashka" | "Aplikace";
+  type Group = "library" | "stick" | "app";
 
   interface Tool {
+    /** Stable id, kept in the recent list. */
+    id: string;
     name: string;
     hint: string;
     icon: Component;
@@ -63,11 +66,12 @@
 
   const all = $derived<Tool[]>([
     {
-      name: "Knihovna",
-      hint: "Sety, playlisty a skladby na tomhle Macu",
+      id: "library",
+      name: tr("shell.tools.library.name"),
+      hint: tr("shell.tools.library.hint"),
       icon: LibraryBig,
       tone: "#a2a7af",
-      group: "Knihovna",
+      group: "library",
       blocked: "",
       run: async () => {
         await onLibrary();
@@ -75,31 +79,33 @@
       },
     },
     {
-      name: "Synchronizace",
-      hint: "Sety a playlisty z knihovny na flashku",
+      id: "sync",
+      name: tr("shell.tools.sync.name"),
+      hint: tr("shell.tools.sync.hint"),
       icon: RefreshCw,
       tone: "#f2a33a",
-      group: "Flashka",
+      group: "stick",
       key: "S",
-      blocked: libTracks === 0 ? "Knihovna je prázdná" : "",
+      blocked: libTracks === 0 ? tr("shell.tools.blocked.emptyLibrary") : "",
       run: () => {
         app.syncOpen = true;
       },
     },
     {
-      name: "Plánovač setu",
+      id: "planner",
+      name: tr("shell.tools.planner.name"),
       helper: true,
-      hint: "Pořadí podle tóniny, tempa a energie, přechody",
+      hint: tr("shell.tools.planner.hint"),
       icon: Route,
       tone: "#9b5cf0",
-      group: "Knihovna",
+      group: "library",
       key: "P",
-      blocked: libTracks === 0 ? "Knihovna je prázdná" : "",
+      blocked: libTracks === 0 ? tr("shell.tools.blocked.emptyLibrary") : "",
       run: async () => {
         await onLibrary();
         const p = app.currentPlaylist?.trackIds.length ? app.currentPlaylist : app.data?.playlists.find((x) => x.isSet && x.trackIds.length > 1);
         if (!p) {
-          app.notice = "Vyber set nebo playlist s aspoň dvěma skladbami, pak otevři plánovač.";
+          app.notice = tr("shell.plannerNeedsSet");
           return;
         }
         app.select({ kind: "playlist", id: p.id });
@@ -107,52 +113,56 @@
       },
     },
     {
-      name: "Analýza skladeb",
+      id: "analysis",
+      name: tr("shell.tools.analysis.name"),
       hint: notAnalyzed.length
-        ? `${notAnalyzed.length} skladeb bez waveformu a gridu`
-        : "Waveform, beatgrid a tónina pro nové skladby",
+        ? tr("shell.tools.analysis.hintCount", { count: notAnalyzed.length })
+        : tr("shell.tools.analysis.hint"),
       icon: AudioWaveform,
       tone: "#59c98a",
-      group: "Knihovna",
-      blocked: notAnalyzed.length === 0 ? "Všechno je analyzované" : "",
+      group: "library",
+      blocked: notAnalyzed.length === 0 ? tr("shell.tools.blocked.allAnalyzed") : "",
       run: async () => {
         await onLibrary();
         app.analyzeTracks(notAnalyzed);
       },
     },
     {
+      id: "smartCue",
       name: "Smart Cue",
       helper: true,
-      hint: "Dropy, breaky a další místa pro cue",
+      hint: tr("shell.tools.smartCue.hint"),
       icon: Sparkles,
       tone: "#ee5fb0",
-      group: "Knihovna",
-      blocked: app.deck ? "" : "Nejdřív vyber skladbu",
+      group: "library",
+      blocked: app.deck ? "" : tr("shell.tools.blocked.pickTrack"),
       run: () => app.loadSmart(),
     },
     {
-      name: "AI analýza cue",
+      id: "ai",
+      name: tr("shell.tools.ai.name"),
       helper: true,
-      hint: "CUE-DETR projde skladby v otevřeném seznamu",
+      hint: tr("shell.tools.ai.hint"),
       icon: BrainCircuit,
       tone: "#3fcfd4",
-      group: "Knihovna",
+      group: "library",
       blocked: !app.aiInstalled
-        ? "AI analýza není k dispozici"
+        ? tr("shell.tools.blocked.aiMissing")
         : app.aiJob != null
-          ? "Už běží"
+          ? tr("shell.tools.blocked.running")
           : app.currentTrackIds.length === 0
-            ? "Otevři playlist"
+            ? tr("shell.tools.blocked.openPlaylist")
             : "",
       run: () => app.aiAnalyze(app.currentTrackIds),
     },
     {
-      name: "Kontrola flashky",
-      hint: "Co na kterém přehrávači nepůjde a proč",
+      id: "verify",
+      name: tr("shell.tools.verify.name"),
+      hint: tr("shell.tools.verify.hint"),
       icon: ShieldCheck,
       tone: "#59c98a",
-      group: "Flashka",
-      blocked: firstStick ? "" : "Vlož flashku",
+      group: "stick",
+      blocked: firstStick ? "" : tr("shell.tools.blocked.insertStick"),
       run: async () => {
         await onStick();
         app.view = "health";
@@ -160,34 +170,37 @@
       },
     },
     {
-      name: "Zapsat cue",
-      hint: "Upravené cue z aplikace na flashku",
+      id: "writeCues",
+      name: tr("shell.tools.writeCues.name"),
+      hint: tr("shell.tools.writeCues.hint"),
       icon: Save,
       tone: "#e6d23f",
-      group: "Flashka",
-      blocked: app.isLibrary || !app.stickPath ? "Otevři flashku" : app.pending.size === 0 ? "Žádné neuložené cue" : "",
+      group: "stick",
+      blocked: app.isLibrary || !app.stickPath ? tr("shell.tools.blocked.openStick") : app.pending.size === 0 ? tr("shell.tools.blocked.noPending") : "",
       run: () => {
         app.writeOpen = true;
       },
     },
     {
-      name: "Export na disk",
-      hint: "Playlisty z flashky do složek",
+      id: "export",
+      name: tr("shell.tools.export.name"),
+      hint: tr("shell.tools.export.hint"),
       icon: HardDriveDownload,
       tone: "#3e7bf2",
-      group: "Flashka",
-      blocked: firstStick ? "" : "Vlož flashku",
+      group: "stick",
+      blocked: firstStick ? "" : tr("shell.tools.blocked.insertStick"),
       run: async () => {
         await onStick();
         app.exportOpen = true;
       },
     },
     {
-      name: "Nastavení přehrávače",
-      hint: "My Settings pro CDJ/XDJ a mixer",
+      id: "playerSettings",
+      name: tr("shell.tools.playerSettings.name"),
+      hint: tr("shell.tools.playerSettings.hint"),
       icon: SlidersHorizontal,
       tone: "#8b909c",
-      group: "Flashka",
+      group: "stick",
       blocked: "",
       run: () => {
         if (app.isLibrary || !app.stickPath) openSettings("player");
@@ -195,54 +208,61 @@
       },
     },
     {
-      name: "Import z rekordboxu",
-      hint: "Skladby, playlisty a cue, tvoje úpravy zůstanou",
+      id: "import",
+      name: tr("shell.tools.import.name"),
+      hint: tr("shell.tools.import.hint"),
       icon: Download,
       tone: "#e8423c",
-      group: "Knihovna",
-      blocked: !rekordbox ? "Rekordbox knihovna nenalezena" : app.importing ? "Už běží" : "",
+      group: "library",
+      blocked: !rekordbox ? tr("shell.tools.blocked.noRekordbox") : app.importing ? tr("shell.tools.blocked.running") : "",
       run: async () => {
         await onLibrary();
         if (rekordbox) app.importRekordbox(rekordbox);
       },
     },
     {
-      name: "Formátovat flashku",
-      hint: "Smazat a připravit pro přehrávače",
+      id: "format",
+      name: tr("shell.tools.format.name"),
+      hint: tr("shell.tools.format.hint"),
       icon: Eraser,
       tone: "#c93a3f",
-      group: "Flashka",
+      group: "stick",
       blocked: "",
       run: () => {
         app.formatOpen = true;
       },
     },
     {
-      name: "Sync mezi Macy",
-      hint: "Knihovna s dalšími Macy ve stejné síti",
+      id: "peer",
+      name: tr("shell.tools.peer.name"),
+      hint: tr("shell.tools.peer.hint"),
       icon: Laptop,
       tone: "#4aa8ff",
-      group: "Knihovna",
+      group: "library",
       blocked: "",
       run: () => {
         app.peerOpen = true;
       },
     },
     {
-      name: "Nastavení",
-      hint: "Přehrávač, flashka, plánovač, export a Sync mezi Macy na jednom místě (⌘,)",
+      id: "settings",
+      name: tr("shell.tools.settings.name"),
+      hint: tr("shell.tools.settings.hint"),
       icon: Settings,
       tone: "#8b909c",
-      group: "Aplikace",
+      group: "app",
       blocked: "",
       run: () => openSettings(),
     },
     {
-      name: "Aktualizace",
-      hint: updates.available ? `Nová verze ${updates.update?.version} je připravená` : `Máš ${updates.current}, zkontrolovat novou verzi`,
+      id: "updates",
+      name: tr("shell.tools.updates.name"),
+      hint: updates.available
+        ? tr("shell.tools.updates.hintReady", { version: updates.update?.version ?? "" })
+        : tr("shell.tools.updates.hintCheck", { version: updates.current }),
       icon: ArrowDownToLine,
       tone: "#3fcf8e",
-      group: "Aplikace",
+      group: "app",
       blocked: "",
       run: () => {
         updates.open = true;
@@ -254,16 +274,16 @@
 
   const matches = (t: Tool, q: string) => !q || `${t.name} ${t.hint}`.toLowerCase().includes(q);
 
-  /** Rows by section; a recently used tool shows only under Naposledy. */
+  /** Rows by section; a recently used tool shows only under Recent. */
   const sections = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    const recents = recent.map((n) => tools.find((t) => t.name === n)).filter((t): t is Tool => !!t && matches(t, q));
+    const recents = recent.map((n) => tools.find((t) => t.id === n)).filter((t): t is Tool => !!t && matches(t, q));
     const rest = tools.filter((t) => !recents.includes(t) && matches(t, q));
     return [
-      { title: "Naposledy", items: recents },
-      { title: "Knihovna", items: rest.filter((t) => t.group === "Knihovna") },
-      { title: "Flashka", items: rest.filter((t) => t.group === "Flashka") },
-      { title: "Aplikace", items: rest.filter((t) => t.group === "Aplikace") },
+      { title: "shell.tools.groups.recent" as Key, items: recents },
+      { title: "shell.tools.groups.library" as Key, items: rest.filter((t) => t.group === "library") },
+      { title: "shell.tools.groups.stick" as Key, items: rest.filter((t) => t.group === "stick") },
+      { title: "shell.tools.groups.app" as Key, items: rest.filter((t) => t.group === "app") },
     ].filter((s) => s.items.length);
   });
   /** Rows in the order the arrows walk them. */
@@ -280,7 +300,7 @@
 
   async function launch(t: Tool) {
     if (t.blocked) return;
-    recent = [t.name, ...recent.filter((n) => n !== t.name)].slice(0, 2);
+    recent = [t.id, ...recent.filter((n) => n !== t.id)].slice(0, 2);
     localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
     close();
     try {
@@ -320,18 +340,18 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="scrim" role="dialog" aria-modal="true" aria-label="Nástroje" tabindex="-1" onclick={(e) => !(e.target as HTMLElement).closest(".palette") && close()} onkeydown={onKey}>
+<div class="scrim" role="dialog" aria-modal="true" aria-label={tr("shell.tools.title")} tabindex="-1" onclick={(e) => !(e.target as HTMLElement).closest(".palette") && close()} onkeydown={onKey}>
   <div class="palette">
     <label class="search">
       <Search size={20} />
-      <input use:autofocus type="text" placeholder="Hledat nástroj nebo akci…" bind:value={query} />
+      <input use:autofocus type="text" placeholder={tr("shell.tools.search")} bind:value={query} />
       <kbd>esc</kbd>
     </label>
 
     <div class="list" bind:this={list}>
       {#each sections as s (s.title)}
-        <div class="eyebrow">{s.title}</div>
-        {#each s.items as t (t.name)}
+        <div class="eyebrow">{tr(s.title)}</div>
+        {#each s.items as t (t.id)}
           {@const i = shown.indexOf(t)}
           <button
             class="row"
@@ -354,15 +374,15 @@
         {/each}
       {/each}
       {#if shown.length === 0}
-        <p class="none">Žádný nástroj neodpovídá „{query}“.</p>
+        <p class="none">{tr("shell.tools.none", { query })}</p>
       {/if}
     </div>
 
     <footer>
-      <span><kbd>↑↓</kbd> vybrat</span>
-      <span><kbd>↵</kbd> otevřít</span>
-      <span><kbd>esc</kbd> zavřít</span>
-      <span><kbd>⌘K</kbd> kdykoli</span>
+      <span><kbd>↑↓</kbd> {tr("shell.tools.keySelect")}</span>
+      <span><kbd>↵</kbd> {tr("shell.tools.keyOpen")}</span>
+      <span><kbd>esc</kbd> {tr("shell.tools.keyClose")}</span>
+      <span><kbd>⌘K</kbd> {tr("shell.tools.keyAnytime")}</span>
     </footer>
   </div>
 </div>

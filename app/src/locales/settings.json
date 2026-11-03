@@ -104,7 +104,7 @@
     "engineHint": "Die älteste Denon-Firmware, auf der du spielst; neuere lesen sie auch.",
     "plannerLead": "Womit der Set-Planer startet. Im Planer lässt es sich für einen Plan ändern.",
     "exportLead": "Wie ein Export vom Stick auf die Festplatte die Dateien benennt und speichert. Beim Export einmalig änderbar.",
-    "peerLead": "Koppeln, Senden und Spiegeln findest du in den Tools (⌘K) → Sync zwischen Macs.",
+    "peerLead": "Koppeln, Senden und Spiegeln findest du in den Werkzeugen (⌘K) → Sync zwischen Macs.",
     "musicDir": "Musik von anderen Macs wird gespeichert in",
     "musicDirHint": "Darin nach Interpret und Album. Vorhandene Dateien werden nie überschrieben.",
     "autoMirror": "Automatisch spiegeln, wenn ein gekoppelter Mac im Netzwerk ist",

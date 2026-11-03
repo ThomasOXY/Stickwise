@@ -91,14 +91,14 @@ impl Technique {
         }
     }
 
-    pub fn name(self) -> &'static str {
-        match self {
-            Technique::LongBlend => "Dlouhý blend",
-            Technique::BreakdownBlend => "Breakdown blend",
-            Technique::DropSwap => "Drop swap",
-            Technique::DoubleDrop => "Double drop",
-            Technique::EchoOut => "Echo out / střih",
-        }
+    pub fn name(self) -> String {
+        i18n::t!(match self {
+            Technique::LongBlend => "analysis.technique.longBlend",
+            Technique::BreakdownBlend => "analysis.technique.breakdownBlend",
+            Technique::DropSwap => "analysis.technique.dropSwap",
+            Technique::DoubleDrop => "analysis.technique.doubleDrop",
+            Technique::EchoOut => "analysis.technique.echoOut",
+        })
     }
 }
 
@@ -463,6 +463,11 @@ fn camelot_name(c: Option<(u8, bool)>) -> String {
         .unwrap_or_else(|| "?".into())
 }
 
+/// A tip about going from key `from` to key `to`.
+fn key_tip(key: &str, from: String, to: String) -> String {
+    i18n::t!(key, from = from, to = to)
+}
+
 fn bar_ms(bpm: f64) -> u32 {
     (4.0 * 60000.0 / bpm.max(60.0)) as u32
 }
@@ -514,10 +519,7 @@ fn options(
         cue_in: b.mix_in_ms,
         a: vec![mark(a.mix_out_ms, next("Mix out →"))],
         b: vec![mark(b.mix_in_ms, "Mix in")],
-        tips: vec![format!(
-            "Na Mix out skladby A pusť B od Mix in, blend {blend} taktů, basy přehoď v polovině (po {} taktech).",
-            blend / 2
-        )],
+        tips: vec![i18n::t!("analysis.tip.longBlend", blend = blend, half = blend / 2)],
         score: match level {
             Level::Beginner => 0.0,
             Level::Advanced => 0.45,
@@ -545,11 +547,11 @@ fn options(
                 technique: Technique::BreakdownBlend,
                 start_at: bd,
                 cue_in: b.mix_in_ms,
-                a: vec![mark(bd, next("Breakdown: pusť"))],
+                a: vec![mark(bd, next("Breakdown: play"))],
                 b: vec![mark(b.mix_in_ms, "Mix in")],
                 tips: vec![
-                    "Na začátku posledního breakdownu A pusť B od Mix in, basy B zatím stažené.".into(),
-                    "Melodie se přes breakdown proplétají; na konci breakdownu A stáhni a pusť basy B.".into(),
+                    i18n::t!("analysis.tip.breakdownStart"),
+                    i18n::t!("analysis.tip.breakdownWeave"),
                 ],
                 score: 0.3,
             });
@@ -576,11 +578,11 @@ fn options(
                     technique: Technique::DropSwap,
                     start_at,
                     cue_in: b_start,
-                    a: vec![mark(start_at, next("Swap: pusť")), mark(a_drop, next("Drop →"))],
+                    a: vec![mark(start_at, next("Swap: play")), mark(a_drop, next("Drop →"))],
                     b: vec![mark(b_start, "Start (build)"), mark(bd_b, "Drop")],
                     tips: vec![
-                        "Během breakdownu A pusť buildup B (basy B dole).".into(),
-                        "Přesně na drop A stáhni A a nech dropnout B místo něj — publikum čeká drop A a přijde B.".into(),
+                        i18n::t!("analysis.tip.swapBuild"),
+                        i18n::t!("analysis.tip.swapDrop"),
                     ],
                     score: if b.energy >= a.energy - 0.5 { 0.2 } else { 0.5 },
                 });
@@ -591,14 +593,13 @@ fn options(
                     start_at,
                     cue_in: b_start,
                     a: vec![
-                        mark(start_at, next("Double: pusť")),
+                        mark(start_at, next("Double: play")),
                         mark(a_drop, "Double drop"),
                     ],
                     b: vec![mark(b_start, "Start"), mark(bd_b, "Double drop")],
                     tips: vec![
-                        "Pusť B tak, aby jeho drop padl přesně na drop A.".into(),
-                        "Na dropu nech hrát obě, basy jen z jedné; po 8–16 taktech A stáhni."
-                            .into(),
+                        i18n::t!("analysis.tip.doubleStart"),
+                        i18n::t!("analysis.tip.doubleDrop"),
                     ],
                     score: 0.15,
                 });
@@ -626,8 +627,8 @@ fn options(
             },
         )],
         tips: vec![
-            "Na konci fráze dej na A echo (1/2 nebo 3/4 beat) a stáhni ho.".into(),
-            "B pusť čistě na první dobu další fráze, bez překryvu melodií.".into(),
+            i18n::t!("analysis.tip.echoOut"),
+            i18n::t!("analysis.tip.echoIn"),
         ],
         score: if good_keys && tempo_ok { 1.0 } else { 0.05 },
     });
@@ -666,34 +667,36 @@ fn transition(
 
     let mut tips = o.tips;
     if p.abs() >= 0.05 {
-        tips.push(format!(
-            "Tempo: {:.1} → {:.1} BPM, příchozí skladbu posuň o {:+.1} %.",
-            b.bpm, a.bpm, p
+        tips.push(i18n::t!(
+            "analysis.tip.tempo",
+            from = format!("{:.1}", b.bpm),
+            to = format!("{:.1}", a.bpm),
+            pitch = format!("{p:+.1}")
         ));
     }
     match relation {
-        "same" | "relative" | "+1" | "-1" => tips.push(format!(
-            "Tónina {} → {}: sedí, melodie můžou hrát přes sebe.",
+        "same" | "relative" | "+1" | "-1" => tips.push(key_tip(
+            "analysis.tip.keyFits",
             camelot_name(a.camelot),
             camelot_name(b.camelot)
         )),
-        "+2" | "+7" => tips.push(format!(
-            "Tónina {} → {}: energy boost, překryv melodií jen krátce.",
+        "+2" | "+7" => tips.push(key_tip(
+            "analysis.tip.keyBoost",
             camelot_name(a.camelot),
             camelot_name(b.camelot)
         )),
-        "?" => tips.push("Tónina neznámá, poslouchej, jestli se melodie nepere.".into()),
-        _ => tips.push(format!(
-            "Tónina {} → {} se tluče: melodie přes sebe nepouštěj.",
+        "?" => tips.push(i18n::t!("analysis.tip.keyUnknown")),
+        _ => tips.push(key_tip(
+            "analysis.tip.keyClash",
             camelot_name(a.camelot),
             camelot_name(b.camelot)
         )),
     }
     let step = b.energy - a.energy;
     if step >= 2.0 {
-        tips.push("Velký skok energie nahoru: nech to bouchnout na dropu B.".into());
+        tips.push(i18n::t!("analysis.tip.energyUp"));
     } else if step <= -2.0 {
-        tips.push("Energie jde dolů: nech A dohrát, ať to nespadne náhle.".into());
+        tips.push(i18n::t!("analysis.tip.energyDown"));
     }
     Transition {
         from: a.id,

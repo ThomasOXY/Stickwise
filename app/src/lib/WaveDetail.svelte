@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Cue, Waveform } from "./api";
+  import { t } from "./i18n.svelte";
   import { DETAIL_RATE, fit, paint } from "./waveform";
 
   interface Props {
@@ -268,7 +269,7 @@
   onpointerup={onPointerUp}
   onpointercancel={onPointerUp}
   onwheel={onWheel}
-  aria-label="Waveform skladby, tažením se posouváš, kolečkem přibližuješ"
+  aria-label={t("deck.wave.detail")}
 ></canvas>
 
 <style>

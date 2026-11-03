@@ -4,6 +4,7 @@
   import PlaylistTree from "./PlaylistTree.svelte";
   import { api } from "./api";
   import { gb } from "./format";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   function stickStatus(path: string): string {
@@ -18,7 +19,7 @@
       await api.eject(path);
       await app.refreshSticks();
     } catch (err) {
-      app.error = `Flashku nejde vysunout: ${err}`;
+      app.error = t("library.sidebar.ejectFailed", { error: String(err) });
     }
   }
 
@@ -32,9 +33,9 @@
     <JobsPanel />
   {:else}
   <div class="head" data-tauri-drag-region>
-    <h1>{app.isLibrary ? "Knihovna" : app.data?.info.name ?? "Flashka"}</h1>
-    <button class="fmt" title="Smazat a připravit flashku pro přehrávače" onclick={() => (app.formatOpen = true)}>
-      Formátovat…
+    <h1>{app.isLibrary ? t("library.sidebar.library") : app.data?.info.name ?? t("library.sidebar.stick")}</h1>
+    <button class="fmt" title={t("library.sidebar.formatHint")} onclick={() => (app.formatOpen = true)}>
+      {t("library.sidebar.format")}
     </button>
   </div>
 
@@ -49,7 +50,7 @@
     >
       <div class="row">
         <Laptop size={16} />
-        <span class="name">Tento Mac</span>
+        <span class="name">{t("library.sidebar.thisMac")}</span>
         <span class="readout count">{app.library?.tracks.length ?? 0}</span>
       </div>
     </div>
@@ -68,7 +69,7 @@
           <span class="name">{s.name}</span>
           <span class="dot {stickStatus(s.path)}"></span>
           <span class="readout count">{gb(used)} / {gb(s.totalBytes)} GB</span>
-          <button class="eject" title="Vysunout {s.name}" onclick={(e) => eject(e, s.path)}>
+          <button class="eject" title={t("library.sidebar.eject", { name: s.name })} onclick={(e) => eject(e, s.path)}>
             <Eject size={12} />
           </button>
         </div>
@@ -76,7 +77,7 @@
       </div>
     {/each}
     {#if app.sticks.length === 0}
-      <p class="empty">Žádná připojená flashka</p>
+      <p class="empty">{t("library.sidebar.noSticks")}</p>
     {/if}
   </section>
 
@@ -85,7 +86,7 @@
   {#if running.length > 0}
     <section class="jobs">
       {#each running as j (j.id)}
-        <button class="job" onclick={() => (app.jobsOpen = true)} title="Ukázat úlohy">
+        <button class="job" onclick={() => (app.jobsOpen = true)} title={t("library.sidebar.showJobs")}>
           <div class="row">
             <Download size={13} />
             <span class="label">{j.label}</span>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { CircleAlert, CircleCheck, CircleSlash, LoaderCircle, X } from "@lucide/svelte";
   import { api, type JobEvent } from "./api";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   /** The jobs, running ones first, then the finished ones newest first. */
@@ -19,16 +20,16 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && close()} />
 
-<div class="panel" role="region" aria-label="Úlohy">
+<div class="panel" role="region" aria-label={t("library.jobs.title")}>
   <header>
-    <h1>Úlohy</h1>
-    {#if finished.length}<button class="btn ghost sm" onclick={clear}>Vymazat hotové</button>{/if}
-    <button class="btn icon ghost" onclick={close} aria-label="Zpátky na playlisty" title="Zpátky na playlisty"><X size={15} /></button>
+    <h1>{t("library.jobs.title")}</h1>
+    {#if finished.length}<button class="btn ghost sm" onclick={clear}>{t("library.jobs.clearDone")}</button>{/if}
+    <button class="btn icon ghost" onclick={close} aria-label={t("library.jobs.back")} title={t("library.jobs.back")}><X size={15} /></button>
   </header>
 
   <div class="list">
     {#if app.jobs.length === 0}
-      <p class="empty">Nic neběží.</p>
+      <p class="empty">{t("library.jobs.nothing")}</p>
     {/if}
     {#each running as j (j.id)}
       <div class="job">
@@ -36,7 +37,7 @@
           <LoaderCircle size={15} class="spin run" />
           <span class="label">{j.label}</span>
           <span class="readout count">{j.filesDone} / {j.filesTotal}</span>
-          <button class="btn ghost sm" onclick={() => api.cancelJob(j.id)}>Zastavit</button>
+          <button class="btn ghost sm" onclick={() => api.cancelJob(j.id)}>{t("common.stop")}</button>
         </div>
         <div class="bar"><span style:width="{share(j) * 100}%"></span></div>
         {#if j.current}<p class="current">{j.current}</p>{/if}

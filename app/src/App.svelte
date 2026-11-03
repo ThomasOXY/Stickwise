@@ -26,7 +26,7 @@
   import { updates } from "./lib/updates.svelte";
   import { access } from "./lib/access.svelte";
   import { prefs } from "./lib/prefs.svelte";
-  import { i18n, type LangChoice } from "./lib/i18n.svelte";
+  import { i18n, t, type LangChoice } from "./lib/i18n.svelte";
   import { listen } from "@tauri-apps/api/event";
 
   let deck = $state<ReturnType<typeof Deck>>();
@@ -121,7 +121,7 @@
         <button class="toast ok" onclick={() => (app.notice = null)}>{app.notice}</button>
       {/if}
     {:else if app.loading}
-      <div class="loading" data-tauri-drag-region>{app.isLibrary ? "Načítám knihovnu…" : "Načítám knihovnu z flashky…"}</div>
+      <div class="loading" data-tauri-drag-region>{t(app.isLibrary ? "shell.loadingLibrary" : "shell.loadingStick")}</div>
     {:else}
       <EmptyState />
     {/if}

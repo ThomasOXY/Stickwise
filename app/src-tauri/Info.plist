@@ -2,8 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>cs</string>
+    <string>de</string>
+  </array>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Stickwise hledá ve stejné síti další Macy se Stickwise, aby mezi nimi mohl synchronizovat knihovnu.</string>
+  <string>Stickwise looks for other Macs running Stickwise on the same network to sync your library between them.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_stickwise._tcp</string>

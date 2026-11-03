@@ -4,6 +4,7 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { api } from "./api";
   import { cueTime, keyColor, rgb, size, time } from "./format";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
   import { DETAIL_RATE, paint } from "./waveform";
 
@@ -54,8 +55,8 @@
 {#if track}
   <aside class="panel">
     <div class="head">
-      <span class="eyebrow">Detail skladby</span>
-      <button class="btn ghost icon x" onclick={() => (app.detailOpen = false)} aria-label="Zavřít detail"><X size={14} /></button>
+      <span class="eyebrow">{t("library.detail.eyebrow")}</span>
+      <button class="btn ghost icon x" onclick={() => (app.detailOpen = false)} aria-label={t("library.detail.close")}><X size={14} /></button>
     </div>
 
     <div class="who">
@@ -67,24 +68,24 @@
       <div>
         <div class="title">{track.title}</div>
         <div class="sub">{track.artist}</div>
-        {#if track.album}<div class="sub">Album: {track.album}</div>{/if}
+        {#if track.album}<div class="sub">{t("library.detail.album", { album: track.album })}</div>{/if}
       </div>
     </div>
 
     <div class="readouts">
       <div><span class="readout big">{track.bpm.toFixed(2)}</span><span class="sub">BPM</span></div>
-      <div><span class="readout big" style:color={track.key ? keyColor(track.key) : undefined}>{track.key || "–"}</span><span class="sub">Tónina</span></div>
-      <div><span class="readout big">{time(track.duration)}</span><span class="sub">Délka</span></div>
+      <div><span class="readout big" style:color={track.key ? keyColor(track.key) : undefined}>{track.key || "–"}</span><span class="sub">{t("library.detail.key")}</span></div>
+      <div><span class="readout big">{time(track.duration)}</span><span class="sub">{t("library.detail.length")}</span></div>
     </div>
 
     <dl>
-      <dt>Formát</dt><dd>{d?.audio?.container ?? "…"}</dd>
-      <dt>Kódování</dt><dd>{d?.audio ? `${d.audio.codec}${d.audio.bits ? ` ${d.audio.bits}-bit` : ""}` : "…"}</dd>
-      <dt>Vzorkování</dt><dd>{d?.audio?.sampleRate ? `${(d.audio.sampleRate / 1000).toFixed(1)} kHz` : "—"}</dd>
-      <dt>Velikost</dt><dd>{d ? size(d.fileSize) : "…"}</dd>
+      <dt>{t("library.detail.format")}</dt><dd>{d?.audio?.container ?? "…"}</dd>
+      <dt>{t("library.detail.codec")}</dt><dd>{d?.audio ? `${d.audio.codec}${d.audio.bits ? ` ${d.audio.bits}-bit` : ""}` : "…"}</dd>
+      <dt>{t("library.detail.sampleRate")}</dt><dd>{d?.audio?.sampleRate ? `${(d.audio.sampleRate / 1000).toFixed(1)} kHz` : "—"}</dd>
+      <dt>{t("library.detail.size")}</dt><dd>{d ? size(d.fileSize) : "…"}</dd>
     </dl>
 
-    <div class="sect"><span class="eyebrow">Detail</span><span class="readout">{cueTime(windowMs[0])} – {cueTime(windowMs[1])}</span></div>
+    <div class="sect"><span class="eyebrow">{t("library.detail.zoom")}</span><span class="readout">{cueTime(windowMs[0])} – {cueTime(windowMs[1])}</span></div>
     <div class="detail">
       <canvas bind:this={canvas}></canvas>
       {#each beatsInWindow as [t, n]}
@@ -93,23 +94,23 @@
       {#each hot.filter((c) => c.timeMs >= windowMs[0] && c.timeMs <= windowMs[1]) as c}
         <span class="cue" style:left={pos(c.timeMs)} style:background={rgb(c.color, c.slot)}>{letter(c.slot)}</span>
       {/each}
-      {#if d && !wave}<span class="none">Bez waveformu</span>{/if}
+      {#if d && !wave}<span class="none">{t("library.detail.noWaveform")}</span>{/if}
     </div>
 
-    <div class="sect"><span class="eyebrow">Hot cue</span></div>
+    <div class="sect"><span class="eyebrow">{t("library.detail.hotCues")}</span></div>
     {#each hot as c (c.slot)}
       <div class="cue-row">
         <span class="badge" style:background={rgb(c.color, c.slot)}>{letter(c.slot)}</span>
         <span class="readout t">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
-        <input class="cm" type="text" value={c.comment} placeholder="Název" onchange={(e) => edit(c, { comment: e.currentTarget.value })} />
-        <button class="del" onclick={() => remove(c)} aria-label="Smazat hot cue {letter(c.slot)}"><Trash size={12} /></button>
+        <input class="cm" type="text" value={c.comment} placeholder={t("library.detail.cueName")} onchange={(e) => edit(c, { comment: e.currentTarget.value })} />
+        <button class="del" onclick={() => remove(c)} aria-label={t("library.detail.deleteHotCue", { slot: letter(c.slot) })}><Trash size={12} /></button>
       </div>
     {/each}
     {#if d && missingSlots.length > 0}
-      <p class="sub small">{missingSlots.length === 8 ? "Žádné hot cue. Nastavíš je pady pod waveformem nebo klávesami 1–8." : `${missingSlots.join(", ")} nenastaveno`}</p>
+      <p class="sub small">{missingSlots.length === 8 ? t("library.detail.noHotCues") : t("library.detail.unset", { slots: missingSlots.join(", ") })}</p>
     {/if}
 
-    <div class="sect"><span class="eyebrow">Memory cue a smyčky</span></div>
+    <div class="sect"><span class="eyebrow">{t("library.detail.memoryCues")}</span></div>
     {#each memory as c, i (`${i}:${c.timeMs}`)}
       <div class="cue-row">
         {#if c.loopEndMs}
@@ -118,18 +119,18 @@
             class:active={c.activeLoop}
             style:background={rgb(c.color)}
             onclick={() => setActive(c)}
-            title={c.activeLoop ? "Aktivní smyčka: zapne se po načtení skladby" : "Nastavit jako aktivní smyčku"}
+            title={c.activeLoop ? t("library.detail.activeLoop") : t("library.detail.setActiveLoop")}
           ></button>
         {:else}<span class="tri" style:border-top-color={rgb(c.color)}></span>{/if}
         <span class="readout t">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
-        <input class="cm" type="text" value={c.comment} placeholder="Název" onchange={(e) => edit(c, { comment: e.currentTarget.value })} />
-        <button class="del" onclick={() => remove(c)} aria-label="Smazat memory cue"><Trash size={12} /></button>
+        <input class="cm" type="text" value={c.comment} placeholder={t("library.detail.cueName")} onchange={(e) => edit(c, { comment: e.currentTarget.value })} />
+        <button class="del" onclick={() => remove(c)} aria-label={t("library.detail.deleteMemoryCue")}><Trash size={12} /></button>
       </div>
     {/each}
-    {#if d && memory.length === 0}<p class="sub small">Žádné. Přidáš je tlačítkem Memory nebo klávesou M.</p>{/if}
+    {#if d && memory.length === 0}<p class="sub small">{t("library.detail.noMemoryCues")}</p>{/if}
 
     <div class="path sub">{track.filePath}</div>
-    <button class="btn" onclick={() => api.reveal(track.absPath)}><FolderOpen size={14} /> Ukázat ve Finderu</button>
+    <button class="btn" onclick={() => api.reveal(track.absPath)}><FolderOpen size={14} /> {t("library.detail.reveal")}</button>
   </aside>
 {/if}
 

@@ -93,5 +93,10 @@ export function t(key: Key, params?: Record<string, string | number>): string {
     const form = rules[lang].select(Number(params?.count ?? 0)) as keyof Plural;
     v = v[form] ?? v.other;
   }
-  return v.replace(/\{(\w+)\}/g, (m, k) => (params?.[k] !== undefined ? String(params[k]) : m));
+  return v.replace(/\{(\w+)\}/g, (m, k) => {
+    const p = params?.[k];
+    if (p === undefined) return m;
+    // Counts with the language's thousands separator: 1 234, 1,234, 1.234.
+    return k === "count" && typeof p === "number" ? p.toLocaleString(lang) : String(p);
+  });
 }

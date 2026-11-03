@@ -48,26 +48,23 @@ pub fn can_play(player: Player, info: &AudioInfo) -> Result<(), String> {
     let pcm_ok = |info: &AudioInfo| -> Result<(), String> {
         match info.bits {
             Some(16 | 24) => {}
-            Some(b) => return Err(format!("{b}-bit not supported (16/24-bit only)")),
-            None => return Err("bit depth unreadable".into()),
+            Some(b) => return Err(i18n::t!("usb.compat.bits", bits = b)),
+            None => return Err(i18n::t!("usb.compat.bitsUnknown")),
         }
         match info.sample_rate {
             Some(r) if rates.contains(&r) => Ok(()),
-            Some(r) => Err(format!("{:.1} kHz not supported", r as f64 / 1000.0)),
-            None => Err("sample rate unreadable".into()),
+            Some(r) => Err(i18n::t!("usb.compat.rate", rate = format!("{:.1}", r as f64 / 1000.0))),
+            None => Err(i18n::t!("usb.compat.rateUnknown")),
         }
     };
     match (info.container, info.codec) {
         (Container::Mp3, _) | (Container::Mp4, _) => Ok(()),
         (Container::Wav | Container::Aiff, Codec::Pcm) => pcm_ok(info),
-        (Container::Wav | Container::Aiff, Codec::Float) => Err(format!(
-            "{}-bit float not supported",
-            info.bits.unwrap_or(32)
-        )),
-        (Container::Flac, _) if !player.hi_res() => Err("FLAC not supported".into()),
+        (Container::Wav | Container::Aiff, Codec::Float) => Err(i18n::t!("usb.compat.float", bits = info.bits.unwrap_or(32))),
+        (Container::Flac, _) if !player.hi_res() => Err(i18n::t!("usb.compat.flac")),
         (Container::Flac, _) => pcm_ok(info),
-        (_, Codec::Other(t)) => Err(format!("compressed audio (codec {t:#x}) not supported")),
-        _ => Err("unrecognised file format".into()),
+        (_, Codec::Other(t)) => Err(i18n::t!("usb.compat.codec", codec = format!("{t:#x}"))),
+        _ => Err(i18n::t!("usb.compat.unknownFormat")),
     }
 }
 
@@ -78,8 +75,8 @@ pub fn can_mount(player: Player, fs: &str) -> Result<(), String> {
         (_, "msdos") => Ok(()),
         (_, "hfs") => Ok(()),
         (Player::Cdj3000 | Player::Cdj3000X, "exfat") => Ok(()),
-        (_, "exfat") => Err("exFAT not supported (use FAT32)".into()),
-        (_, other) => Err(format!("{other} not supported (use FAT32)")),
+        (_, "exfat") => Err(i18n::t!("usb.compat.filesystem", fs = "exFAT")),
+        (_, other) => Err(i18n::t!("usb.compat.filesystem", fs = other)),
     }
 }
 

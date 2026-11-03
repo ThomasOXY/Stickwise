@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Crosshair, Flag, Grid3x3, Hand, Minus, Plus, RotateCcw, Undo2 } from "@lucide/svelte";
   import { nearestBeat, periodMs, withTempo, type Grid } from "./grid";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   interface Props {
@@ -83,14 +84,14 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="grid-panel">
-  <span class="title" title="Alt + tažení ve waveformu posouvá grid"><Grid3x3 size={15} /> Úprava gridu</span>
+  <span class="title" title={t("deck.grid.dragHint")}><Grid3x3 size={15} /> {t("deck.grid.title")}</span>
   {#if !app.detail?.grid}
-    <p class="note">Skladba nemá beatgrid. Nejdřív ji analyzuj.</p>
+    <p class="note">{t("deck.grid.noGrid")}</p>
   {:else if !editable}
-    <p class="note">Beatgrid se upravuje v knihovně (Tento Mac). Na flashku se dostane synchronizací.</p>
+    <p class="note">{t("deck.grid.notEditable")}</p>
   {:else if grid}
     <div class="pill">
-      <button class="g icon" onclick={(e) => tempo(grid.bpm - (e.shiftKey ? 0.1 : 0.01))} title="−0,01 BPM (se Shiftem −0,1)" aria-label="Pomalejší">
+      <button class="g icon" onclick={(e) => tempo(grid.bpm - (e.shiftKey ? 0.1 : 0.01))} title={t("deck.grid.slowerHint")} aria-label={t("deck.grid.slower")}>
         <Minus size={14} />
       </button>
       <label class="bpm">
@@ -99,36 +100,36 @@
           bind:value={bpmText}
           onchange={typed}
           onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-          aria-label="Tempo gridu"
+          aria-label={t("deck.grid.tempo")}
         />
         <span>BPM</span>
       </label>
-      <button class="g icon" onclick={(e) => tempo(grid.bpm + (e.shiftKey ? 0.1 : 0.01))} title="+0,01 BPM (se Shiftem +0,1)" aria-label="Rychlejší">
+      <button class="g icon" onclick={(e) => tempo(grid.bpm + (e.shiftKey ? 0.1 : 0.01))} title={t("deck.grid.fasterHint")} aria-label={t("deck.grid.faster")}>
         <Plus size={14} />
       </button>
     </div>
 
     <div class="pill">
-      <button class="g" onclick={() => tempo(grid.bpm / 2)} title="Poloviční tempo">÷2</button>
-      <button class="g" onclick={() => tempo(grid.bpm * 2)} title="Dvojnásobné tempo">×2</button>
-      <button class="g" onclick={tap} title="Ťukej do rytmu (aspoň 4×)">
+      <button class="g" onclick={() => tempo(grid.bpm / 2)} title={t("deck.grid.half")}>÷2</button>
+      <button class="g" onclick={() => tempo(grid.bpm * 2)} title={t("deck.grid.double")}>×2</button>
+      <button class="g" onclick={tap} title={t("deck.grid.tapHint")}>
         <Hand size={13} /> TAP{#if tapCount > 0 && tapCount < 4}<span class="n">{tapCount}</span>{/if}
       </button>
     </div>
 
     <div class="pill">
-      <button class="g icon" onclick={() => shift(-10)} title="Grid o 10 ms dřív" aria-label="Grid o 10 ms dřív"><ChevronsLeft size={14} /></button>
-      <button class="g icon" onclick={() => shift(-1)} title="Grid o 1 ms dřív" aria-label="Grid o 1 ms dřív"><ChevronLeft size={14} /></button>
-      <span class="lbl">posun</span>
-      <button class="g icon" onclick={() => shift(1)} title="Grid o 1 ms později" aria-label="Grid o 1 ms později"><ChevronRight size={14} /></button>
-      <button class="g icon" onclick={() => shift(10)} title="Grid o 10 ms později" aria-label="Grid o 10 ms později"><ChevronsRight size={14} /></button>
+      <button class="g icon" onclick={() => shift(-10)} title={t("deck.grid.earlier", { ms: 10 })} aria-label={t("deck.grid.earlier", { ms: 10 })}><ChevronsLeft size={14} /></button>
+      <button class="g icon" onclick={() => shift(-1)} title={t("deck.grid.earlier", { ms: 1 })} aria-label={t("deck.grid.earlier", { ms: 1 })}><ChevronLeft size={14} /></button>
+      <span class="lbl">{t("deck.grid.offset")}</span>
+      <button class="g icon" onclick={() => shift(1)} title={t("deck.grid.later", { ms: 1 })} aria-label={t("deck.grid.later", { ms: 1 })}><ChevronRight size={14} /></button>
+      <button class="g icon" onclick={() => shift(10)} title={t("deck.grid.later", { ms: 10 })} aria-label={t("deck.grid.later", { ms: 10 })}><ChevronsRight size={14} /></button>
     </div>
 
     <div class="pill">
-      <button class="g icon" onclick={beatHere} title="Doba sem: nejbližší doba přesně na playhead" aria-label="Doba sem"><Crosshair size={14} /></button>
-      <button class="g" onclick={downbeatHere} title="Doba na playheadu bude první doba taktu"><Flag size={13} /> Tady je 1. doba</button>
-      <button class="g icon" onclick={() => moveBar(-1)} title="První doba taktu o dobu dřív" aria-label="Takt o dobu dřív"><ChevronLeft size={14} /></button>
-      <button class="g icon" onclick={() => moveBar(1)} title="První doba taktu o dobu později" aria-label="Takt o dobu později"><ChevronRight size={14} /></button>
+      <button class="g icon" onclick={beatHere} title={t("deck.grid.beatHereHint")} aria-label={t("deck.grid.beatHere")}><Crosshair size={14} /></button>
+      <button class="g" onclick={downbeatHere} title={t("deck.grid.downbeatHint")}><Flag size={13} /> {t("deck.grid.downbeat")}</button>
+      <button class="g icon" onclick={() => moveBar(-1)} title={t("deck.grid.barEarlierHint")} aria-label={t("deck.grid.barEarlier")}><ChevronLeft size={14} /></button>
+      <button class="g icon" onclick={() => moveBar(1)} title={t("deck.grid.barLaterHint")} aria-label={t("deck.grid.barLater")}><ChevronRight size={14} /></button>
     </div>
 
     <span class="spacer"></span>
@@ -139,15 +140,15 @@
       role="switch"
       aria-checked={app.metronome}
       onclick={() => (app.metronome = !app.metronome)}
-      title="Klik na každou dobu při přehrávání"
+      title={t("deck.grid.metronomeHint")}
     >
-      <span class="knob"></span> Metronom
+      <span class="knob"></span> {t("deck.grid.metronome")}
     </button>
     {#if grid.edited}
-      <span class="badge" title="Grid se liší od analýzy">upraveno</span>
-      <button class="g text" onclick={() => app.resetGrid()} title="Zahodit úpravy a vrátit grid z analýzy"><RotateCcw size={13} /> Vrátit analýzu</button>
+      <span class="badge" title={t("deck.grid.editedHint")}>{t("deck.grid.edited")}</span>
+      <button class="g text" onclick={() => app.resetGrid()} title={t("deck.grid.resetHint")}><RotateCcw size={13} /> {t("deck.grid.reset")}</button>
     {/if}
-    <button class="g icon" disabled={!app.canUndoGrid} onclick={() => app.undoGrid()} title="Vrátit poslední úpravu gridu (⌘Z)" aria-label="Vrátit úpravu gridu">
+    <button class="g icon" disabled={!app.canUndoGrid} onclick={() => app.undoGrid()} title={t("deck.grid.undoHint")} aria-label={t("deck.grid.undo")}>
       <Undo2 size={14} />
     </button>
   {/if}

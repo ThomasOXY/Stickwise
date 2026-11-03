@@ -2,6 +2,7 @@
   import { CircleCheck, CircleX, Eraser, HardDrive, LoaderCircle, RefreshCw, TriangleAlert, Usb } from "@lucide/svelte";
   import { playerApi, type Disk } from "./api";
   import { gb } from "./format";
+  import { t } from "./i18n.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import SheetSwitch from "./SheetSwitch.svelte";
   import { openSettings, prefs } from "./prefs.svelte";
@@ -76,6 +77,10 @@
     app.formatOpen = false;
     app.refreshSticks().then(() => (app.syncOpen = true));
   }
+
+  /** The erase warning, its `**bold**` part apart: [before, bold, after]. */
+  const eraseText = $derived(disk ? t("sync.format.erase", { name: confirmName, gb: gb(disk.size) }).split("**") : []);
+  const confirmText = $derived(t("sync.format.confirm", { name: "\u0000" }).split("\u0000"));
 </script>
 
 <svelte:window
@@ -86,21 +91,21 @@
   id="fmt-title"
   icon={Eraser}
   tone="danger"
-  title={job?.state === "running" ? `Formátuji ${shownName}` : "Formátovat flashku"}
-  sub="Flashka dostane jeden oddíl (MBR) a prázdnou rekordbox knihovnu, takže ji přehrávače hned poznají."
+  title={job?.state === "running" ? t("sync.format.titleRunning", { name: shownName }) : t("sync.format.title")}
+  sub={t("sync.format.sub")}
   width={760}
   onclose={job?.state === "running" ? undefined : close}
 >
   {#if !job}
     <div class="body">
       <div class="sec-head">
-        <span class="eyebrow">Disk</span>
-        <button class="btn ghost icon sm" title="Načíst znovu" aria-label="Načíst znovu" onclick={load}><RefreshCw size={13} /></button>
+        <span class="eyebrow">{t("sync.format.disk")}</span>
+        <button class="btn ghost icon sm" title={t("sync.format.reload")} aria-label={t("sync.format.reload")} onclick={load}><RefreshCw size={13} /></button>
       </div>
       {#if disks === null}
-        <p class="none"><LoaderCircle size={14} class="spin" /> Hledám flashky…</p>
+        <p class="none"><LoaderCircle size={14} class="spin" /> {t("sync.format.searching")}</p>
       {:else if disks.length === 0}
-        <p class="none"><HardDrive size={14} /> Žádná USB flashka ani karta. Připoj ji a klikni na obnovit.</p>
+        <p class="none"><HardDrive size={14} /> {t("sync.format.none")}</p>
       {:else}
         <div class="list">
           {#each disks as d (d.id)}
@@ -111,7 +116,7 @@
               <span class="dtext">
                 <span class="dname">{d.media} · {gb(d.size)} GB</span>
                 <span class="meta">
-                  {[d.bus, d.id, vols.map((v) => v.name || "Bez názvu").join(", ")].filter(Boolean).join(" · ")}
+                  {[d.bus, d.id, vols.map((v) => v.name || t("sync.format.untitled")).join(", ")].filter(Boolean).join(" · ")}
                 </span>
                 {#if d.blocked}<span class="why">{d.blocked}</span>{/if}
               </span>
@@ -122,30 +127,30 @@
       {/if}
 
       {#if disk}
-        <div class="eyebrow">Souborový systém</div>
+        <div class="eyebrow">{t("sync.format.filesystem")}</div>
         <div class="fs">
           <label class="card" class:on={fs === "fat32"}>
             <input type="radio" name="fs" value="fat32" bind:group={fs} />
-            <span class="t">FAT32 <span class="tag">doporučeno</span></span>
-            <span class="d">Přečtou ho všechny CDJ a XDJ (i CDJ-2000NXS, NXS2, XDJ-1000), Denon i rekordbox. Soubor max. 4 GB.</span>
+            <span class="t">FAT32 <span class="tag">{t("stick.engine.recommended")}</span></span>
+            <span class="d">{t("sync.format.fat32Hint")}</span>
           </label>
           <label class="card" class:on={fs === "exfat"}>
             <input type="radio" name="fs" value="exfat" bind:group={fs} />
             <span class="t">exFAT</span>
-            <span class="d">CDJ-3000, CDJ-3000X, XDJ-AZ, OPUS-QUAD, Denon. CDJ-2000NXS2 a starší ji nepřečtou.</span>
+            <span class="d">{t("sync.format.exfatHint")}</span>
           </label>
         </div>
 
-        <label class="eyebrow" for="fmt-name">Název flashky</label>
+        <label class="eyebrow" for="fmt-name">{t("sync.format.name")}</label>
         <input id="fmt-name" class="field" type="text" bind:value={name} maxlength="11" spellcheck="false" />
         <span class="hint" class:err={!nameOk}>
-          {nameOk ? `Na přehrávači: ${shownName.trim()}` : "1–11 znaků: písmena bez diakritiky, číslice, mezera, _ -"}
+          {nameOk ? t("sync.format.onPlayer", { name: shownName.trim() }) : t("sync.format.nameRule")}
         </span>
 
         <div class="sw">
-          <SheetSwitch bind:checked={writeSettings} label="Nahrát moje nastavení přehrávače">
+          <SheetSwitch bind:checked={writeSettings} label={t("sync.format.writeSettings")}>
             {#snippet extra()}
-              <button class="link" onclick={(e) => (e.preventDefault(), openSettings("player"))}>upravit</button>
+              <button class="link" onclick={(e) => (e.preventDefault(), openSettings("player"))}>{t("stick.edit")}</button>
             {/snippet}
           </SheetSwitch>
         </div>
@@ -154,15 +159,14 @@
           <div class="msg">
             <TriangleAlert size={16} />
             <p>
-              <strong>Všechno na {confirmName} ({gb(disk.size)} GB) se smaže</strong>: hudba, playlisty, historie hraní.
-              Databáze a nastavení se předtím zazálohují do ~/Stickwise/backups, hudba ne.
+              {eraseText[0]}<strong>{eraseText[1]}</strong>{eraseText[2]}
             </p>
           </div>
           {#if !disk.removable}
-            <p class="ext">Tohle je externí disk, ne flashka. Zkontroluj, že je to opravdu ten správný.</p>
+            <p class="ext">{t("sync.format.external")}</p>
           {/if}
           <label class="confirm">
-            <span>Pro potvrzení napiš název flashky: <b>{confirmName}</b></span>
+            <span>{confirmText[0]}<b>{confirmName}</b>{confirmText[1]}</span>
             <input class="field" type="text" bind:value={confirm} spellcheck="false" autocomplete="off" />
           </label>
         </div>
@@ -173,16 +177,16 @@
     <div class="body">
       <p class="cur">{job.current}</p>
       <div class="bigbar"><div style:width="{(job.fraction ?? 0) * 100}%"></div></div>
-      <p class="cur">Flashku nevytahuj, dokud to neskončí.</p>
+      <p class="cur">{t("sync.format.dontUnplug")}</p>
     </div>
   {:else}
     <div class="body done">
       {#if job.state === "done"}
         <span class="done-ic"><CircleCheck size={30} /></span>
-        <h3>Hotovo</h3>
+        <h3>{t("common.done")}</h3>
       {:else}
         <span class="done-ic bad"><CircleX size={30} /></span>
-        <h3>Formátování se nepovedlo</h3>
+        <h3>{t("sync.format.failed")}</h3>
       {/if}
       <p>{job.message}</p>
     </div>
@@ -190,15 +194,15 @@
 
   {#snippet foot()}
     {#if !job}
-      <button class="btn ghost lg" onclick={close}>Zrušit</button>
-      <button class="btn danger lg" onclick={start} disabled={!ready}><Eraser size={16} /> Smazat a naformátovat</button>
+      <button class="btn ghost lg" onclick={close}>{t("common.cancel")}</button>
+      <button class="btn danger lg" onclick={start} disabled={!ready}><Eraser size={16} /> {t("sync.format.start")}</button>
     {:else if job.state !== "running"}
       {#if job.state === "done"}
-        <button class="btn lg" onclick={() => (app.settingsFor = job.dest)}>Nastavení přehrávače</button>
+        <button class="btn lg" onclick={() => (app.settingsFor = job.dest)}>{t("player.title")}</button>
       {/if}
-      <button class="btn ghost lg" onclick={close}>Zavřít</button>
+      <button class="btn ghost lg" onclick={close}>{t("common.close")}</button>
       {#if job.state === "done"}
-        <button class="btn primary lg" onclick={sync}>Synchronizovat na flashku</button>
+        <button class="btn primary lg" onclick={sync}>{t("sync.title")}</button>
       {/if}
     {/if}
   {/snippet}

@@ -2,7 +2,8 @@
   import { Laptop } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { peerApi } from "./api";
-  import { plural, size } from "./format";
+  import { size } from "./format";
+  import { t } from "./i18n.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
 
@@ -16,11 +17,13 @@
   });
 
   const what = $derived.by(() => {
-    const names = s.playlists.slice(0, 3).map((n) => `„${n}“`);
+    const names = s.playlists.slice(0, 3).map((n) => t("peer.offer.quoted", { name: n }));
     const more = s.playlists.length - names.length;
-    if (!names.length) return `${s.tracks} ${plural(s.tracks, "skladbu", "skladby", "skladeb")}`;
-    return more > 0 ? `${names.join(", ")} a ${more} další` : names.join(", ");
+    if (!names.length) return t("peer.offer.whatTracks", { count: s.tracks });
+    return more > 0 ? t("peer.offer.whatMore", { names: names.join(", "), count: more }) : names.join(", ");
   });
+
+  const saveTo = $derived(t("peer.offer.saveTo").split("{dir}"));
 
   async function answer(accept: boolean) {
     const req = r.request;
@@ -29,33 +32,33 @@
   }
 </script>
 
-<SheetFrame id="offer-title" icon={Laptop} title="{r.from} posílá {what}" sub="Sync mezi Macy" width={520} onclose={() => answer(false)}>
+<SheetFrame id="offer-title" icon={Laptop} title={t("peer.offer.title", { from: r.from, what })} sub={t("peer.title")} width={520} onclose={() => answer(false)}>
   <div class="body">
     <div class="facts">
-      <div><span class="n readout">{s.tracks}</span>{plural(s.tracks, "skladba", "skladby", "skladeb")}</div>
+      <div><span class="n readout">{s.tracks}</span>{t("peer.offer.tracks", { count: s.tracks })}</div>
       <div>
-        <span class="n readout">{s.newTracks}</span>{plural(s.newTracks, "nová", "nové", "nových")}
+        <span class="n readout">{s.newTracks}</span>{t("peer.offer.newTracks", { count: s.newTracks })}
         {#if s.newTracks}<span class="quiet">· {size(s.newBytes)}</span>{/if}
       </div>
       {#if s.playlists.length}
         <div>
           <span class="n readout">{s.playlists.length}</span>{s.sets === s.playlists.length
-            ? plural(s.sets, "set", "sety", "setů")
-            : plural(s.playlists.length, "playlist", "playlisty", "playlistů")}
+            ? t("peer.offer.sets", { count: s.sets })
+            : t("peer.offer.playlists", { count: s.playlists.length })}
         </div>
       {/if}
     </div>
     {#if s.newTracks}
-      <p>Nové skladby se uloží do <strong>{musicDir}</strong>. Soubory, které už tu jsou, se nepřepíšou.</p>
+      <p>{saveTo[0]}<strong>{musicDir}</strong>{saveTo[1]}</p>
     {:else}
-      <p>Všechny skladby už tu jsou, přijdou jen playlisty, cue a gridy.</p>
+      <p>{t("peer.offer.allHere")}</p>
     {/if}
-    <p class="quiet">Kde je úprava novější na {r.from}, přepíše tu zdejší. Přepsané cue jdou vrátit.</p>
+    <p class="quiet">{t("peer.offer.newerWins", { from: r.from })}</p>
   </div>
 
   {#snippet foot()}
-    <button class="btn ghost lg" onclick={() => answer(false)}>Odmítnout</button>
-    <button class="btn primary lg" onclick={() => answer(true)}>Přijmout</button>
+    <button class="btn ghost lg" onclick={() => answer(false)}>{t("peer.decline")}</button>
+    <button class="btn primary lg" onclick={() => answer(true)}>{t("peer.offer.accept")}</button>
   {/snippet}
 </SheetFrame>
 

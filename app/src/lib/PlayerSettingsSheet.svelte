@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SlidersHorizontal } from "@lucide/svelte";
+  import { t } from "./i18n.svelte";
   import PlayerSettingsEditor from "./PlayerSettingsEditor.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
@@ -18,13 +19,13 @@
 <SheetFrame
   id="ps-title"
   icon={SlidersHorizontal}
-  title="Nastavení přehrávače · {stickName}"
-  sub="My Settings na flashce. CDJ/XDJ je po vložení flashky nabídne načíst (MENU → MY SETTINGS)."
+  title={t("player.sheetTitle", { name: stickName ?? "" })}
+  sub={t("player.sheetSub")}
   width={1000}
   onclose={busy ? undefined : close}
 >
   {#snippet badge()}
-    {#if source}<span class="src" class:stick={source === "Načteno z flashky"}>{source}</span>{/if}
+    {#if source}<span class="src" class:stick={source === t("player.sources.stick")}>{source}</span>{/if}
   {/snippet}
   <PlayerSettingsEditor {stick} onclose={close} bind:busy bind:source />
 </SheetFrame>

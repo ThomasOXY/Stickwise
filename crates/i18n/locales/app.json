@@ -1,14 +1,544 @@
 {
   "cs": {
     "settingsMenu": "Nastavení…",
-    "settingsWindow": "Nastavení"
+    "settingsWindow": "Nastavení",
+    "verify": {
+      "missingAudio": "Soubor chybí na flashce.",
+      "missingAnalysis": "Chybí analýza: {path}",
+      "sizeMismatch": "Soubor má {actual} B, databáze uvádí {database} B. Hrát půjde.",
+      "brokenTag": "Poškozený tag MP3 ({junk} B smetí před zvukem). Přehrávač skladbu může odmítnout.",
+      "wrongExtension": "Soubor .{extension} je ve skutečnosti {actual}.",
+      "floatWav": "{bits}-bit float WAV. CDJ přehraje jen 16 a 24 bitů.",
+      "unreadable": "Soubor nejde přečíst: {error}",
+      "noteUnsupported": "nepodporovaný formát",
+      "noteBrokenTag": "poškozený tag",
+      "noteMissing": "chybí soubor",
+      "noteUnreadable": "nečitelný soubor",
+      "fsSupported": "{fs} podporuje",
+      "fsUnsupported": "{fs} nepodporuje, použij FAT32"
+    },
+    "extract": {
+      "done": "Zkopírováno {copied}, klonováno {cloned}, už existovalo {existing}",
+      "errors": {
+        "one": "{count} chyba: {errors}",
+        "few": "{count} chyby: {errors}",
+        "other": "{count} chyb: {errors}"
+      }
+    },
+    "smartCue": {
+      "noGrid": "Skladba nemá beatgrid nebo waveform, Smart Cue ji neumí rozebrat.",
+      "noAnalysis": "Skladba nemá analýzu z rekordboxu, Smart Cue ji zatím neumí rozebrat."
+    },
+    "ai": {
+      "label": "AI analýza cue",
+      "done": {
+        "one": "AI analýza hotová u {count} skladby",
+        "few": "AI analýza hotová u {count} skladeb",
+        "other": "AI analýza hotová u {count} skladeb"
+      },
+      "notInstalled": "AI analýza není nainstalovaná.",
+      "cantStart": "AI analýzu nejde spustit: {error}"
+    },
+    "analysis": {
+      "label": "Analýza skladeb",
+      "failed": {
+        "one": "{count} skladbu nešlo analyzovat: {errors}",
+        "few": "{count} skladby nešlo analyzovat: {errors}",
+        "other": "{count} skladeb nešlo analyzovat: {errors}"
+      },
+      "stopped": {
+        "one": "Analýza zastavena po {count} skladbě",
+        "few": "Analýza zastavena po {count} skladbách",
+        "other": "Analýza zastavena po {count} skladbách"
+      },
+      "done": {
+        "one": "Analyzována {count} skladba: waveform, beatgrid a tónina",
+        "few": "Analyzovány {count} skladby: waveform, beatgrid a tónina",
+        "other": "Analyzováno {count} skladeb: waveform, beatgrid a tónina"
+      },
+      "doneNoModel": {
+        "one": "Analyzována {count} skladba: waveform, beatgrid a tónina (bez modelu Beat This!, grid jen přibližný)",
+        "few": "Analyzovány {count} skladby: waveform, beatgrid a tónina (bez modelu Beat This!, grid jen přibližný)",
+        "other": "Analyzováno {count} skladeb: waveform, beatgrid a tónina (bez modelu Beat This!, grid jen přibližný)"
+      },
+      "noDataFolder": "chybí složka dat aplikace"
+    },
+    "library": {
+      "importCantStart": "Import nejde spustit: {error}",
+      "unknownError": "neznámá chyba",
+      "rekordboxUnreadable": "Databázi rekordboxu nejde přečíst: {error}",
+      "trackNotFound": "skladba {id} není v knihovně",
+      "invalidGrid": "Neplatný grid: {bpm} BPM",
+      "setTooSmall": "Do setu dej aspoň dvě skladby, ze kterých se má vybírat."
+    },
+    "sync": {
+      "phase": {
+        "analyze": "Analýza skladeb",
+        "backup": "Záloha databáze",
+        "copy": "Kopírování skladeb",
+        "analysis": "Cue a waveformy",
+        "database": "Databáze",
+        "settings": "Nastavení přehrávače",
+        "engine": "Denon knihovna",
+        "verify": "Kontrola"
+      },
+      "unknownEngine": "Neznámá verze Engine knihovny.",
+      "analysedFirst": {
+        "one": "Před zápisem zanalyzována {count} skladba.",
+        "few": "Před zápisem zanalyzovány {count} skladby.",
+        "other": "Před zápisem zanalyzováno {count} skladeb."
+      },
+      "leftUnanalysed": "Bez analýzy zůstalo {count}: {errors}.",
+      "stopped": "Synchronizace zastavena. Flashka má dál svou předchozí knihovnu.",
+      "onStick": {
+        "one": "Na flashce je {count} skladba v {playlists} playlistech. Zkopírováno {copied}, použito z flashky {reused}.",
+        "few": "Na flashce jsou {count} skladby v {playlists} playlistech. Zkopírováno {copied}, použito z flashky {reused}.",
+        "other": "Na flashce je {count} skladeb v {playlists} playlistech. Zkopírováno {copied}, použito z flashky {reused}."
+      },
+      "anlz": "Cue a waveformy: zapsáno {written}, beze změny {unchanged}.",
+      "skipped": {
+        "one": "Vynechána {count} skladba, její soubor nejde přečíst (poškozený nebo nedostupný): {tracks}.",
+        "few": "Vynechány {count} skladby, jejich soubor nejde přečíst (poškozený nebo nedostupný): {tracks}.",
+        "other": "Vynecháno {count} skladeb, jejich soubor nejde přečíst (poškozený nebo nedostupný): {tracks}."
+      },
+      "settingsOnStick": "Nastavení přehrávače je na flashce.",
+      "denon": {
+        "one": "Denon (Engine OS {firmware} a novější): {count} skladba, {playlists} playlistů nad stejnými soubory.",
+        "few": "Denon (Engine OS {firmware} a novější): {count} skladby, {playlists} playlistů nad stejnými soubory.",
+        "other": "Denon (Engine OS {firmware} a novější): {count} skladeb, {playlists} playlistů nad stejnými soubory."
+      },
+      "droppedCues": "{count} cue se na Denon nevešlo (8 padů a 8 smyček na skladbu).",
+      "movedAside": "Odsunuto stranou: {files}.",
+      "warnings": "Upozornění: {warnings}"
+    },
+    "player": {
+      "settingsMismatch": "Nastavení na flashce po zápisu nesedí, zkontroluj flashku.",
+      "settingsWritten": "Nastavení je na flashce {stick}. Přehrávač ho nabídne po vložení flashky (MENU → MY SETTINGS)."
+    },
+    "format": {
+      "step": {
+        "start": "Začínám",
+        "unmount": "Odpojuji flashku",
+        "partition": "Vytvářím oddíl",
+        "waitPartition": "Čekám na oddíl",
+        "formatting": "Formátuji",
+        "mount": "Připojuji flashku",
+        "erased": "Smazáno"
+      },
+      "unknownFs": "Neznámý souborový systém.",
+      "label": "Formátování {name}",
+      "backingUp": "Zálohuji databázi a nastavení",
+      "stickGone": "Flashka už není připojená.",
+      "preparing": "Připravuji flashku pro přehrávače",
+      "writingSettings": "Zapisuji nastavení přehrávače",
+      "done": "Flashka {name} je naformátovaná ({fs}) a připravená, můžeš na ni synchronizovat.",
+      "settingsOn": "Nastavení přehrávače je na ní.",
+      "oldBackup": "Stará databáze je v záloze {path}."
+    },
+    "sidecar": {
+      "noUv": "Pomocné nástroje nejdou nainstalovat: chybí uv.",
+      "cantStart": "Instalaci nejde spustit: {error}",
+      "failed": "Instalace pomocných nástrojů selhala: {error}",
+      "label": "Instalace nástrojů (jednorázově, ~1 GB)",
+      "downloading": "Stahuji Python a knihovny",
+      "ready": "Pomocné nástroje jsou připravené."
+    },
+    "peer": {
+      "folderMissing": "Složka {path} neexistuje.",
+      "notRunning": "Sync mezi Macy neběží: {error}",
+      "newTracks": {
+        "one": "{count} nová skladba",
+        "few": "{count} nové skladby",
+        "other": "{count} nových skladeb"
+      },
+      "playlists": {
+        "one": "{count} playlist",
+        "few": "{count} playlisty",
+        "other": "{count} playlistů"
+      },
+      "newCues": {
+        "one": "nové cue u {count} skladby",
+        "few": "nové cue u {count} skladeb",
+        "other": "nové cue u {count} skladeb"
+      },
+      "deleted": {
+        "one": "smazáno: {count} playlist",
+        "few": "smazáno: {count} playlisty",
+        "other": "smazáno: {count} playlistů"
+      },
+      "nothingNew": "všechno už tu bylo",
+      "notArrived": "Nepřišlo: {tracks}",
+      "mirrorLabel": "Zrcadlení s {name}",
+      "autoMirrorLabel": "Automatické zrcadlení s {name}",
+      "receiveLabel": "Příjem z {name}",
+      "mirrorNotConfirmed": "{name} zrcadlení nepotvrdil.",
+      "received": "Z {name}: {report}",
+      "receiveFailed": "Příjem z {name} se nepovedl: {error}",
+      "sendLabel": "Posílání na {name}",
+      "waitingAccept": "Čekám, až to {name} přijme…",
+      "sent": "Na {name}: {report}",
+      "sendStopped": "Posílání zastaveno.",
+      "sendFailed": "Poslat na {name} se nepovedlo: {error}",
+      "mirrorPending": "Jedno zrcadlení už čeká na potvrzení.",
+      "mirrorRunning": "Zrcadlení s {name} už běží.",
+      "comparing": "Porovnávám knihovny…",
+      "waitingConfirm": "Čekám na potvrzení změn…",
+      "mirrored": "Tady: {here}. Na {name}: {there}.",
+      "mirrorCancelled": "Zrcadlení zrušeno, nic se nezměnilo.",
+      "mirrorStopped": "Zrcadlení zastaveno.",
+      "mirrorFailed": "Zrcadlení s {name} se nepovedlo: {error}"
+    }
   },
   "en": {
     "settingsMenu": "Settings…",
-    "settingsWindow": "Settings"
+    "settingsWindow": "Settings",
+    "verify": {
+      "missingAudio": "The file is missing on the stick.",
+      "missingAnalysis": "Analysis missing: {path}",
+      "sizeMismatch": "The file has {actual} B, the database says {database} B. It will play.",
+      "brokenTag": "Damaged MP3 tag ({junk} B of junk before the audio). The player may refuse the track.",
+      "wrongExtension": "The .{extension} file is actually {actual}.",
+      "floatWav": "{bits}-bit float WAV. CDJs only play 16 and 24 bits.",
+      "unreadable": "Can't read the file: {error}",
+      "noteUnsupported": "unsupported format",
+      "noteBrokenTag": "damaged tag",
+      "noteMissing": "file missing",
+      "noteUnreadable": "unreadable file",
+      "fsSupported": "{fs} supported",
+      "fsUnsupported": "{fs} not supported, use FAT32"
+    },
+    "extract": {
+      "done": "Copied {copied}, cloned {cloned}, already there {existing}",
+      "errors": {
+        "one": "{count} error: {errors}",
+        "other": "{count} errors: {errors}"
+      }
+    },
+    "smartCue": {
+      "noGrid": "The track has no beat grid or waveform, Smart Cue can't break it down.",
+      "noAnalysis": "The track has no rekordbox analysis, Smart Cue can't break it down yet."
+    },
+    "ai": {
+      "label": "AI cue analysis",
+      "done": {
+        "one": "AI analysis done for {count} track",
+        "other": "AI analysis done for {count} tracks"
+      },
+      "notInstalled": "AI analysis isn't installed.",
+      "cantStart": "Can't start the AI analysis: {error}"
+    },
+    "analysis": {
+      "label": "Track analysis",
+      "failed": {
+        "one": "{count} track couldn't be analysed: {errors}",
+        "other": "{count} tracks couldn't be analysed: {errors}"
+      },
+      "stopped": {
+        "one": "Analysis stopped after {count} track",
+        "other": "Analysis stopped after {count} tracks"
+      },
+      "done": {
+        "one": "Analysed {count} track: waveform, beat grid and key",
+        "other": "Analysed {count} tracks: waveform, beat grid and key"
+      },
+      "doneNoModel": {
+        "one": "Analysed {count} track: waveform, beat grid and key (without the Beat This! model, the grid is only approximate)",
+        "other": "Analysed {count} tracks: waveform, beat grid and key (without the Beat This! model, the grid is only approximate)"
+      },
+      "noDataFolder": "the app's data folder is missing"
+    },
+    "library": {
+      "importCantStart": "Can't start the import: {error}",
+      "unknownError": "unknown error",
+      "rekordboxUnreadable": "Can't read the rekordbox database: {error}",
+      "trackNotFound": "track {id} isn't in the library",
+      "invalidGrid": "Invalid grid: {bpm} BPM",
+      "setTooSmall": "Put at least two tracks in the set to choose from."
+    },
+    "sync": {
+      "phase": {
+        "analyze": "Track analysis",
+        "backup": "Database backup",
+        "copy": "Copying tracks",
+        "analysis": "Cues and waveforms",
+        "database": "Database",
+        "settings": "Player settings",
+        "engine": "Denon library",
+        "verify": "Check"
+      },
+      "unknownEngine": "Unknown Engine library version.",
+      "analysedFirst": {
+        "one": "Analysed {count} track before writing.",
+        "other": "Analysed {count} tracks before writing."
+      },
+      "leftUnanalysed": "Left without analysis: {count}: {errors}.",
+      "stopped": "Sync stopped. The stick keeps its previous library.",
+      "onStick": {
+        "one": "The stick has {count} track in {playlists} playlists. Copied {copied}, reused from the stick {reused}.",
+        "other": "The stick has {count} tracks in {playlists} playlists. Copied {copied}, reused from the stick {reused}."
+      },
+      "anlz": "Cues and waveforms: {written} written, {unchanged} unchanged.",
+      "skipped": {
+        "one": "Left out {count} track, its file can't be read (damaged or unavailable): {tracks}.",
+        "other": "Left out {count} tracks, their files can't be read (damaged or unavailable): {tracks}."
+      },
+      "settingsOnStick": "The player settings are on the stick.",
+      "denon": {
+        "one": "Denon (Engine OS {firmware} and newer): {count} track, {playlists} playlists on the same files.",
+        "other": "Denon (Engine OS {firmware} and newer): {count} tracks, {playlists} playlists on the same files."
+      },
+      "droppedCues": "{count} cues didn't fit on the Denon (8 pads and 8 loops per track).",
+      "movedAside": "Moved aside: {files}.",
+      "warnings": "Warnings: {warnings}"
+    },
+    "player": {
+      "settingsMismatch": "The settings on the stick don't match after writing, check the stick.",
+      "settingsWritten": "The settings are on the stick {stick}. The player offers them when you plug in the stick (MENU → MY SETTINGS)."
+    },
+    "format": {
+      "step": {
+        "start": "Starting",
+        "unmount": "Unmounting the stick",
+        "partition": "Creating the partition",
+        "waitPartition": "Waiting for the partition",
+        "formatting": "Formatting",
+        "mount": "Mounting the stick",
+        "erased": "Erased"
+      },
+      "unknownFs": "Unknown file system.",
+      "label": "Formatting {name}",
+      "backingUp": "Backing up the database and settings",
+      "stickGone": "The stick isn't connected anymore.",
+      "preparing": "Preparing the stick for the players",
+      "writingSettings": "Writing the player settings",
+      "done": "The stick {name} is formatted ({fs}) and ready, you can sync to it.",
+      "settingsOn": "The player settings are on it.",
+      "oldBackup": "The old database is in the backup {path}."
+    },
+    "sidecar": {
+      "noUv": "Can't install the helpers: uv is missing.",
+      "cantStart": "Can't start the installation: {error}",
+      "failed": "Installing the helpers failed: {error}",
+      "label": "Installing helpers (one time, ~1 GB)",
+      "downloading": "Downloading Python and libraries",
+      "ready": "The helpers are ready."
+    },
+    "peer": {
+      "folderMissing": "The folder {path} doesn't exist.",
+      "notRunning": "Sync between Macs isn't running: {error}",
+      "newTracks": {
+        "one": "{count} new track",
+        "other": "{count} new tracks"
+      },
+      "playlists": {
+        "one": "{count} playlist",
+        "other": "{count} playlists"
+      },
+      "newCues": {
+        "one": "new cues on {count} track",
+        "other": "new cues on {count} tracks"
+      },
+      "deleted": {
+        "one": "deleted: {count} playlist",
+        "other": "deleted: {count} playlists"
+      },
+      "nothingNew": "everything was already here",
+      "notArrived": "Didn't arrive: {tracks}",
+      "mirrorLabel": "Mirroring with {name}",
+      "autoMirrorLabel": "Automatic mirroring with {name}",
+      "receiveLabel": "Receiving from {name}",
+      "mirrorNotConfirmed": "{name} didn't confirm the mirroring.",
+      "received": "From {name}: {report}",
+      "receiveFailed": "Receiving from {name} failed: {error}",
+      "sendLabel": "Sending to {name}",
+      "waitingAccept": "Waiting for {name} to accept…",
+      "sent": "To {name}: {report}",
+      "sendStopped": "Sending stopped.",
+      "sendFailed": "Sending to {name} failed: {error}",
+      "mirrorPending": "A mirroring is already waiting for confirmation.",
+      "mirrorRunning": "Mirroring with {name} is already running.",
+      "comparing": "Comparing libraries…",
+      "waitingConfirm": "Waiting for the changes to be confirmed…",
+      "mirrored": "Here: {here}. On {name}: {there}.",
+      "mirrorCancelled": "Mirroring cancelled, nothing changed.",
+      "mirrorStopped": "Mirroring stopped.",
+      "mirrorFailed": "Mirroring with {name} failed: {error}"
+    }
   },
   "de": {
     "settingsMenu": "Einstellungen…",
-    "settingsWindow": "Einstellungen"
+    "settingsWindow": "Einstellungen",
+    "verify": {
+      "missingAudio": "Die Datei fehlt auf dem Stick.",
+      "missingAnalysis": "Analyse fehlt: {path}",
+      "sizeMismatch": "Die Datei hat {actual} B, die Datenbank sagt {database} B. Sie wird abgespielt.",
+      "brokenTag": "Beschädigter MP3-Tag ({junk} B Datenmüll vor dem Audio). Der Player lehnt den Track womöglich ab.",
+      "wrongExtension": "Die .{extension}-Datei ist in Wirklichkeit {actual}.",
+      "floatWav": "{bits}-Bit-Float-WAV. CDJs spielen nur 16 und 24 Bit.",
+      "unreadable": "Die Datei lässt sich nicht lesen: {error}",
+      "noteUnsupported": "nicht unterstütztes Format",
+      "noteBrokenTag": "beschädigter Tag",
+      "noteMissing": "Datei fehlt",
+      "noteUnreadable": "unlesbare Datei",
+      "fsSupported": "{fs} unterstützt",
+      "fsUnsupported": "{fs} nicht unterstützt, nimm FAT32"
+    },
+    "extract": {
+      "done": "Kopiert {copied}, geklont {cloned}, schon vorhanden {existing}",
+      "errors": {
+        "one": "{count} Fehler: {errors}",
+        "other": "{count} Fehler: {errors}"
+      }
+    },
+    "smartCue": {
+      "noGrid": "Der Track hat kein Beatgrid oder keine Waveform, Smart Cue kann ihn nicht zerlegen.",
+      "noAnalysis": "Der Track hat keine rekordbox-Analyse, Smart Cue kann ihn noch nicht zerlegen."
+    },
+    "ai": {
+      "label": "KI-Cue-Analyse",
+      "done": {
+        "one": "KI-Analyse für {count} Track fertig",
+        "other": "KI-Analyse für {count} Tracks fertig"
+      },
+      "notInstalled": "Die KI-Analyse ist nicht installiert.",
+      "cantStart": "Die KI-Analyse lässt sich nicht starten: {error}"
+    },
+    "analysis": {
+      "label": "Track-Analyse",
+      "failed": {
+        "one": "{count} Track ließ sich nicht analysieren: {errors}",
+        "other": "{count} Tracks ließen sich nicht analysieren: {errors}"
+      },
+      "stopped": {
+        "one": "Analyse nach {count} Track gestoppt",
+        "other": "Analyse nach {count} Tracks gestoppt"
+      },
+      "done": {
+        "one": "{count} Track analysiert: Waveform, Beatgrid und Tonart",
+        "other": "{count} Tracks analysiert: Waveform, Beatgrid und Tonart"
+      },
+      "doneNoModel": {
+        "one": "{count} Track analysiert: Waveform, Beatgrid und Tonart (ohne das Beat This!-Modell, das Grid ist nur ungefähr)",
+        "other": "{count} Tracks analysiert: Waveform, Beatgrid und Tonart (ohne das Beat This!-Modell, das Grid ist nur ungefähr)"
+      },
+      "noDataFolder": "der Datenordner der App fehlt"
+    },
+    "library": {
+      "importCantStart": "Der Import lässt sich nicht starten: {error}",
+      "unknownError": "unbekannter Fehler",
+      "rekordboxUnreadable": "Die rekordbox-Datenbank lässt sich nicht lesen: {error}",
+      "trackNotFound": "Track {id} ist nicht in der Bibliothek",
+      "invalidGrid": "Ungültiges Grid: {bpm} BPM",
+      "setTooSmall": "Leg mindestens zwei Tracks ins Set, aus denen gewählt werden kann."
+    },
+    "sync": {
+      "phase": {
+        "analyze": "Track-Analyse",
+        "backup": "Datenbank-Sicherung",
+        "copy": "Tracks kopieren",
+        "analysis": "Cues und Waveforms",
+        "database": "Datenbank",
+        "settings": "Player-Einstellungen",
+        "engine": "Denon-Bibliothek",
+        "verify": "Prüfung"
+      },
+      "unknownEngine": "Unbekannte Version der Engine-Bibliothek.",
+      "analysedFirst": {
+        "one": "{count} Track vor dem Schreiben analysiert.",
+        "other": "{count} Tracks vor dem Schreiben analysiert."
+      },
+      "leftUnanalysed": "Ohne Analyse geblieben: {count}: {errors}.",
+      "stopped": "Sync gestoppt. Der Stick behält seine bisherige Bibliothek.",
+      "onStick": {
+        "one": "Auf dem Stick ist {count} Track in {playlists} Playlists. Kopiert {copied}, vom Stick übernommen {reused}.",
+        "other": "Auf dem Stick sind {count} Tracks in {playlists} Playlists. Kopiert {copied}, vom Stick übernommen {reused}."
+      },
+      "anlz": "Cues und Waveforms: {written} geschrieben, {unchanged} unverändert.",
+      "skipped": {
+        "one": "{count} Track ausgelassen, die Datei lässt sich nicht lesen (beschädigt oder nicht erreichbar): {tracks}.",
+        "other": "{count} Tracks ausgelassen, ihre Dateien lassen sich nicht lesen (beschädigt oder nicht erreichbar): {tracks}."
+      },
+      "settingsOnStick": "Die Player-Einstellungen sind auf dem Stick.",
+      "denon": {
+        "one": "Denon (Engine OS {firmware} und neuer): {count} Track, {playlists} Playlists mit denselben Dateien.",
+        "other": "Denon (Engine OS {firmware} und neuer): {count} Tracks, {playlists} Playlists mit denselben Dateien."
+      },
+      "droppedCues": "{count} Cues passten nicht auf den Denon (8 Pads und 8 Loops pro Track).",
+      "movedAside": "Beiseitegelegt: {files}.",
+      "warnings": "Hinweise: {warnings}"
+    },
+    "player": {
+      "settingsMismatch": "Die Einstellungen auf dem Stick stimmen nach dem Schreiben nicht, prüf den Stick.",
+      "settingsWritten": "Die Einstellungen sind auf dem Stick {stick}. Der Player bietet sie an, wenn du den Stick einsteckst (MENU → MY SETTINGS)."
+    },
+    "format": {
+      "step": {
+        "start": "Starte",
+        "unmount": "Stick wird ausgeworfen",
+        "partition": "Partition wird erstellt",
+        "waitPartition": "Warte auf die Partition",
+        "formatting": "Formatiere",
+        "mount": "Stick wird eingebunden",
+        "erased": "Gelöscht"
+      },
+      "unknownFs": "Unbekanntes Dateisystem.",
+      "label": "{name} formatieren",
+      "backingUp": "Datenbank und Einstellungen werden gesichert",
+      "stickGone": "Der Stick ist nicht mehr angeschlossen.",
+      "preparing": "Stick wird für die Player vorbereitet",
+      "writingSettings": "Player-Einstellungen werden geschrieben",
+      "done": "Der Stick {name} ist formatiert ({fs}) und bereit, du kannst darauf syncen.",
+      "settingsOn": "Die Player-Einstellungen sind drauf.",
+      "oldBackup": "Die alte Datenbank liegt in der Sicherung {path}."
+    },
+    "sidecar": {
+      "noUv": "Die Hilfswerkzeuge lassen sich nicht installieren: uv fehlt.",
+      "cantStart": "Die Installation lässt sich nicht starten: {error}",
+      "failed": "Die Installation der Hilfswerkzeuge ist fehlgeschlagen: {error}",
+      "label": "Hilfswerkzeuge installieren (einmalig, ~1 GB)",
+      "downloading": "Python und Bibliotheken werden geladen",
+      "ready": "Die Hilfswerkzeuge sind bereit."
+    },
+    "peer": {
+      "folderMissing": "Der Ordner {path} existiert nicht.",
+      "notRunning": "Sync zwischen Macs läuft nicht: {error}",
+      "newTracks": {
+        "one": "{count} neuer Track",
+        "other": "{count} neue Tracks"
+      },
+      "playlists": {
+        "one": "{count} Playlist",
+        "other": "{count} Playlists"
+      },
+      "newCues": {
+        "one": "neue Cues bei {count} Track",
+        "other": "neue Cues bei {count} Tracks"
+      },
+      "deleted": {
+        "one": "gelöscht: {count} Playlist",
+        "other": "gelöscht: {count} Playlists"
+      },
+      "nothingNew": "alles war schon da",
+      "notArrived": "Nicht angekommen: {tracks}",
+      "mirrorLabel": "Spiegeln mit {name}",
+      "autoMirrorLabel": "Automatisches Spiegeln mit {name}",
+      "receiveLabel": "Empfang von {name}",
+      "mirrorNotConfirmed": "{name} hat das Spiegeln nicht bestätigt.",
+      "received": "Von {name}: {report}",
+      "receiveFailed": "Empfang von {name} fehlgeschlagen: {error}",
+      "sendLabel": "Senden an {name}",
+      "waitingAccept": "Warte, bis {name} annimmt…",
+      "sent": "An {name}: {report}",
+      "sendStopped": "Senden gestoppt.",
+      "sendFailed": "Senden an {name} fehlgeschlagen: {error}",
+      "mirrorPending": "Ein Spiegeln wartet schon auf Bestätigung.",
+      "mirrorRunning": "Spiegeln mit {name} läuft schon.",
+      "comparing": "Bibliotheken werden verglichen…",
+      "waitingConfirm": "Warte auf die Bestätigung der Änderungen…",
+      "mirrored": "Hier: {here}. Auf {name}: {there}.",
+      "mirrorCancelled": "Spiegeln abgebrochen, nichts wurde geändert.",
+      "mirrorStopped": "Spiegeln gestoppt.",
+      "mirrorFailed": "Spiegeln mit {name} fehlgeschlagen: {error}"
+    }
   }
 }

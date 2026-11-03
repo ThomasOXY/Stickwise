@@ -1,5 +1,328 @@
 {
-  "cs": {},
-  "en": {},
-  "de": {}
+  "cs": {
+    "title": "Sync mezi Macy",
+    "thisMac": "Tento Mac",
+    "thisMacName": "Tento Mac: {name}",
+    "sub": "Knihovna s dalšími Stickwise ve stejné síti",
+    "decline": "Odmítnout",
+    "sheet": {
+      "mirrorStarted": "Porovnávám knihovnu s {name}. Než se cokoli změní, ukážu, co se stane.",
+      "sending": "Posílám na {name}. Průběh je v úlohách, {name} to musí přijmout.",
+      "pingOk": "Spojení funguje · {ms} ms",
+      "unpairTitle": "Zrušit spárování s {name}?",
+      "unpairBody": "Knihovny se pak nebudou synchronizovat, dokud Macy znovu nespárujete.",
+      "unpair": "Zrušit spárování",
+      "keep": "Nechat",
+      "sendWhat": "Co poslat na {name}",
+      "setTag": "set",
+      "noPlaylists": "V knihovně nejsou žádné playlisty ani sety.",
+      "sendHint": "Druhý Mac pošle jen to, co mu chybí. Skladby, které už má, se nepřenášejí; přijdou k nim jen novější cue, gridy a tagy.",
+      "moreInSettings": "Kam se ukládá hudba z jiných Maců a automatické zrcadlení najdeš v {settings}.",
+      "settingsLink": "Nastavení",
+      "prepTitle": "Příprava knihovny",
+      "allFingerprinted": {
+        "one": "Všech {count} skladba má otisk, knihovna je připravená.",
+        "few": "Všech {count} skladby mají otisk, knihovna je připravená.",
+        "other": "Všech {count} skladeb má otisk, knihovna je připravená."
+      },
+      "partFingerprinted": {
+        "one": "Knihovna je připravená, otisk má {done} z {count} skladby.",
+        "few": "Knihovna je připravená, otisk má {done} z {count} skladeb.",
+        "other": "Knihovna je připravená, otisk má {done} z {count} skladeb."
+      },
+      "fingerprinting": "Počítají se otisky skladeb. Podle nich druhý Mac pozná stejnou skladbu, i když leží jinde. Běží na pozadí, skladby na odpojeném disku přijdou na řadu po připojení.",
+      "skipped": {
+        "one": "{count} skladba se nedá přečíst a je přeskočená.",
+        "few": "{count} skladby se nedají přečíst a jsou přeskočené.",
+        "other": "{count} skladeb se nedá přečíst a jsou přeskočené."
+      },
+      "skippedRetry": "Zkusí se znovu, když se soubor změní nebo po restartu.",
+      "waiting": {
+        "one": "{count} skladba čeká na připojení disku.",
+        "few": "{count} skladby čekají na připojení disku.",
+        "other": "{count} skladeb čeká na připojení disku."
+      },
+      "macs": "Macy",
+      "pickMac": "Vyber Mac, kam poslat „{names}“. Posílat jde jen na spárovaný Mac ve stejné síti.",
+      "confirmCode": "Na {name} potvrď, že ukazuje stejný kód.",
+      "searching": "Hledám další Macy… Na druhém Macu otevři Stickwise ve stejné síti.",
+      "pairedOnline": "Spárováno · v síti",
+      "pairedOffline": "Spárováno · mimo síť",
+      "notPaired": "Nespárováno",
+      "checkConnection": "Ověřit spojení",
+      "mirrorHint": "Obě knihovny budou stejné",
+      "mirror": "Zrcadlit",
+      "send": "Poslat…",
+      "pair": "Spárovat",
+      "back": "Zpět",
+      "sendTo": "Poslat na {name}"
+    },
+    "mirror": {
+      "title": "Zrcadlení s {name}",
+      "tracksAdded": {
+        "one": "+ {count} nová skladba · {size}",
+        "few": "+ {count} nové skladby · {size}",
+        "other": "+ {count} nových skladeb · {size}"
+      },
+      "cuesUpdated": {
+        "one": "novější cue u {count} skladby",
+        "few": "novější cue u {count} skladeb",
+        "other": "novější cue u {count} skladeb"
+      },
+      "tracksUpdated": {
+        "one": "{count} skladba s novějšími tagy, gridem nebo analýzou",
+        "few": "{count} skladby s novějšími tagy, gridem nebo analýzou",
+        "other": "{count} skladeb s novějšími tagy, gridem nebo analýzou"
+      },
+      "playlistsAdded": { "one": "+ {count} playlist", "few": "+ {count} playlisty", "other": "+ {count} playlistů" },
+      "playlistsUpdated": {
+        "one": "{count} upravený playlist",
+        "few": "{count} upravené playlisty",
+        "other": "{count} upravených playlistů"
+      },
+      "same": "Knihovny jsou stejné, není co synchronizovat.",
+      "noChanges": "beze změn",
+      "deletedThere": "Smazané na {name} — smazat i tady?",
+      "deletedHere": "Smazané tady — smazat i na {name}?",
+      "deletedOn": "smazáno {date}",
+      "untickHint": "Co odškrtneš, se nesmaže a vrátí se na Mac, kde bylo smazané. Skladby ani soubory se nemažou nikdy.",
+      "leftOut": "Bez playlistů se skladbami na odpojeném disku: {names}",
+      "noRoom": "Na disku pro hudbu není dost místa ({size}). Uvolni místo nebo změň složku v Sync mezi Macy.",
+      "newerWins": "Kde je úprava novější, vyhrává. Soubory, které už na Macu jsou, se nepřepíšou; přepsané cue jdou vrátit.",
+      "sync": "Synchronizovat"
+    },
+    "offer": {
+      "title": "{from} posílá {what}",
+      "whatTracks": { "one": "{count} skladbu", "few": "{count} skladby", "other": "{count} skladeb" },
+      "quoted": "„{name}“",
+      "whatMore": "{names} a {count} další",
+      "tracks": { "one": "skladba", "few": "skladby", "other": "skladeb" },
+      "newTracks": { "one": "nová", "few": "nové", "other": "nových" },
+      "sets": { "one": "set", "few": "sety", "other": "setů" },
+      "playlists": { "one": "playlist", "few": "playlisty", "other": "playlistů" },
+      "saveTo": "Nové skladby se uloží do {dir}. Soubory, které už tu jsou, se nepřepíšou.",
+      "allHere": "Všechny skladby už tu jsou, přijdou jen playlisty, cue a gridy.",
+      "newerWins": "Kde je úprava novější na {from}, přepíše tu zdejší. Přepsané cue jdou vrátit.",
+      "accept": "Přijmout"
+    },
+    "pair": {
+      "paired": "Spárováno s {name}.",
+      "title": "{name} se chce spárovat",
+      "checkCode": "Zkontroluj, že {name} ukazuje stejný kód. Když se kódy liší, odmítni: někdo jiný se tváří jako tvůj Mac.",
+      "info": "Spárované Macy si mezi sebou můžou posílat knihovnu. Spárování jde kdykoli zrušit.",
+      "accept": "Kód sedí, spárovat"
+    }
+  },
+  "en": {
+    "title": "Sync between Macs",
+    "thisMac": "This Mac",
+    "thisMacName": "This Mac: {name}",
+    "sub": "Your library with other Stickwise apps on the same network",
+    "decline": "Decline",
+    "sheet": {
+      "mirrorStarted": "Comparing the library with {name}. Before anything changes, I'll show you what will happen.",
+      "sending": "Sending to {name}. Progress is in Jobs; {name} has to accept it.",
+      "pingOk": "Connection works · {ms} ms",
+      "unpairTitle": "Unpair from {name}?",
+      "unpairBody": "The libraries won't sync until you pair the Macs again.",
+      "unpair": "Unpair",
+      "keep": "Keep",
+      "sendWhat": "What to send to {name}",
+      "setTag": "set",
+      "noPlaylists": "There are no playlists or sets in the library.",
+      "sendHint": "Only what the other Mac is missing gets sent. Tracks it already has aren't transferred; they only get newer cues, grids and tags.",
+      "moreInSettings": "Where music from other Macs is stored, and automatic mirroring, is in {settings}.",
+      "settingsLink": "Settings",
+      "prepTitle": "Preparing the library",
+      "allFingerprinted": {
+        "one": "{count} track has a fingerprint, the library is ready.",
+        "other": "All {count} tracks have a fingerprint, the library is ready."
+      },
+      "partFingerprinted": {
+        "one": "The library is ready, {done} of {count} track has a fingerprint.",
+        "other": "The library is ready, {done} of {count} tracks have a fingerprint."
+      },
+      "fingerprinting": "Fingerprinting tracks. That's how the other Mac recognises the same track even when it's stored somewhere else. It runs in the background; tracks on a disconnected drive get their turn once it's plugged in.",
+      "skipped": {
+        "one": "{count} track can't be read and was skipped.",
+        "other": "{count} tracks can't be read and were skipped."
+      },
+      "skippedRetry": "They'll be tried again when the file changes or after a restart.",
+      "waiting": {
+        "one": "{count} track is waiting for its drive to be connected.",
+        "other": "{count} tracks are waiting for their drive to be connected."
+      },
+      "macs": "Macs",
+      "pickMac": "Pick the Mac to send “{names}” to. You can only send to a paired Mac on the same network.",
+      "confirmCode": "On {name}, confirm it shows the same code.",
+      "searching": "Looking for other Macs… Open Stickwise on the other Mac, on the same network.",
+      "pairedOnline": "Paired · online",
+      "pairedOffline": "Paired · offline",
+      "notPaired": "Not paired",
+      "checkConnection": "Check connection",
+      "mirrorHint": "Both libraries will be the same",
+      "mirror": "Mirror",
+      "send": "Send…",
+      "pair": "Pair",
+      "back": "Back",
+      "sendTo": "Send to {name}"
+    },
+    "mirror": {
+      "title": "Mirroring with {name}",
+      "tracksAdded": {
+        "one": "+ {count} new track · {size}",
+        "other": "+ {count} new tracks · {size}"
+      },
+      "cuesUpdated": {
+        "one": "newer cues on {count} track",
+        "other": "newer cues on {count} tracks"
+      },
+      "tracksUpdated": {
+        "one": "{count} track with newer tags, grid or analysis",
+        "other": "{count} tracks with newer tags, grid or analysis"
+      },
+      "playlistsAdded": { "one": "+ {count} playlist", "other": "+ {count} playlists" },
+      "playlistsUpdated": {
+        "one": "{count} changed playlist",
+        "other": "{count} changed playlists"
+      },
+      "same": "The libraries are the same, nothing to sync.",
+      "noChanges": "no changes",
+      "deletedThere": "Deleted on {name} — delete here too?",
+      "deletedHere": "Deleted here — delete on {name} too?",
+      "deletedOn": "deleted {date}",
+      "untickHint": "Whatever you untick isn't deleted and comes back to the Mac it was deleted on. Tracks and files are never deleted.",
+      "leftOut": "Playlists left out because their tracks are on a disconnected drive: {names}",
+      "noRoom": "Not enough space on the music drive ({size}). Free up space or change the folder in Sync between Macs.",
+      "newerWins": "Wherever a change is newer, it wins. Files already on a Mac aren't overwritten; overwritten cues can be restored.",
+      "sync": "Sync"
+    },
+    "offer": {
+      "title": "{from} is sending {what}",
+      "whatTracks": { "one": "{count} track", "other": "{count} tracks" },
+      "quoted": "“{name}”",
+      "whatMore": "{names} and {count} more",
+      "tracks": { "one": "track", "other": "tracks" },
+      "newTracks": { "one": "new", "other": "new" },
+      "sets": { "one": "set", "other": "sets" },
+      "playlists": { "one": "playlist", "other": "playlists" },
+      "saveTo": "New tracks will be saved to {dir}. Files that are already here won't be overwritten.",
+      "allHere": "All tracks are already here; only playlists, cues and grids come over.",
+      "newerWins": "Where a change on {from} is newer, it replaces the one here. Overwritten cues can be restored.",
+      "accept": "Accept"
+    },
+    "pair": {
+      "paired": "Paired with {name}.",
+      "title": "{name} wants to pair",
+      "checkCode": "Check that {name} shows the same code. If the codes differ, decline: someone else is posing as your Mac.",
+      "info": "Paired Macs can send each other their library. You can unpair at any time.",
+      "accept": "Code matches, pair"
+    }
+  },
+  "de": {
+    "title": "Sync zwischen Macs",
+    "thisMac": "Dieser Mac",
+    "thisMacName": "Dieser Mac: {name}",
+    "sub": "Deine Bibliothek mit anderen Stickwise im selben Netzwerk",
+    "decline": "Ablehnen",
+    "sheet": {
+      "mirrorStarted": "Ich vergleiche die Bibliothek mit {name}. Bevor sich etwas ändert, zeige ich dir, was passiert.",
+      "sending": "Sende an {name}. Den Fortschritt siehst du bei den Aufgaben; {name} muss es annehmen.",
+      "pingOk": "Verbindung steht · {ms} ms",
+      "unpairTitle": "Kopplung mit {name} aufheben?",
+      "unpairBody": "Die Bibliotheken werden dann nicht mehr synchronisiert, bis du die Macs wieder koppelst.",
+      "unpair": "Kopplung aufheben",
+      "keep": "Behalten",
+      "sendWhat": "Was an {name} senden",
+      "setTag": "Set",
+      "noPlaylists": "In der Bibliothek gibt es keine Playlists oder Sets.",
+      "sendHint": "Gesendet wird nur, was dem anderen Mac fehlt. Tracks, die er schon hat, werden nicht übertragen; sie bekommen nur neuere Cues, Grids und Tags.",
+      "moreInSettings": "Wo Musik von anderen Macs gespeichert wird und das automatische Spiegeln findest du in den {settings}.",
+      "settingsLink": "Einstellungen",
+      "prepTitle": "Bibliothek vorbereiten",
+      "allFingerprinted": {
+        "one": "{count} Track hat einen Fingerprint, die Bibliothek ist bereit.",
+        "other": "Alle {count} Tracks haben einen Fingerprint, die Bibliothek ist bereit."
+      },
+      "partFingerprinted": {
+        "one": "Die Bibliothek ist bereit, {done} von {count} Track hat einen Fingerprint.",
+        "other": "Die Bibliothek ist bereit, {done} von {count} Tracks haben einen Fingerprint."
+      },
+      "fingerprinting": "Die Fingerprints der Tracks werden berechnet. Daran erkennt der andere Mac denselben Track, auch wenn er woanders liegt. Läuft im Hintergrund; Tracks auf einem getrennten Laufwerk kommen dran, sobald es angeschlossen ist.",
+      "skipped": {
+        "one": "{count} Track lässt sich nicht lesen und wurde übersprungen.",
+        "other": "{count} Tracks lassen sich nicht lesen und wurden übersprungen."
+      },
+      "skippedRetry": "Es wird erneut versucht, wenn sich die Datei ändert oder nach einem Neustart.",
+      "waiting": {
+        "one": "{count} Track wartet darauf, dass sein Laufwerk angeschlossen wird.",
+        "other": "{count} Tracks warten darauf, dass ihr Laufwerk angeschlossen wird."
+      },
+      "macs": "Macs",
+      "pickMac": "Wähle den Mac, an den „{names}“ gehen soll. Senden geht nur an einen gekoppelten Mac im selben Netzwerk.",
+      "confirmCode": "Bestätige auf {name}, dass dort derselbe Code steht.",
+      "searching": "Suche nach anderen Macs… Öffne Stickwise auf dem anderen Mac im selben Netzwerk.",
+      "pairedOnline": "Gekoppelt · im Netzwerk",
+      "pairedOffline": "Gekoppelt · nicht im Netzwerk",
+      "notPaired": "Nicht gekoppelt",
+      "checkConnection": "Verbindung prüfen",
+      "mirrorHint": "Beide Bibliotheken werden gleich",
+      "mirror": "Spiegeln",
+      "send": "Senden…",
+      "pair": "Koppeln",
+      "back": "Zurück",
+      "sendTo": "An {name} senden"
+    },
+    "mirror": {
+      "title": "Spiegeln mit {name}",
+      "tracksAdded": {
+        "one": "+ {count} neuer Track · {size}",
+        "other": "+ {count} neue Tracks · {size}"
+      },
+      "cuesUpdated": {
+        "one": "neuere Cues bei {count} Track",
+        "other": "neuere Cues bei {count} Tracks"
+      },
+      "tracksUpdated": {
+        "one": "{count} Track mit neueren Tags, Grid oder Analyse",
+        "other": "{count} Tracks mit neueren Tags, Grid oder Analyse"
+      },
+      "playlistsAdded": { "one": "+ {count} Playlist", "other": "+ {count} Playlists" },
+      "playlistsUpdated": {
+        "one": "{count} geänderte Playlist",
+        "other": "{count} geänderte Playlists"
+      },
+      "same": "Die Bibliotheken sind gleich, es gibt nichts zu synchronisieren.",
+      "noChanges": "keine Änderungen",
+      "deletedThere": "Auf {name} gelöscht — hier auch löschen?",
+      "deletedHere": "Hier gelöscht — auch auf {name} löschen?",
+      "deletedOn": "gelöscht {date}",
+      "untickHint": "Was du abwählst, wird nicht gelöscht und kommt auf den Mac zurück, auf dem es gelöscht wurde. Tracks und Dateien werden nie gelöscht.",
+      "leftOut": "Ausgelassen, weil ihre Tracks auf einem getrennten Laufwerk liegen: {names}",
+      "noRoom": "Auf dem Laufwerk für die Musik ist nicht genug Platz ({size}). Schaffe Platz oder ändere den Ordner unter Sync zwischen Macs.",
+      "newerWins": "Wo eine Änderung neuer ist, gewinnt sie. Dateien, die schon auf dem Mac sind, werden nicht überschrieben; überschriebene Cues lassen sich wiederherstellen.",
+      "sync": "Synchronisieren"
+    },
+    "offer": {
+      "title": "{from} sendet {what}",
+      "whatTracks": { "one": "{count} Track", "other": "{count} Tracks" },
+      "quoted": "„{name}“",
+      "whatMore": "{names} und {count} weitere",
+      "tracks": { "one": "Track", "other": "Tracks" },
+      "newTracks": { "one": "neu", "other": "neu" },
+      "sets": { "one": "Set", "other": "Sets" },
+      "playlists": { "one": "Playlist", "other": "Playlists" },
+      "saveTo": "Neue Tracks werden in {dir} gespeichert. Dateien, die schon hier sind, werden nicht überschrieben.",
+      "allHere": "Alle Tracks sind schon hier, es kommen nur Playlists, Cues und Grids.",
+      "newerWins": "Wo eine Änderung auf {from} neuer ist, ersetzt sie die hiesige. Überschriebene Cues lassen sich wiederherstellen.",
+      "accept": "Annehmen"
+    },
+    "pair": {
+      "paired": "Mit {name} gekoppelt.",
+      "title": "{name} möchte sich koppeln",
+      "checkCode": "Prüfe, dass {name} denselben Code zeigt. Wenn die Codes abweichen, lehne ab: Jemand anderes gibt sich als dein Mac aus.",
+      "info": "Gekoppelte Macs können sich gegenseitig ihre Bibliothek senden. Die Kopplung lässt sich jederzeit aufheben.",
+      "accept": "Code stimmt, koppeln"
+    }
+  }
 }

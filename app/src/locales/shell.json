@@ -1,5 +1,469 @@
 {
-  "cs": {},
-  "en": {},
-  "de": {}
+  "cs": {
+    "libraryName": "Knihovna",
+    "allLibrary": "Celá knihovna",
+    "notOnPlayer": "Nepůjde na {player}",
+    "loadingLibrary": "Načítám knihovnu…",
+    "loadingStick": "Načítám knihovnu z flashky…",
+    "plannerNeedsSet": "Vyber set nebo playlist s aspoň dvěma skladbami, pak otevři plánovač.",
+    "tools": {
+      "title": "Nástroje",
+      "search": "Hledat nástroj nebo akci…",
+      "none": "Žádný nástroj neodpovídá „{query}“.",
+      "keySelect": "vybrat",
+      "keyOpen": "otevřít",
+      "keyClose": "zavřít",
+      "keyAnytime": "kdykoli",
+      "groups": { "recent": "Naposledy", "library": "Knihovna", "stick": "Flashka", "app": "Aplikace" },
+      "blocked": {
+        "emptyLibrary": "Knihovna je prázdná",
+        "allAnalyzed": "Všechno je analyzované",
+        "pickTrack": "Nejdřív vyber skladbu",
+        "aiMissing": "AI analýza není k dispozici",
+        "running": "Už běží",
+        "openPlaylist": "Otevři playlist",
+        "insertStick": "Vlož flashku",
+        "openStick": "Otevři flashku",
+        "noPending": "Žádné neuložené cue",
+        "noRekordbox": "Rekordbox knihovna nenalezena"
+      },
+      "library": { "name": "Knihovna", "hint": "Sety, playlisty a skladby na tomhle Macu" },
+      "sync": { "name": "Synchronizace", "hint": "Sety a playlisty z knihovny na flashku" },
+      "planner": { "name": "Plánovač setu", "hint": "Pořadí podle tóniny, tempa a energie, přechody" },
+      "analysis": {
+        "name": "Analýza skladeb",
+        "hint": "Waveform, beatgrid a tónina pro nové skladby",
+        "hintCount": {
+          "one": "{count} skladba bez waveformu a gridu",
+          "few": "{count} skladby bez waveformu a gridu",
+          "other": "{count} skladeb bez waveformu a gridu"
+        }
+      },
+      "smartCue": { "hint": "Dropy, breaky a další místa pro cue" },
+      "ai": { "name": "AI analýza cue", "hint": "CUE-DETR projde skladby v otevřeném seznamu" },
+      "verify": { "name": "Kontrola flashky", "hint": "Co na kterém přehrávači nepůjde a proč" },
+      "writeCues": { "name": "Zapsat cue", "hint": "Upravené cue z aplikace na flashku" },
+      "export": { "name": "Export na disk", "hint": "Playlisty z flashky do složek" },
+      "playerSettings": { "name": "Nastavení přehrávače", "hint": "My Settings pro CDJ/XDJ a mixer" },
+      "import": { "name": "Import z rekordboxu", "hint": "Skladby, playlisty a cue, tvoje úpravy zůstanou" },
+      "format": { "name": "Formátovat flashku", "hint": "Smazat a připravit pro přehrávače" },
+      "peer": { "name": "Sync mezi Macy", "hint": "Knihovna s dalšími Macy ve stejné síti" },
+      "settings": { "name": "Nastavení", "hint": "Přehrávač, flashka, plánovač, export a Sync mezi Macy na jednom místě (⌘,)" },
+      "updates": {
+        "name": "Aktualizace",
+        "hintReady": "Nová verze {version} je připravená",
+        "hintCheck": "Máš {version}, zkontrolovat novou verzi"
+      }
+    },
+    "rail": {
+      "stick": "Flashka",
+      "insertStick": "Vlož flashku.",
+      "pickTrack": "Nejdřív vyber skladbu.",
+      "newVersion": "Nová verze {version}",
+      "jobs": "Úlohy",
+      "jobsRunning": { "one": "Běží {count} úloha", "few": "Běží {count} úlohy", "other": "Běží {count} úloh" },
+      "settings": "Nastavení (⌘,)",
+      "allTools": "Všechny nástroje (⌘K)"
+    },
+    "update": {
+      "title": "Aktualizace",
+      "updatedTo": "Aktualizováno na {version}",
+      "newVersion": "Nová verze {version}",
+      "whatsNew": "Tohle je nového",
+      "youHave": "Máš {version}",
+      "noNotes": "K téhle verzi nejsou poznámky.",
+      "installed": "Nainstalováno. Nová verze naběhne po restartu.",
+      "checking": "Hledám novou verzi…",
+      "checkFailed": "Nepodařilo se zjistit novou verzi.",
+      "upToDate": "Máš nejnovější verzi.",
+      "install": "Stáhnout a nainstalovat",
+      "downloading": "Stahuji…"
+    },
+    "access": {
+      "title": "Povol Stickwise přístup k disku",
+      "sub": "Jednou a natrvalo",
+      "granted": "Přístup k disku je povolený.",
+      "why": "Hudbu čte Stickwise z externích disků, flashek a z knihovny rekordboxu. Bez plného přístupu k disku se macOS ptá pořád dokola, nebo mu soubory rovnou nedá.",
+      "step1": "Otevři {path}.",
+      "step1Path": "Nastavení › Soukromí a zabezpečení › Plný přístup k disku",
+      "step2": "Zapni {app}. Když v seznamu chybí, přidej ho tlačítkem {plus} ze složky Aplikace.",
+      "step3": "Restartuj Stickwise.",
+      "network": "Síť (hledání dalších Maců) se zeptá jen jednou. Po povolení vydrží i přes aktualizace.",
+      "openSettings": "Otevřít Nastavení"
+    },
+    "notice": {
+      "rekordboxImported": "Z rekordboxu: {added} nových a {updated} aktualizovaných skladeb, {playlists} playlistů, {cues} cue.",
+      "rekordboxCuesKept": {
+        "one": "Tvoje úpravy cue u {count} skladby zůstaly.",
+        "few": "Tvoje úpravy cue u {count} skladeb zůstaly.",
+        "other": "Tvoje úpravy cue u {count} skladeb zůstaly."
+      },
+      "rekordboxPlaylistsKept": {
+        "one": "{count} playlist upravený tady zůstal beze změny.",
+        "few": "{count} playlisty upravené tady zůstaly beze změny.",
+        "other": "{count} playlistů upravených tady zůstalo beze změny."
+      },
+      "foldersAdded": "Ze složek: {list}.",
+      "foldersPlaylists": { "one": "{count} nový playlist", "few": "{count} nové playlisty", "other": "{count} nových playlistů" },
+      "foldersPlaylistsUpdated": { "one": "{count} doplněný", "few": "{count} doplněné", "other": "{count} doplněných" },
+      "foldersTracks": { "one": "{count} nová skladba", "few": "{count} nové skladby", "other": "{count} nových skladeb" },
+      "foldersTracksKnown": {
+        "one": "{count} nová skladba ({known} už v knihovně bylo)",
+        "few": "{count} nové skladby ({known} už v knihovně bylo)",
+        "other": "{count} nových skladeb ({known} už v knihovně bylo)"
+      },
+      "foldersIgnored": "Bez hudby, vynecháno: {names}.",
+      "foldersAnalyzing": "Analyzuju je na pozadí: waveform, beatgrid, tónina.",
+      "noMusic": "Ve složce není žádná hudba (MP3, WAV, AIFF, FLAC, M4A): {names}",
+      "newSet": "Nový set",
+      "newFolder": "Nová složka",
+      "newPlaylist": "Nový playlist",
+      "addedTo": "Přidáno do „{name}“: {count}",
+      "newSetWith": {
+        "one": "Nový set s {count} skladbou. Pojmenuj ho vlevo v seznamu setů.",
+        "few": "Nový set s {count} skladbami. Pojmenuj ho vlevo v seznamu setů.",
+        "other": "Nový set s {count} skladbami. Pojmenuj ho vlevo v seznamu setů."
+      },
+      "cuesWritten": {
+        "one": "Cue zapsány u {count} skladby. Záloha původních souborů: {dir}",
+        "few": "Cue zapsány u {count} skladeb. Záloha původních souborů: {dir}",
+        "other": "Cue zapsány u {count} skladeb. Záloha původních souborů: {dir}"
+      },
+      "cuesWrittenFailed": "Zapsáno {written}, nepovedlo se {count}: {names}",
+      "cuesRestored": {
+        "one": "Původní cue jsou zpátky u {count} skladby.",
+        "few": "Původní cue jsou zpátky u {count} skladeb.",
+        "other": "Původní cue jsou zpátky u {count} skladeb."
+      },
+      "noCueBackup": "Set nemá zálohované cue.",
+      "smartApplied": {
+        "one": "Smart Cue nastavil hot cue u {count} skladby.",
+        "few": "Smart Cue nastavil hot cue u {count} skladeb.",
+        "other": "Smart Cue nastavil hot cue u {count} skladeb."
+      },
+      "smartSkipped": {
+        "one": "{count} skladba už hot cue měla a zůstala beze změny.",
+        "few": "{count} skladby už hot cue měly a zůstaly beze změny.",
+        "other": "{count} skladeb už hot cue mělo a zůstalo beze změny."
+      },
+      "smartFailed": {
+        "one": "{count} skladbu nejde rozebrat (chybí beatgrid nebo waveform).",
+        "few": "{count} skladby nejde rozebrat (chybí beatgrid nebo waveform).",
+        "other": "{count} skladeb nejde rozebrat (chybí beatgrid nebo waveform)."
+      },
+      "smartToStickSync": "Na flashku se dostanou synchronizací.",
+      "smartToStickWrite": "Na flashku se zapíšou tlačítkem Zapsat cue.",
+      "addedToAnalysis": {
+        "one": "Přidáno do běžící analýzy: {count} skladba",
+        "few": "Přidáno do běžící analýzy: {count} skladby",
+        "other": "Přidáno do běžící analýzy: {count} skladeb"
+      },
+      "analysisDone": "{message}. Na flashku půjdou s waveformem i gridem.",
+      "aiDone": "{message}. Smart Cue teď používá cue body z AI."
+    }
+  },
+  "en": {
+    "libraryName": "Library",
+    "allLibrary": "Whole library",
+    "notOnPlayer": "Won't play on {player}",
+    "loadingLibrary": "Loading the library…",
+    "loadingStick": "Loading the library from the stick…",
+    "plannerNeedsSet": "Pick a set or playlist with at least two tracks, then open the planner.",
+    "tools": {
+      "title": "Tools",
+      "search": "Search for a tool or action…",
+      "none": "No tool matches “{query}”.",
+      "keySelect": "select",
+      "keyOpen": "open",
+      "keyClose": "close",
+      "keyAnytime": "anytime",
+      "groups": { "recent": "Recent", "library": "Library", "stick": "USB stick", "app": "App" },
+      "blocked": {
+        "emptyLibrary": "The library is empty",
+        "allAnalyzed": "Everything is analysed",
+        "pickTrack": "Pick a track first",
+        "aiMissing": "AI analysis isn't available",
+        "running": "Already running",
+        "openPlaylist": "Open a playlist",
+        "insertStick": "Plug in a USB stick",
+        "openStick": "Open a USB stick",
+        "noPending": "No unsaved cues",
+        "noRekordbox": "No rekordbox library found"
+      },
+      "library": { "name": "Library", "hint": "Sets, playlists and tracks on this Mac" },
+      "sync": { "name": "Sync", "hint": "Sets and playlists from the library to the stick" },
+      "planner": { "name": "Set planner", "hint": "Order by key, tempo and energy, transitions" },
+      "analysis": {
+        "name": "Track analysis",
+        "hint": "Waveform, beat grid and key for new tracks",
+        "hintCount": {
+          "one": "{count} track without waveform and grid",
+          "other": "{count} tracks without waveform and grid"
+        }
+      },
+      "smartCue": { "hint": "Drops, breaks and other spots for cues" },
+      "ai": { "name": "AI cue analysis", "hint": "CUE-DETR goes through the tracks in the open list" },
+      "verify": { "name": "Stick check", "hint": "What won't play on which player, and why" },
+      "writeCues": { "name": "Write cues", "hint": "Cues edited in the app onto the stick" },
+      "export": { "name": "Export to disk", "hint": "Playlists from the stick into folders" },
+      "playerSettings": { "name": "Player settings", "hint": "My Settings for CDJ/XDJ and mixer" },
+      "import": { "name": "Import from rekordbox", "hint": "Tracks, playlists and cues; your edits stay" },
+      "format": { "name": "Format USB stick", "hint": "Wipe it and prepare it for the players" },
+      "peer": { "name": "Sync between Macs", "hint": "Your library with other Macs on the same network" },
+      "settings": { "name": "Settings", "hint": "Player, stick, planner, export and Sync between Macs in one place (⌘,)" },
+      "updates": {
+        "name": "Updates",
+        "hintReady": "New version {version} is ready",
+        "hintCheck": "You have {version}; check for a new version"
+      }
+    },
+    "rail": {
+      "stick": "USB stick",
+      "insertStick": "Plug in a USB stick.",
+      "pickTrack": "Pick a track first.",
+      "newVersion": "New version {version}",
+      "jobs": "Jobs",
+      "jobsRunning": { "one": "{count} job running", "other": "{count} jobs running" },
+      "settings": "Settings (⌘,)",
+      "allTools": "All tools (⌘K)"
+    },
+    "update": {
+      "title": "Updates",
+      "updatedTo": "Updated to {version}",
+      "newVersion": "New version {version}",
+      "whatsNew": "Here's what's new",
+      "youHave": "You have {version}",
+      "noNotes": "There are no notes for this version.",
+      "installed": "Installed. The new version starts after a restart.",
+      "checking": "Looking for a new version…",
+      "checkFailed": "Couldn't check for a new version.",
+      "upToDate": "You have the latest version.",
+      "install": "Download and install",
+      "downloading": "Downloading…"
+    },
+    "access": {
+      "title": "Give Stickwise access to your disk",
+      "sub": "Once and for good",
+      "granted": "Disk access is allowed.",
+      "why": "Stickwise reads music from external drives, USB sticks and the rekordbox library. Without Full Disk Access, macOS keeps asking over and over, or doesn't hand over the files at all.",
+      "step1": "Open {path}.",
+      "step1Path": "System Settings › Privacy & Security › Full Disk Access",
+      "step2": "Turn on {app}. If it's not in the list, add it with the {plus} button from the Applications folder.",
+      "step3": "Restart Stickwise.",
+      "network": "Network access (to find other Macs) is asked only once. Once allowed, it lasts through updates.",
+      "openSettings": "Open System Settings"
+    },
+    "notice": {
+      "rekordboxImported": "From rekordbox: {added} new and {updated} updated tracks, {playlists} playlists, {cues} cues.",
+      "rekordboxCuesKept": {
+        "one": "Your cue edits on {count} track were kept.",
+        "other": "Your cue edits on {count} tracks were kept."
+      },
+      "rekordboxPlaylistsKept": {
+        "one": "{count} playlist edited here stayed unchanged.",
+        "other": "{count} playlists edited here stayed unchanged."
+      },
+      "foldersAdded": "From folders: {list}.",
+      "foldersPlaylists": { "one": "{count} new playlist", "other": "{count} new playlists" },
+      "foldersPlaylistsUpdated": { "one": "{count} extended", "other": "{count} extended" },
+      "foldersTracks": { "one": "{count} new track", "other": "{count} new tracks" },
+      "foldersTracksKnown": {
+        "one": "{count} new track ({known} already in the library)",
+        "other": "{count} new tracks ({known} already in the library)"
+      },
+      "foldersIgnored": "No music, left out: {names}.",
+      "foldersAnalyzing": "Analysing them in the background: waveform, beat grid, key.",
+      "noMusic": "There's no music in the folder (MP3, WAV, AIFF, FLAC, M4A): {names}",
+      "newSet": "New set",
+      "newFolder": "New folder",
+      "newPlaylist": "New playlist",
+      "addedTo": "Added to “{name}”: {count}",
+      "newSetWith": {
+        "one": "New set with {count} track. Name it on the left in the list of sets.",
+        "other": "New set with {count} tracks. Name it on the left in the list of sets."
+      },
+      "cuesWritten": {
+        "one": "Cues written for {count} track. Backup of the original files: {dir}",
+        "other": "Cues written for {count} tracks. Backup of the original files: {dir}"
+      },
+      "cuesWrittenFailed": "Written {written}, failed {count}: {names}",
+      "cuesRestored": {
+        "one": "The original cues are back on {count} track.",
+        "other": "The original cues are back on {count} tracks."
+      },
+      "noCueBackup": "The set has no backed-up cues.",
+      "smartApplied": {
+        "one": "Smart Cue set hot cues on {count} track.",
+        "other": "Smart Cue set hot cues on {count} tracks."
+      },
+      "smartSkipped": {
+        "one": "{count} track already had hot cues and stayed unchanged.",
+        "other": "{count} tracks already had hot cues and stayed unchanged."
+      },
+      "smartFailed": {
+        "one": "{count} track can't be analysed (beat grid or waveform missing).",
+        "other": "{count} tracks can't be analysed (beat grid or waveform missing)."
+      },
+      "smartToStickSync": "They get onto the stick with a sync.",
+      "smartToStickWrite": "Write them to the stick with the Write cues button.",
+      "addedToAnalysis": {
+        "one": "Added to the running analysis: {count} track",
+        "other": "Added to the running analysis: {count} tracks"
+      },
+      "analysisDone": "{message}. They'll go onto the stick with waveform and grid.",
+      "aiDone": "{message}. Smart Cue now uses the AI cue points."
+    }
+  },
+  "de": {
+    "libraryName": "Bibliothek",
+    "allLibrary": "Ganze Bibliothek",
+    "notOnPlayer": "Läuft nicht auf {player}",
+    "loadingLibrary": "Bibliothek wird geladen…",
+    "loadingStick": "Bibliothek wird vom Stick geladen…",
+    "plannerNeedsSet": "Wähle ein Set oder eine Playlist mit mindestens zwei Tracks und öffne dann den Planer.",
+    "tools": {
+      "title": "Werkzeuge",
+      "search": "Werkzeug oder Aktion suchen…",
+      "none": "Kein Werkzeug passt zu „{query}“.",
+      "keySelect": "auswählen",
+      "keyOpen": "öffnen",
+      "keyClose": "schließen",
+      "keyAnytime": "jederzeit",
+      "groups": { "recent": "Zuletzt", "library": "Bibliothek", "stick": "USB-Stick", "app": "App" },
+      "blocked": {
+        "emptyLibrary": "Die Bibliothek ist leer",
+        "allAnalyzed": "Alles ist analysiert",
+        "pickTrack": "Wähle zuerst einen Track",
+        "aiMissing": "KI-Analyse ist nicht verfügbar",
+        "running": "Läuft bereits",
+        "openPlaylist": "Öffne eine Playlist",
+        "insertStick": "Steck einen USB-Stick ein",
+        "openStick": "Öffne einen USB-Stick",
+        "noPending": "Keine ungespeicherten Cues",
+        "noRekordbox": "Keine rekordbox-Bibliothek gefunden"
+      },
+      "library": { "name": "Bibliothek", "hint": "Sets, Playlists und Tracks auf diesem Mac" },
+      "sync": { "name": "Sync", "hint": "Sets und Playlists aus der Bibliothek auf den Stick" },
+      "planner": { "name": "Set-Planer", "hint": "Reihenfolge nach Tonart, Tempo und Energie, Übergänge" },
+      "analysis": {
+        "name": "Track-Analyse",
+        "hint": "Waveform, Beatgrid und Tonart für neue Tracks",
+        "hintCount": {
+          "one": "{count} Track ohne Waveform und Grid",
+          "other": "{count} Tracks ohne Waveform und Grid"
+        }
+      },
+      "smartCue": { "hint": "Drops, Breaks und andere Stellen für Cues" },
+      "ai": { "name": "KI-Cue-Analyse", "hint": "CUE-DETR geht die Tracks in der offenen Liste durch" },
+      "verify": { "name": "Stick-Prüfung", "hint": "Was auf welchem Player nicht läuft und warum" },
+      "writeCues": { "name": "Cues schreiben", "hint": "In der App bearbeitete Cues auf den Stick" },
+      "export": { "name": "Export auf Festplatte", "hint": "Playlists vom Stick in Ordner" },
+      "playerSettings": { "name": "Player-Einstellungen", "hint": "My Settings für CDJ/XDJ und Mixer" },
+      "import": { "name": "Import aus rekordbox", "hint": "Tracks, Playlists und Cues; deine Änderungen bleiben" },
+      "format": { "name": "USB-Stick formatieren", "hint": "Löschen und für die Player vorbereiten" },
+      "peer": { "name": "Sync zwischen Macs", "hint": "Deine Bibliothek mit anderen Macs im selben Netzwerk" },
+      "settings": { "name": "Einstellungen", "hint": "Player, Stick, Planer, Export und Sync zwischen Macs an einem Ort (⌘,)" },
+      "updates": {
+        "name": "Updates",
+        "hintReady": "Neue Version {version} ist bereit",
+        "hintCheck": "Du hast {version}; nach neuer Version suchen"
+      }
+    },
+    "rail": {
+      "stick": "USB-Stick",
+      "insertStick": "Steck einen USB-Stick ein.",
+      "pickTrack": "Wähle zuerst einen Track.",
+      "newVersion": "Neue Version {version}",
+      "jobs": "Aufgaben",
+      "jobsRunning": { "one": "{count} Aufgabe läuft", "other": "{count} Aufgaben laufen" },
+      "settings": "Einstellungen (⌘,)",
+      "allTools": "Alle Werkzeuge (⌘K)"
+    },
+    "update": {
+      "title": "Updates",
+      "updatedTo": "Aktualisiert auf {version}",
+      "newVersion": "Neue Version {version}",
+      "whatsNew": "Das ist neu",
+      "youHave": "Du hast {version}",
+      "noNotes": "Zu dieser Version gibt es keine Notizen.",
+      "installed": "Installiert. Die neue Version startet nach einem Neustart.",
+      "checking": "Suche nach neuer Version…",
+      "checkFailed": "Konnte nicht nach einer neuen Version suchen.",
+      "upToDate": "Du hast die neueste Version.",
+      "install": "Laden und installieren",
+      "downloading": "Wird geladen…"
+    },
+    "access": {
+      "title": "Gib Stickwise Zugriff auf die Festplatte",
+      "sub": "Einmal und dauerhaft",
+      "granted": "Festplattenzugriff ist erlaubt.",
+      "why": "Stickwise liest Musik von externen Laufwerken, USB-Sticks und aus der rekordbox-Bibliothek. Ohne Festplattenvollzugriff fragt macOS immer wieder nach oder gibt die Dateien gar nicht erst heraus.",
+      "step1": "Öffne {path}.",
+      "step1Path": "Systemeinstellungen › Datenschutz & Sicherheit › Festplattenvollzugriff",
+      "step2": "Schalte {app} ein. Fehlt es in der Liste, füge es mit der Taste {plus} aus dem Ordner Programme hinzu.",
+      "step3": "Starte Stickwise neu.",
+      "network": "Das Netzwerk (Suche nach anderen Macs) wird nur einmal abgefragt. Einmal erlaubt, hält es auch über Updates hinweg.",
+      "openSettings": "Systemeinstellungen öffnen"
+    },
+    "notice": {
+      "rekordboxImported": "Aus rekordbox: {added} neue und {updated} aktualisierte Tracks, {playlists} Playlists, {cues} Cues.",
+      "rekordboxCuesKept": {
+        "one": "Deine Cue-Änderungen bei {count} Track sind geblieben.",
+        "other": "Deine Cue-Änderungen bei {count} Tracks sind geblieben."
+      },
+      "rekordboxPlaylistsKept": {
+        "one": "{count} hier bearbeitete Playlist ist unverändert geblieben.",
+        "other": "{count} hier bearbeitete Playlists sind unverändert geblieben."
+      },
+      "foldersAdded": "Aus Ordnern: {list}.",
+      "foldersPlaylists": { "one": "{count} neue Playlist", "other": "{count} neue Playlists" },
+      "foldersPlaylistsUpdated": { "one": "{count} ergänzt", "other": "{count} ergänzt" },
+      "foldersTracks": { "one": "{count} neuer Track", "other": "{count} neue Tracks" },
+      "foldersTracksKnown": {
+        "one": "{count} neuer Track ({known} schon in der Bibliothek)",
+        "other": "{count} neue Tracks ({known} schon in der Bibliothek)"
+      },
+      "foldersIgnored": "Ohne Musik, ausgelassen: {names}.",
+      "foldersAnalyzing": "Ich analysiere sie im Hintergrund: Waveform, Beatgrid, Tonart.",
+      "noMusic": "Im Ordner ist keine Musik (MP3, WAV, AIFF, FLAC, M4A): {names}",
+      "newSet": "Neues Set",
+      "newFolder": "Neuer Ordner",
+      "newPlaylist": "Neue Playlist",
+      "addedTo": "Zu „{name}“ hinzugefügt: {count}",
+      "newSetWith": {
+        "one": "Neues Set mit {count} Track. Benenne es links in der Liste der Sets.",
+        "other": "Neues Set mit {count} Tracks. Benenne es links in der Liste der Sets."
+      },
+      "cuesWritten": {
+        "one": "Cues bei {count} Track geschrieben. Sicherung der Originaldateien: {dir}",
+        "other": "Cues bei {count} Tracks geschrieben. Sicherung der Originaldateien: {dir}"
+      },
+      "cuesWrittenFailed": "{written} geschrieben, {count} fehlgeschlagen: {names}",
+      "cuesRestored": {
+        "one": "Die ursprünglichen Cues sind bei {count} Track zurück.",
+        "other": "Die ursprünglichen Cues sind bei {count} Tracks zurück."
+      },
+      "noCueBackup": "Das Set hat keine gesicherten Cues.",
+      "smartApplied": {
+        "one": "Smart Cue hat Hot Cues bei {count} Track gesetzt.",
+        "other": "Smart Cue hat Hot Cues bei {count} Tracks gesetzt."
+      },
+      "smartSkipped": {
+        "one": "{count} Track hatte schon Hot Cues und ist unverändert geblieben.",
+        "other": "{count} Tracks hatten schon Hot Cues und sind unverändert geblieben."
+      },
+      "smartFailed": {
+        "one": "{count} Track lässt sich nicht analysieren (Beatgrid oder Waveform fehlt).",
+        "other": "{count} Tracks lassen sich nicht analysieren (Beatgrid oder Waveform fehlt)."
+      },
+      "smartToStickSync": "Auf den Stick kommen sie mit einem Sync.",
+      "smartToStickWrite": "Auf den Stick schreibst du sie mit der Taste Cues schreiben.",
+      "addedToAnalysis": {
+        "one": "Zur laufenden Analyse hinzugefügt: {count} Track",
+        "other": "Zur laufenden Analyse hinzugefügt: {count} Tracks"
+      },
+      "analysisDone": "{message}. Sie kommen mit Waveform und Grid auf den Stick.",
+      "aiDone": "{message}. Smart Cue nutzt jetzt die KI-Cue-Punkte."
+    }
+  }
 }

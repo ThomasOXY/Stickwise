@@ -12,7 +12,8 @@
     Usb,
   } from "@lucide/svelte";
   import { api } from "./api";
-  import { fsName, gb, plural } from "./format";
+  import { fsName, gb, num } from "./format";
+  import { i18n, t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   const info = $derived(app.data!.info);
@@ -36,7 +37,7 @@
       await api.eject(info.path);
       await app.refreshSticks();
     } catch (e) {
-      app.error = `Flashku nejde vysunout: ${e}`;
+      app.error = t("sync.ejectFailed", { error: String(e) });
     }
   }
 
@@ -44,44 +45,49 @@
     app.view = "health";
     if (!app.verify) app.runVerify();
   }
+
+  /** GB with one decimal in the app's language. */
+  const gbText = (bytes: number) =>
+    Number(gb(bytes)).toLocaleString(i18n.lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const checking = $derived(t("sync.header.checking", { progress: "\u0000" }).split("\u0000"));
 </script>
 
 <header class="hero" data-tauri-drag-region>
   <div class="top" data-tauri-drag-region>
     <div class="left" data-tauri-drag-region>
       <div class="crumb">
-        <span class="eyebrow kind"><Usb size={12} /> Flashka</span>
-        <span>· připojená · {fsName(info.filesystem)}</span>
+        <span class="eyebrow kind"><Usb size={12} /> {t("sync.stick")}</span>
+        <span>{t("sync.header.mounted", { fs: fsName(info.filesystem) })}</span>
       </div>
       <h1>{info.name}</h1>
       <div class="cap">
         <div class="bar"><div style:width="{(used / Math.max(1, info.totalBytes)) * 100}%"></div></div>
-        <span><b class="readout">{gb(used).replace(".", ",")} z {gb(info.totalBytes).replace(".", ",")} GB</b></span>
-        <span class="meta">· {trackCount} {plural(trackCount, "skladba", "skladby", "skladeb")} · {listCount} {plural(listCount, "playlist", "playlisty", "playlistů")}</span>
+        <span><b class="readout">{t("sync.header.capacity", { used: gbText(used), total: gbText(info.totalBytes) })}</b></span>
+        <span class="meta">· {t("common.tracks", { count: num(trackCount) })} · {t("sync.playlists", { count: num(listCount) })}</span>
       </div>
     </div>
 
     <div class="actions">
-      <button class="btn ghost icon" title="Formátovat flashku (FAT32 / exFAT)" onclick={() => (app.formatOpen = true)}>
+      <button class="btn ghost icon" title={t("sync.header.formatTitle")} onclick={() => (app.formatOpen = true)}>
         <Eraser size={15} />
       </button>
-      <button class="btn ghost icon" disabled title="Klonovat (brzy)"><Copy size={15} /></button>
-      <button class="btn ghost" title="Vysunout" onclick={eject}><Eject size={15} /> Vysunout</button>
-      <button class="btn" onclick={() => (app.settingsFor = info.path)} title="My Settings pro CDJ/XDJ a mixer na této flashce">
-        <SlidersHorizontal size={14} /> Nastavení přehrávače
+      <button class="btn ghost icon" disabled title={t("sync.header.clone")}><Copy size={15} /></button>
+      <button class="btn ghost" title={t("sync.header.eject")} onclick={eject}><Eject size={15} /> {t("sync.header.eject")}</button>
+      <button class="btn" onclick={() => (app.settingsFor = info.path)} title={t("sync.header.settingsTitle")}>
+        <SlidersHorizontal size={14} /> {t("player.title")}
       </button>
-      <button class="btn" onclick={() => (app.exportOpen = true)}><HardDriveDownload size={14} /> Export na disk</button>
+      <button class="btn" onclick={() => (app.exportOpen = true)}><HardDriveDownload size={14} /> {t("sync.header.export")}</button>
       {#if app.pending.size > 0}
         <button class="btn write" onclick={() => (app.writeOpen = true)}>
-          <Save size={14} /> Zapsat cue na flashku <span class="readout">{app.pending.size}</span>
+          <Save size={14} /> {t("sync.header.writeCues")} <span class="readout">{app.pending.size}</span>
         </button>
       {/if}
       {#if app.view === "health"}
         <button class="btn primary" onclick={() => app.runVerify()} disabled={app.verifying}>
-          <RefreshCw size={14} /> Zkontrolovat znovu
+          <RefreshCw size={14} /> {t("common.checkAgain")}
         </button>
       {:else}
-        <button class="btn primary" onclick={check}><ShieldCheck size={14} /> Zkontrolovat flashku</button>
+        <button class="btn primary" onclick={check}><ShieldCheck size={14} /> {t("sync.header.check")}</button>
       {/if}
     </div>
   </div>
@@ -89,22 +95,22 @@
   <div class="bottom">
     <div class="seg">
       <button class:on={app.view !== "health"} onclick={() => (app.view = "tracks")}>
-        Skladby <span class="n readout">{trackCount}</span>
+        {t("sync.header.tracks")} <span class="n readout">{trackCount}</span>
       </button>
       <button class:on={app.view === "health"} onclick={check}>
-        Kontrola {#if app.verify}<span class="n readout" class:bad={issues > 0}>{issues}</span>{/if}
+        {t("sync.header.checkTab")} {#if app.verify}<span class="n readout" class:bad={issues > 0}>{issues}</span>{/if}
       </button>
     </div>
 
     <div class="players">
-      <span class="eyebrow">Přehrávače</span>
+      <span class="eyebrow">{t("sync.players")}</span>
       {#each PLAYERS as p}
         {@const active = app.selection?.kind === "player" && app.selection.player === p}
         <button
           class="chip"
           class:active
           disabled={!app.verify}
-          title={app.verify ? "Skladby, které na tomto přehrávači nepůjdou" : "Nejdřív zkontroluj flashku"}
+          title={app.verify ? t("sync.header.playerTitle") : t("sync.header.checkFirst")}
           onclick={() => (active ? (app.view = "tracks") : app.select({ kind: "player", player: p }))}
         >
           <span class="dot {playerStatus(p)}"></span>{p.replace("CDJ-", "")}
@@ -113,15 +119,15 @@
     </div>
 
     {#if app.verifying}
-      <div class="pill"><LoaderCircle size={12} class="spin" /> Kontroluji <span class="readout">{app.verifyProgress[0]} / {app.verifyProgress[1]}</span></div>
+      <div class="pill"><LoaderCircle size={12} class="spin" /> {checking[0]}<span class="readout">{app.verifyProgress[0]} / {app.verifyProgress[1]}</span>{checking[1]}</div>
     {:else if app.verify}
       {#if errors > 0}
         <button class="pill fault" onclick={check}>
           <span class="dot fault"></span>
-          {errors} {plural(errors, "skladba nepůjde", "skladby nepůjdou", "skladeb nepůjde")} přehrát
+          {t("sync.header.unplayable", { count: num(errors) })}
         </button>
       {:else}
-        <button class="pill ok" onclick={check}><span class="dot ok"></span> Všechno půjde přehrát</button>
+        <button class="pill ok" onclick={check}><span class="dot ok"></span> {t("sync.header.allPlayable")}</button>
       {/if}
     {/if}
   </div>

@@ -1,0 +1,11 @@
+{
+  "cs": {
+    "cantDecode": "nejde dekódovat: {error}"
+  },
+  "en": {
+    "cantDecode": "can't decode: {error}"
+  },
+  "de": {
+    "cantDecode": "lässt sich nicht dekodieren: {error}"
+  }
+}

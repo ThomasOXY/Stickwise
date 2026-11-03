@@ -1,6 +1,7 @@
 <script lang="ts">
   import { X } from "@lucide/svelte";
   import type { Component, Snippet } from "svelte";
+  import { t } from "./i18n.svelte";
 
   /** The v2 sheet: scrim, card, header with an icon tile, body, footer. */
   let {
@@ -39,7 +40,7 @@
     </div>
     {#if badge}{@render badge()}{/if}
     {#if onclose}
-      <button class="btn icon close" onclick={onclose} aria-label="Zavřít"><X size={16} /></button>
+      <button class="btn icon close" onclick={onclose} aria-label={t("common.close")}><X size={16} /></button>
     {/if}
   </header>
   {@render children()}

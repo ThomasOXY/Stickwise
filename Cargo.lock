@@ -47,12 +47,16 @@ dependencies = [
 [[package]]
 name = "analysis"
 version = "0.4.0"
+dependencies = [
+ "i18n",
+]
 
 [[package]]
 name = "analyzer"
 version = "0.4.0"
 dependencies = [
  "beat-this",
+ "i18n",
  "pioneer-formats",
  "rustfft",
  "symphonia",
@@ -2261,6 +2265,7 @@ name = "library"
 version = "0.4.0"
 dependencies = [
  "blake3",
+ "i18n",
  "lofty",
  "pioneer-formats",
  "rusqlite",
@@ -2295,6 +2300,7 @@ name = "libsync"
 version = "0.4.0"
 dependencies = [
  "blake3",
+ "i18n",
  "libc",
  "library",
  "peerlink",
@@ -2984,6 +2990,7 @@ name = "peerlink"
 version = "0.4.0"
 dependencies = [
  "blake3",
+ "i18n",
  "mdns-sd",
  "rcgen",
  "rustls",
@@ -5306,6 +5313,7 @@ name = "usb-tools"
 version = "0.4.0"
 dependencies = [
  "engine-library",
+ "i18n",
  "libc",
  "pioneer-formats",
  "serde",

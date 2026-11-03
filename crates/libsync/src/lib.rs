@@ -39,7 +39,6 @@ const APPLY_TIMEOUT: Duration = Duration::from_secs(300);
 const CHUNK: usize = 256 * 1024;
 /// Room left on the receiving disk beyond the music.
 const SPARE: u64 = 512 * 1024 * 1024;
-const STOPPED: &str = "Přenos zastaven.";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -203,7 +202,7 @@ pub fn fingerprint(lib: &Mutex<Library>, ids: Option<&HashSet<i64>>, mut each: i
         .collect();
     for (i, (s, size, mtime)) in todo.iter().enumerate() {
         if !each(i, todo.len()) {
-            return other(STOPPED);
+            return other(i18n::t!("sync.stopped"));
         }
         let Ok(fp) = library::peer::fingerprint_file(Path::new(&s.path)) else { continue };
         lib.lock().unwrap().set_fingerprint(s.id, &fp, *size, *mtime)?;
@@ -282,12 +281,12 @@ fn push_files(
     for o in plan {
         p.current = label(o.track);
         if !progress(&p) {
-            return other(STOPPED);
+            return other(i18n::t!("sync.stopped"));
         }
         if o.want.audio && o.audio.is_none() {
             session.send(&Wire::Skip {
                 fingerprint: o.want.fingerprint.clone(),
-                reason: "soubor na odesílajícím Macu chybí".into(),
+                reason: i18n::t!("sync.missingOnSender"),
             })?;
             p.files_done += 1;
             continue;
@@ -360,12 +359,12 @@ fn pull_files(
         match session.recv::<Wire>()? {
             Wire::File { fingerprint, audio, from, anlz, artwork } => {
                 let Some(t) = tracks.get(fingerprint.as_str()) else {
-                    return other("Druhý Mac poslal skladbu, kterou nenabídl.");
+                    return other(i18n::t!("sync.unexpectedTrack"));
                 };
                 p.current = label(t);
                 p.bytes_done += from.min(audio);
                 if !progress(&p) {
-                    return other(STOPPED);
+                    return other(i18n::t!("sync.stopped"));
                 }
                 let mut got = Received::default();
                 if audio > 0 {
@@ -395,7 +394,7 @@ fn pull_files(
                 progress(&p);
             }
             Wire::Finished => return Ok((received, failed)),
-            _ => return other("Druhý Mac poslal nesrozumitelnou zprávu."),
+            _ => return other(i18n::t!("sync.unexpectedMessage")),
         }
     }
 }
@@ -429,7 +428,7 @@ pub fn send(session: &mut Session, lib: &Mutex<Library>, offer: Offer, mut progr
         Wire::Want { want } => want,
         Wire::Declined { reason } => return Ok(Outcome::Declined(reason)),
         Wire::Failed { message } => return other(message),
-        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+        _ => return other(i18n::t!("sync.unclearAnswer")),
     };
     session.set_timeout(Some(IO_TIMEOUT))?;
     push_files(session, lib, &offer, &want, &mut progress)?;
@@ -437,7 +436,7 @@ pub fn send(session: &mut Session, lib: &Mutex<Library>, offer: Offer, mut progr
     match session.recv::<Wire>()? {
         Wire::Applied { report } => Ok(Outcome::Sent(report)),
         Wire::Failed { message } => other(message),
-        _ => other("Druhý Mac odpověděl nesrozumitelně."),
+        _ => other(i18n::t!("sync.unclearAnswer")),
     }
 }
 
@@ -450,12 +449,12 @@ fn copy_exact(mut r: impl Read, w: &mut impl Write, n: u64, mut done: impl FnMut
     while left > 0 {
         let k = r.read(&mut buf[..CHUNK.min(left as usize)])?;
         if k == 0 {
-            return other("Soubor se během posílání zkrátil.");
+            return other(i18n::t!("sync.fileShrank"));
         }
         w.write_all(&buf[..k])?;
         left -= k as u64;
         if !done(k as u64) {
-            return other(STOPPED);
+            return other(i18n::t!("sync.stopped"));
         }
     }
     Ok(())
@@ -528,12 +527,12 @@ fn receive(session: &mut Session, host: &dyn Host, offer: &Offer) -> Result<Opti
     set_resume(&mut want, offer, &music);
     let sum = summary(offer, &want);
     if !enough_room(&music, sum.new_bytes)? {
-        let reason = format!("Na disku s {} není dost místa.", music.display());
+        let reason = i18n::t!("sync.noRoomOnDisk", path = music.display());
         session.send(&Wire::Declined { reason })?;
-        return other(format!("Z {from} nepřišlo nic: na disku s hudbou není dost místa."));
+        return other(i18n::t!("sync.nothingCameNoRoom", from = from));
     }
     if !host.ask(&from, &sum) {
-        session.send(&Wire::Declined { reason: "Druhý Mac to odmítl.".into() })?;
+        session.send(&Wire::Declined { reason: i18n::t!("sync.declined") })?;
         return Ok(None);
     }
     host.started(&from, false);
@@ -551,7 +550,7 @@ fn receive(session: &mut Session, host: &dyn Host, offer: &Offer) -> Result<Opti
 /// Fingerprint everything, then the whole library (with the playlists
 /// left out) and its tombstones.
 fn whole_library(host: &dyn Host, from: &str) -> Result<(Offer, Vec<String>, Vec<Tombstone>)> {
-    let mut p = Progress { current: "Připravuji knihovnu (otisky skladeb)…".into(), ..Default::default() };
+    let mut p = Progress { current: i18n::t!("sync.preparingLibrary"), ..Default::default() };
     fingerprint(host.library(), None, |done, total| {
         p.files_done = done;
         p.files_total = total;
@@ -580,7 +579,7 @@ pub fn mirror(
     let (theirs, their_tombstones, their_want, there) = match session.recv::<Wire>()? {
         Wire::MirrorState { offer, tombstones, want, changes } => (offer, tombstones, want, changes),
         Wire::Failed { message } => return other(message),
-        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+        _ => return other(i18n::t!("sync.unclearAnswer")),
     };
 
     let (want, preview) = {
@@ -622,7 +621,7 @@ pub fn mirror(
     let there = match session.recv::<Wire>()? {
         Wire::Applied { report } => report,
         Wire::Failed { message } => return other(message),
-        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+        _ => return other(i18n::t!("sync.unclearAnswer")),
     };
     session.set_timeout(Some(IO_TIMEOUT))?;
     let (received, failed) = pull_files(session, &theirs, &want, &host.music_dir(), &host.anlz_dir(), &mut progress)?;
@@ -654,7 +653,7 @@ fn mirror_respond(session: &mut Session, host: &dyn Host, mut theirs: Offer) -> 
         (want.clone(), Changes { report: l.preview(&theirs, &want)?, new_bytes, left_out: mine_left })
     };
     if !enough_room(&music, changes.new_bytes)? {
-        return other(format!("Na {} není dost místa pro hudbu z {from}.", music.display()));
+        return other(i18n::t!("sync.noRoomForMusic", path = music.display(), from = from));
     }
     session.send(&Wire::MirrorState { offer: mine.clone(), tombstones, want: want.clone(), changes })?;
 
@@ -665,7 +664,7 @@ fn mirror_respond(session: &mut Session, host: &dyn Host, mut theirs: Offer) -> 
             host.cancelled(&from);
             return Ok(None);
         }
-        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+        _ => return other(i18n::t!("sync.unclearAnswer")),
     };
     let mut progress = |p: &Progress| host.progress(&from, p);
 
@@ -686,7 +685,7 @@ fn mirror_respond(session: &mut Session, host: &dyn Host, mut theirs: Offer) -> 
     match session.recv::<Wire>()? {
         Wire::Applied { .. } => Ok(Some(report)),
         Wire::Failed { message } => other(message),
-        _ => other("Druhý Mac odpověděl nesrozumitelně."),
+        _ => other(i18n::t!("sync.unclearAnswer")),
     }
 }
 
@@ -733,7 +732,7 @@ fn take_audio(
         // Not the part the sender went on from: take the bytes, drop them.
         std::io::copy(&mut Read::take(&mut *session, n.saturating_sub(from)), &mut std::io::sink())?;
         let _ = std::fs::remove_file(&tmp);
-        return Ok(Err("navázání přenosu se nepovedlo, příště přijde celý".into()));
+        return Ok(Err(i18n::t!("sync.resumeFailed")));
     };
     {
         let mut w = HashingWriter { inner: &mut f, hasher: &mut hasher };
@@ -743,7 +742,7 @@ fn take_audio(
     }
     if hasher.finalize().to_hex().as_str() != t.entry.fingerprint {
         let _ = std::fs::remove_file(&tmp);
-        return Ok(Err("soubor dorazil poškozený nebo se mezitím změnil".into()));
+        return Ok(Err(i18n::t!("sync.fileCorrupted")));
     }
     let name = component(&t.file_name, &format!("{}.audio", &t.entry.fingerprint[..16]));
     let dest = place(&tmp, &dir, &name)?;
@@ -779,7 +778,7 @@ fn place(tmp: &Path, dir: &Path, name: &str) -> Result<PathBuf> {
         }
     }
     let _ = std::fs::remove_file(tmp);
-    other(format!("Ve složce {} je moc souborů jménem {name}.", dir.display()))
+    other(i18n::t!("sync.tooManyFiles", folder = dir.display(), name = name))
 }
 
 /// Analysis files of one track into `dir/peer/<fingerprint>/ANLZ0000.*`.
@@ -789,7 +788,7 @@ fn take_anlz(session: &mut Session, dir: &Path, fingerprint: &str, parts: &[(Str
     for (ext, n) in parts {
         let ext = match ext.as_str() {
             "DAT" | "EXT" | "2EX" => ext.as_str(),
-            _ => return other("Druhý Mac poslal neznámý soubor analýzy."),
+            _ => return other(i18n::t!("sync.unknownAnalysisFile")),
         };
         let path = dir.join(format!("ANLZ0000.{ext}"));
         let tmp = path.with_extension(format!("{ext}.part"));

@@ -17,7 +17,8 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { untrack } from "svelte";
   import type { Track } from "./api";
-  import { date, keyColor, keyOrder, plural, rgb, time } from "./format";
+  import { collator, date, keyColor, keyOrder, num, rgb, time } from "./format";
+  import { t } from "./i18n.svelte";
   import SetFlow from "./SetFlow.svelte";
   import { prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
@@ -48,7 +49,6 @@
   let sort = $state<{ key: SortKey; desc: boolean } | null>(JSON.parse(localStorage.getItem("track-sort") ?? "null"));
   $effect(() => localStorage.setItem("track-sort", JSON.stringify(sort)));
 
-  const coll = new Intl.Collator("cs", { numeric: true, sensitivity: "base" });
   /** Value to compare by; `null` (empty) always sorts last. */
   const value: Record<SortKey, (t: Track) => string | number | null> = {
     title: (t) => t.title || null,
@@ -92,6 +92,7 @@
     if (!sort) return idx;
     const { key, desc } = sort;
     const vals = tracks.map(value[key]);
+    const coll = collator();
     // Stable: equal values keep the playlist order.
     return idx.sort((a, b) => {
       const va = vals[a];
@@ -109,7 +110,7 @@
     if (!p || app.trackFilter) return;
     await app.setPlaylistTracks(p.id, list.map((t) => t.id));
     sort = null;
-    app.notice = `Pořadí v „${p.name}“ uloženo.`;
+    app.notice = t("library.table.orderSaved", { name: p.name });
   }
   const aiTodo = $derived(app.currentTrackIds.filter((id) => !app.aiAnalyzed.has(id)).length);
   const total = $derived(list.reduce((s, t) => s + t.duration, 0));
@@ -170,10 +171,10 @@
   }
 
   function statusTitle(id: number): string {
-    const t = app.trackById.get(id);
-    if (!app.isLibrary || !t) return "";
-    if (t.missing) return "Soubor nenalezen na Macu";
-    if (t.analyzed === false) return "Bez analýzy: na CDJ bez waveformu a beatgridu";
+    const track = app.trackById.get(id);
+    if (!app.isLibrary || !track) return "";
+    if (track.missing) return t("library.table.missingFile");
+    if (track.analyzed === false) return t("library.noAnalysisHint");
     return "";
   }
 
@@ -299,10 +300,10 @@
   {#if !app.isLibrary}
     <div class="subhead">
       <h2>{app.currentTitle}</h2>
-      <span><b class="readout">{list.length}</b> {plural(list.length, "skladba", "skladby", "skladeb")}</span>
-      <span><b class="readout">{time(total)}</b> celkem</span>
+      <span><b class="readout">{num(list.length)}</b> {t("library.stats.tracks", { count: list.length })}</span>
+      <span><b class="readout">{time(total)}</b> {t("library.stats.total")}</span>
       {#if bad > 0}
-        <span class="fault"><b class="readout">{bad}</b> {plural(bad, "nepůjde", "nepůjdou", "nepůjde")}</span>
+        <span class="fault"><b class="readout">{num(bad)}</b> {t("library.stats.wontPlay", { count: bad })}</span>
       {/if}
     </div>
   {/if}
@@ -316,29 +317,29 @@
       <Search size={14} />
       <input
         type="search"
-        placeholder={app.selection?.kind === "all" ? "Hledat v knihovně · název, interpret, žánr" : isSet ? "Hledat v setu" : app.isLibrary ? "Hledat v playlistu" : "Hledat na flashce"}
+        placeholder={app.selection?.kind === "all" ? t("library.table.searchLibrary") : isSet ? t("library.table.searchSet") : app.isLibrary ? t("library.table.searchPlaylist") : t("library.table.searchStick")}
         bind:value={app.trackFilter}
       />
     </label>
     <div class="chips">
       <button class="chip" class:on={chip === "all"} onclick={() => pickChip("all")}>
-        Vše <span class="readout">{counts.all.toLocaleString("cs")}</span>
+        {t("library.table.chipAll")} <span class="readout">{num(counts.all)}</span>
       </button>
-      <button class="chip" class:on={chip === "nocue"} onclick={() => pickChip("nocue")} title="Skladby bez jediné hot cue">
-        Bez cue {#if counts.nocue != null}<span class="readout">{counts.nocue}</span>{/if}
+      <button class="chip" class:on={chip === "nocue"} onclick={() => pickChip("nocue")} title={t("library.table.chipNoCueHint")}>
+        {t("library.table.chipNoCue")} {#if counts.nocue != null}<span class="readout">{num(counts.nocue)}</span>{/if}
       </button>
       {#if app.isLibrary}
-        <button class="chip" class:on={chip === "noanalysis"} onclick={() => pickChip("noanalysis")} title="Bez analýzy: na CDJ bez waveformu a beatgridu">
-          Bez analýzy <span class="readout">{counts.noanalysis}</span>
+        <button class="chip" class:on={chip === "noanalysis"} onclick={() => pickChip("noanalysis")} title={t("library.noAnalysisHint")}>
+          {t("library.table.chipNoAnalysis")} <span class="readout">{num(counts.noanalysis)}</span>
         </button>
       {:else if app.verify}
-        <button class="chip" class:on={chip === "bad"} onclick={() => pickChip("bad")} title="Skladby, které na některém přehrávači nepůjdou">
-          Nepůjde přehrát <span class="readout">{counts.bad}</span>
+        <button class="chip" class:on={chip === "bad"} onclick={() => pickChip("bad")} title={t("library.table.chipBadHint")}>
+          {t("library.table.chipBad")} <span class="readout">{num(counts.bad)}</span>
         </button>
       {/if}
     </div>
     {#if selRows.size > 1}
-      <span class="picked"><b class="readout">{selRows.size}</b> vybráno</span>
+      <span class="picked"><b class="readout">{num(selRows.size)}</b> {t("library.stats.selected")}</span>
     {/if}
 
     <div class="tools">
@@ -347,46 +348,46 @@
           class="btn ghost"
           onclick={() => app.analyzeTracks(app.currentTrackIds)}
           title={app.analyzeJob != null
-            ? "Přidat skladby tohoto seznamu do běžící analýzy"
-            : "Waveform, beatgrid (Beat This!) a tónina pro skladby bez analýzy"}
+            ? t("library.table.addToAnalysis")
+            : t("library.table.analyzeTip")}
         >
           <AudioWaveform size={14} />
-          {#if app.analyzeJob != null && job}Analyzuju {job.filesDone}/{job.filesTotal}{:else}Analyzovat ({toAnalyze}){/if}
+          {#if app.analyzeJob != null && job}{t("library.table.analyzing", { done: job.filesDone, total: job.filesTotal })}{:else}{t("library.analyze", { count: toAnalyze })}{/if}
         </button>
       {/if}
       {#if canKeep}
-        <button class="btn ghost" onclick={keepOrder} title="Uloží toto seřazení jako pořadí playlistu (půjde tak i na flashku)">
-          Uložit toto pořadí
+        <button class="btn ghost" onclick={keepOrder} title={t("library.table.keepOrderHint")}>
+          {t("library.table.keepOrder")}
         </button>
       {/if}
       {#if prefs.value.general.helpers}
       <div class="smart-wrap">
         <button class="btn ghost" onclick={() => (smartMenu = !smartMenu)} disabled={list.length === 0 || app.selection?.kind === "all"}>
-          <Sparkles size={14} /> Smart Cue pro playlist
+          <Sparkles size={14} /> {t("library.table.smartCue")}
         </button>
         {#if smartMenu}
           <div class="smart-menu" role="menu">
             {#if app.aiInstalled && aiTodo > 0}
               <button role="menuitem" disabled={app.aiJob != null} onclick={() => ((smartMenu = false), app.aiAnalyze(app.currentTrackIds))}>
-                <span>{app.aiJob != null ? "AI analýza běží…" : `Nejdřív AI analýza (${aiTodo} skladeb)`}</span>
-                <span class="desc">CUE-DETR, asi 5 s na skladbu. Pak Smart Cue trefuje přesněji.</span>
+                <span>{app.aiJob != null ? t("library.table.aiRunning") : t("library.table.aiFirst", { count: aiTodo })}</span>
+                <span class="desc">{t("library.table.aiFirstHint")}</span>
               </button>
             {/if}
             <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(false))}>
-              <span>Jen skladby bez hot cue</span>
-              <span class="desc">Tvoje cue zůstanou, jak jsou.</span>
+              <span>{t("library.table.onlyNoCue")}</span>
+              <span class="desc">{t("library.table.onlyNoCueHint")}</span>
             </button>
             <button role="menuitem" onclick={() => ((smartMenu = false), app.smartCuePlaylist(true))}>
-              <span>Všechny skladby, přepsat hot cue</span>
-              <span class="desc">Memory cue zůstanou.</span>
+              <span>{t("library.table.overwrite")}</span>
+              <span class="desc">{t("library.table.overwriteHint")}</span>
             </button>
           </div>
         {/if}
       </div>
       {/if}
       {#if prefs.value.general.helpers && app.isLibrary && app.currentPlaylist && !app.currentPlaylist.isFolder}
-        <button class="btn" onclick={() => (app.view = "planner")} disabled={list.length < 2} title="Seřadí skladby podle tóniny, tempa a energie a naplánuje přechody">
-          <ListMusic size={14} /> Naplánovat set
+        <button class="btn" onclick={() => (app.view = "planner")} disabled={list.length < 2} title={t("library.table.planSetHint")}>
+          <ListMusic size={14} /> {t("library.table.planSet")}
         </button>
       {/if}
     </div>
@@ -397,7 +398,7 @@
       class="sort {cls}"
       class:on={sort?.key === key}
       onclick={() => sortBy(key)}
-      title={sort?.key === key ? (sort.desc ? "Zpět na pořadí playlistu" : "Seřadit sestupně") : `Seřadit podle: ${label}`}
+      title={sort?.key === key ? (sort.desc ? t("library.table.sortBack") : t("library.table.sortDesc")) : t("library.table.sortBy", { column: label })}
     >
       <span>{label}</span>
       {#if sort?.key === key}
@@ -411,21 +412,21 @@
       class="sort c-no"
       class:on={!sort}
       onclick={() => (sort = null)}
-      title={app.selection?.kind === "playlist" ? "Pořadí playlistu" : "Výchozí pořadí"}
+      title={app.selection?.kind === "playlist" ? t("library.table.playlistOrder") : t("library.table.defaultOrder")}
     >
       {#if sort}<ArrowUpDown size={11} />{:else}#{/if}
     </button>
     <span class="c-track">
-      {@render head("title", "Skladba", "")}
+      {@render head("title", t("library.table.columns.track"), "")}
       <span class="slash">/</span>
-      {@render head("artist", "Interpret", "")}
+      {@render head("artist", t("library.table.columns.artist"), "")}
     </span>
     {@render head("bpm", "BPM", "c-bpm r")}
-    {@render head("key", "Tónina", "c-key")}
-    {@render head("time", "Délka", "c-time r")}
-    <span class="c-cue">Cue</span>
-    {@render head("format", "Soubor", "c-fmt")}
-    {@render head("added", "Přidáno", "c-date r")}
+    {@render head("key", t("library.table.columns.key"), "c-key")}
+    {@render head("time", t("library.table.columns.time"), "c-time r")}
+    <span class="c-cue">{t("library.table.columns.cue")}</span>
+    {@render head("format", t("library.table.columns.file"), "c-fmt")}
+    {@render head("added", t("library.table.columns.added"), "c-date r")}
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -433,7 +434,7 @@
     class="rows"
     tabindex="0"
     role="listbox"
-    aria-label="Skladby"
+    aria-label={t("library.table.tracksAria")}
     bind:this={rowsEl}
     bind:clientHeight={viewport}
     onscroll={(e) => (scrollTop = (e.currentTarget as HTMLElement).scrollTop)}
@@ -442,22 +443,22 @@
     ondragleave={(e) => !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node) && (dropAt = null)}
   >
     <div style:height="{list.length * ROW}px" class="space">
-      {#each visible as t, k (`${first + k}:${t.id}`)}
+      {#each visible as tr, k (`${first + k}:${tr.id}`)}
         {@const i = first + k}
-        {@const st = statusClass(t.id)}
-        {@const fmt = app.formatOverride.get(t.id) ?? t.format}
-        {@const sev = app.status.get(t.id)}
-        {@const hot = app.cues[t.id]}
+        {@const st = statusClass(tr.id)}
+        {@const fmt = app.formatOverride.get(tr.id) ?? tr.format}
+        {@const sev = app.status.get(tr.id)}
+        {@const hot = app.cues[tr.id]}
         <div
           class="row"
-          class:selected={selRows.has(i) || (selRows.size === 0 && t.id === app.selectedTrack)}
-          class:deck={t.id === deckId}
+          class:selected={selRows.has(i) || (selRows.size === 0 && tr.id === app.selectedTrack)}
+          class:deck={tr.id === deckId}
           class:drop-before={dropAt === i}
           class:drop-after={dropAt === i + 1 && i === list.length - 1}
-          class:missing={t.missing}
+          class:missing={tr.missing}
           style:top="{i * ROW}px"
           role="option"
-          aria-selected={t.id === app.selectedTrack}
+          aria-selected={tr.id === app.selectedTrack}
           tabindex="-1"
           draggable={app.isLibrary}
           ondragstart={(e) => dragStart(e, i)}
@@ -471,49 +472,49 @@
           onkeydown={() => {}}
         >
           <span class="c-no readout">
-            {#if t.id === deckId}<AudioLines size={14} />{:else}{i + 1}{/if}
+            {#if tr.id === deckId}<AudioLines size={14} />{:else}{i + 1}{/if}
           </span>
           <span class="c-track">
-            <span class="thumb" style:--k={keyColor(t.key)}>
+            <span class="thumb" style:--k={keyColor(tr.key)}>
               <Music size={13} />
-              {#if t.artwork}
-                <img src={convertFileSrc(t.artwork)} alt="" loading="lazy" onerror={(e) => ((e.currentTarget as HTMLElement).style.display = "none")} />
+              {#if tr.artwork}
+                <img src={convertFileSrc(tr.artwork)} alt="" loading="lazy" onerror={(e) => ((e.currentTarget as HTMLElement).style.display = "none")} />
               {/if}
-              {#if st === "fault" || st === "warn"}<i class="st dot {st}" title={statusTitle(t.id)}></i>{/if}
+              {#if st === "fault" || st === "warn"}<i class="st dot {st}" title={statusTitle(tr.id)}></i>{/if}
             </span>
             <span class="names">
-              <span class="t">{t.title}{#if app.pending.has(t.id)}<i class="edited" title="Cue upravené, zatím jen v aplikaci"></i>{/if}</span>
-              <span class="a">{t.artist}</span>
+              <span class="t">{tr.title}{#if app.pending.has(tr.id)}<i class="edited" title={t("library.table.cueEdited")}></i>{/if}</span>
+              <span class="a">{tr.artist}</span>
             </span>
           </span>
-          <span class="c-bpm r readout">{t.bpm ? t.bpm.toFixed(2) : "–"}</span>
-          <span class="c-key">{#if t.key}<span class="keypill" style:--k={keyColor(t.key)}>{t.key}</span>{/if}</span>
-          <span class="c-time r readout">{time(t.duration)}</span>
+          <span class="c-bpm r readout">{tr.bpm ? tr.bpm.toFixed(2) : "–"}</span>
+          <span class="c-key">{#if tr.key}<span class="keypill" style:--k={keyColor(tr.key)}>{tr.key}</span>{/if}</span>
+          <span class="c-time r readout">{time(tr.duration)}</span>
           <span class="c-cue">
             {#if hot && !hot.some((c) => c)}
-              <span class="nocue"><CircleAlert size={13} /> bez cue</span>
+              <span class="nocue"><CircleAlert size={13} /> {t("library.table.noCue")}</span>
             {:else}
               {#each Array(8) as _, s}
                 {@const c = hot?.[s]}
                 <i class:off={!c} style:background={c ? rgb(c, s + 1) : undefined}></i>
               {/each}
             {/if}
-            {#if app.memCount[t.id]}
-              <b class="mem" title="{app.memCount[t.id]} memory cue">▾{app.memCount[t.id]}</b>
+            {#if app.memCount[tr.id]}
+              <b class="mem" title={t("library.table.memoryCues", { count: app.memCount[tr.id] })}>▾{app.memCount[tr.id]}</b>
             {/if}
           </span>
           <span class="c-fmt" class:fault={sev === "error"} class:warn={sev === "warning"}>{fmt}</span>
-          <span class="c-date r readout">{date(t.dateAdded)}</span>
+          <span class="c-date r readout">{date(tr.dateAdded)}</span>
         </div>
       {/each}
     </div>
     {#if list.length === 0}
       <p class="empty">
-        {#if chip !== "all" && app.currentTracks.length > 0}V tomhle výběru nic není.
-        {:else if app.selection?.kind === "player"}Na tomhle přehrávači půjde všechno.
-        {:else if app.isLibrary && app.selection?.kind === "playlist"}Prázdný. Přetáhni sem skladby z Celé knihovny nebo z jiného playlistu.
-        {:else if app.isLibrary && (app.data?.tracks.length ?? 0) === 0}Knihovna je prázdná. Importuj ji z rekordboxu tlačítkem nahoře.
-        {:else}Nic tu není.{/if}
+        {#if chip !== "all" && app.currentTracks.length > 0}{t("library.table.emptyFilter")}
+        {:else if app.selection?.kind === "player"}{t("library.table.emptyPlayer")}
+        {:else if app.isLibrary && app.selection?.kind === "playlist"}{t("library.table.emptyPlaylist")}
+        {:else if app.isLibrary && (app.data?.tracks.length ?? 0) === 0}{t("library.table.emptyLibrary")}
+        {:else}{t("library.table.empty")}{/if}
       </p>
     {/if}
   </div>
@@ -525,26 +526,26 @@
   {@const n = selectedIds.length}
   {@const q = menuFilter.trim().toLowerCase()}
   <div class="ctx" style:left="{menu.x}px" style:top="{menu.y}px" role="menu">
-    <div class="ctx-head">{n} {plural(n, "skladba", "skladby", "skladeb")}</div>
+    <div class="ctx-head">{t("common.tracks", { count: n })}</div>
     <button role="menuitem" class:open={menu.sub === "sets"} onmouseenter={() => menu && (menu.sub = "sets")} onclick={() => menu && (menu.sub = "sets")}>
-      <Sparkles size={13} /> Vložit do setu <ChevronRight size={13} class="chev" />
+      <Sparkles size={13} /> {t("library.table.addToSet")} <ChevronRight size={13} class="chev" />
     </button>
     <button role="menuitem" class:open={menu.sub === "playlists"} onmouseenter={() => menu && (menu.sub = "playlists")} onclick={() => menu && (menu.sub = "playlists")}>
-      <ListMusic size={13} /> Vložit do playlistu <ChevronRight size={13} class="chev" />
+      <ListMusic size={13} /> {t("library.table.addToPlaylist")} <ChevronRight size={13} class="chev" />
     </button>
     <button role="menuitem" onmouseenter={() => menu && (menu.sub = null)} onclick={newSet}>
-      <ListPlus size={13} /> Nový set z výběru
+      <ListPlus size={13} /> {t("library.table.newSetFromSelection")}
     </button>
     {#if app.unanalyzed(selectedIds).length > 0}
       {@const k = app.unanalyzed(selectedIds).length}
       <button role="menuitem" onmouseenter={() => menu && (menu.sub = null)} onclick={() => ((menu = null), app.analyzeTracks(selectedIds))}>
-        <AudioWaveform size={13} /> Analyzovat ({k}) <span class="hint">waveform, grid, tónina</span>
+        <AudioWaveform size={13} /> {t("library.analyze", { count: k })} <span class="hint">{t("library.analyzeHint")}</span>
       </button>
     {/if}
     {#if editable}
       <div class="sep"></div>
       <button role="menuitem" class="danger" onmouseenter={() => menu && (menu.sub = null)} onclick={removeSelected}>
-        <Trash size={13} /> Odebrat z „{app.currentTitle}“
+        <Trash size={13} /> {t("library.table.removeFrom", { name: app.currentTitle })}
       </button>
     {/if}
 
@@ -553,23 +554,23 @@
       <div class="sub" class:left={menu.x > window.innerWidth - 540}>
         {#if (menu.sub === "sets" ? sets : plainLists).length > 8}
           <!-- svelte-ignore a11y_autofocus -->
-          <input type="search" placeholder="Hledat" bind:value={menuFilter} autofocus />
+          <input type="search" placeholder={t("library.table.search")} bind:value={menuFilter} autofocus />
         {/if}
         <div class="sub-list">
           {#each items as p (p.id)}
             {@const has = selectedIds.filter((id) => p.trackIds.includes(id)).length}
             <button role="menuitem" onclick={() => addTo(p.id)} disabled={has === n}>
               <span class="pn">{p.name}</span>
-              <span class="readout cnt">{has === n ? "už tam jsou" : p.trackIds.length}</span>
+              <span class="readout cnt">{has === n ? t("library.table.alreadyThere") : p.trackIds.length}</span>
             </button>
           {/each}
           {#if items.length === 0}
-            <p class="none">{menu.sub === "sets" ? "Zatím nemáš žádný set." : "Nic nenalezeno."}</p>
+            <p class="none">{menu.sub === "sets" ? t("library.table.noSets") : t("library.table.notFound")}</p>
           {/if}
         </div>
         {#if menu.sub === "sets"}
           <div class="sep"></div>
-          <button role="menuitem" onclick={newSet}><ListPlus size={13} /> Nový set z výběru</button>
+          <button role="menuitem" onclick={newSet}><ListPlus size={13} /> {t("library.table.newSetFromSelection")}</button>
         {/if}
       </div>
     {/if}

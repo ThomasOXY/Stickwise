@@ -1,0 +1,11 @@
+{
+  "cs": {
+    "noFingerprint": "Skladba {title} ještě nemá otisk."
+  },
+  "en": {
+    "noFingerprint": "The track {title} has no fingerprint yet."
+  },
+  "de": {
+    "noFingerprint": "Der Track {title} hat noch keinen Fingerabdruck."
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "cs": {
+    "stopped": "Přenos zastaven.",
+    "missingOnSender": "soubor na odesílajícím Macu chybí",
+    "unexpectedTrack": "Druhý Mac poslal skladbu, kterou nenabídl.",
+    "unexpectedMessage": "Druhý Mac poslal nesrozumitelnou zprávu.",
+    "unclearAnswer": "Druhý Mac odpověděl nesrozumitelně.",
+    "fileShrank": "Soubor se během posílání zkrátil.",
+    "noRoomOnDisk": "Na disku s {path} není dost místa.",
+    "nothingCameNoRoom": "Z {from} nepřišlo nic: na disku s hudbou není dost místa.",
+    "declined": "Druhý Mac to odmítl.",
+    "preparingLibrary": "Připravuji knihovnu (otisky skladeb)…",
+    "noRoomForMusic": "Na {path} není dost místa pro hudbu z {from}.",
+    "resumeFailed": "navázání přenosu se nepovedlo, příště přijde celý",
+    "fileCorrupted": "soubor dorazil poškozený nebo se mezitím změnil",
+    "tooManyFiles": "Ve složce {folder} je moc souborů jménem {name}.",
+    "unknownAnalysisFile": "Druhý Mac poslal neznámý soubor analýzy."
+  },
+  "en": {
+    "stopped": "Transfer stopped.",
+    "missingOnSender": "the file is missing on the sending Mac",
+    "unexpectedTrack": "The other Mac sent a track it didn't offer.",
+    "unexpectedMessage": "The other Mac sent a message that makes no sense.",
+    "unclearAnswer": "The other Mac gave an answer that makes no sense.",
+    "fileShrank": "The file got shorter while it was being sent.",
+    "noRoomOnDisk": "There isn't enough space on the disk with {path}.",
+    "nothingCameNoRoom": "Nothing came from {from}: there isn't enough space on the music disk.",
+    "declined": "The other Mac declined.",
+    "preparingLibrary": "Preparing the library (track fingerprints)…",
+    "noRoomForMusic": "There isn't enough space on {path} for the music from {from}.",
+    "resumeFailed": "the transfer couldn't pick up where it left off, the whole file comes next time",
+    "fileCorrupted": "the file arrived damaged or changed in the meantime",
+    "tooManyFiles": "The folder {folder} has too many files named {name}.",
+    "unknownAnalysisFile": "The other Mac sent an unknown analysis file."
+  },
+  "de": {
+    "stopped": "Übertragung gestoppt.",
+    "missingOnSender": "die Datei fehlt auf dem sendenden Mac",
+    "unexpectedTrack": "Der andere Mac hat einen Track geschickt, den er nicht angeboten hat.",
+    "unexpectedMessage": "Der andere Mac hat eine unverständliche Nachricht geschickt.",
+    "unclearAnswer": "Der andere Mac hat unverständlich geantwortet.",
+    "fileShrank": "Die Datei ist beim Senden kürzer geworden.",
+    "noRoomOnDisk": "Auf dem Laufwerk mit {path} ist nicht genug Platz.",
+    "nothingCameNoRoom": "Von {from} ist nichts angekommen: Auf dem Musik-Laufwerk ist nicht genug Platz.",
+    "declined": "Der andere Mac hat abgelehnt.",
+    "preparingLibrary": "Bibliothek wird vorbereitet (Fingerabdrücke der Tracks)…",
+    "noRoomForMusic": "Auf {path} ist nicht genug Platz für die Musik von {from}.",
+    "resumeFailed": "die Übertragung ließ sich nicht fortsetzen, nächstes Mal kommt die ganze Datei",
+    "fileCorrupted": "die Datei ist beschädigt angekommen oder hat sich inzwischen geändert",
+    "tooManyFiles": "Im Ordner {folder} gibt es zu viele Dateien namens {name}.",
+    "unknownAnalysisFile": "Der andere Mac hat eine unbekannte Analysedatei geschickt."
+  }
+}

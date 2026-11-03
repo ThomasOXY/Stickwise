@@ -8,7 +8,12 @@
       "suggestHint": "Plánovač vybere a seřadí skladby podle tóniny, tempa a energie"
     },
     "energy": "Energie",
-    "curves": { "warmup": "Warm-up", "peak": "Peak", "journey": "Cesta", "closing": "Closing" },
+    "curves": {
+      "warmup": "Warm-up",
+      "peak": "Peak",
+      "journey": "Cesta",
+      "closing": "Closing"
+    },
     "level": "Úroveň",
     "levels": {
       "beginner": "Začátečník",
@@ -28,7 +33,114 @@
       "memoryHint": "Jako memory cue, pady zůstanou, jak jsou"
     },
     "length": "Délka setu",
-    "lengthHint": "když plánovač vybírá skladby"
+    "lengthHint": "když plánovač vybírá skladby",
+    "title": "Plánovač",
+    "close": "Zavřít plánovač",
+    "pool": {
+      "one": "{count} skladba k výběru, zhruba {minutes} min hudby",
+      "few": "{count} skladby k výběru, zhruba {minutes} min hudby",
+      "other": "{count} skladeb k výběru, zhruba {minutes} min hudby"
+    },
+    "lengthShort": "Délka",
+    "lengthKeepHint": "Délka platí jen pro navržené pořadí",
+    "lengthAllHint": "0 = všechny skladby",
+    "all": "vše",
+    "keepIntro": "Tvoje pořadí zůstane, plánovač jen zkontroluje a naplánuje přechody.",
+    "suggestIntro": "Plánovač vybere skladby a najde nejlepší pořadí.",
+    "restore": "Obnovit původní cue ({n})",
+    "restoreHint": "Vrátí hot cue, které skladby měly před prvním použitím plánu",
+    "computing": "Počítám…",
+    "plan": "Naplánovat",
+    "replan": "Naplánovat znovu",
+    "emptyNoTracks": "Do setu nejdřív vlož skladby, ze kterých má plánovač vybírat: v Celé knihovně je označ a pravým tlačítkem dej Vložit do setu.",
+    "emptyIntro": {
+      "one": "Plánovač projde {count} skladbu (tempo, tóninu, energii a místa pro Mix in a Mix out ze Smart Cue), najde pořadí podle zvolené křivky energie a ke každému přechodu napíše, jak ho zahrát. Skladby s AI analýzou mají přesnější body.",
+      "few": "Plánovač projde {count} skladby (tempo, tóninu, energii a místa pro Mix in a Mix out ze Smart Cue), najde pořadí podle zvolené křivky energie a ke každému přechodu napíše, jak ho zahrát. Skladby s AI analýzou mají přesnější body.",
+      "other": "Plánovač projde {count} skladeb (tempo, tóninu, energii a místa pro Mix in a Mix out ze Smart Cue), najde pořadí podle zvolené křivky energie a ke každému přechodu napíše, jak ho zahrát. Skladby s AI analýzou mají přesnější body."
+    },
+    "yourOrder": "Tvoje pořadí",
+    "suggestedOrder": "Návrh pořadí",
+    "leftOut": {
+      "one": "{count} se nevešla, zůstane na konci setu",
+      "few": "{count} se nevešly, zůstanou na konci setu",
+      "other": "{count} se nevešlo, zůstanou na konci setu"
+    },
+    "harmony": {
+      "one": "{ok} z {count} přechodu v harmonii",
+      "other": "{ok} z {count} přechodů v harmonii"
+    },
+    "tempoRange": "tempo ±{pitch} %",
+    "boosts": {
+      "one": "{count} energy boost",
+      "few": "{count} energy boosty",
+      "other": "{count} energy boostů"
+    },
+    "hardOnes": {
+      "one": "{count} náročný",
+      "few": "{count} náročné",
+      "other": "{count} náročných"
+    },
+    "listenHint": "Přehraje přechody jeden po druhém: obě skladby přes sebe podle plánu",
+    "listen": "Poslechnout přechody",
+    "saved": "Uloženo",
+    "saveCues": "Uložit cue přechodů",
+    "applyAll": "Použít pořadí a cue",
+    "energyBars": "Energie v průběhu setu, barva podle tóniny",
+    "barHint": "{title} · {key} · energie {energy} (cíl {target})",
+    "startInSet": "Začátek v setu",
+    "transHint": "{relation} · pitch {pitch} % · energie {energy}",
+    "bars": {
+      "one": "{count} takt",
+      "few": "{count} takty",
+      "other": "{count} taktů"
+    },
+    "fromTime": "od {time}",
+    "preview": "Přehrát přechod",
+    "previewHint": "Přehrát přechod: obě skladby přes sebe podle plánu",
+    "previewError": "Náhled nejde přehrát: {error}",
+    "inTrack": "V „{title}“:",
+    "tempoFar": "tempo moc daleko",
+    "relation": {
+      "same": "stejná tónina",
+      "relative": "relativní",
+      "plus1": "+1 Camelot",
+      "minus1": "−1 Camelot",
+      "plus2": "energy boost",
+      "plus7": "+7 boost",
+      "diagonal": "diagonála",
+      "clash": "tónina nesedí",
+      "unknown": "tónina neznámá"
+    },
+    "notice": {
+      "kept": "Set „{name}“ zůstal ve tvém pořadí.",
+      "reordered": "Set „{name}“ je přeřazený podle plánu.",
+      "only": {
+        "one": "{count} skladba má na padech jen cue svých přechodů (A, B, … podle času): zelená = start, růžová = předání další skladbě, červená = drop, fialová = echo out. Původní hot cue jsou zálohované (Obnovit původní cue).",
+        "few": "{count} skladby mají na padech jen cue svých přechodů (A, B, … podle času): zelená = start, růžová = předání další skladbě, červená = drop, fialová = echo out. Původní hot cue jsou zálohované (Obnovit původní cue).",
+        "other": "{count} skladeb má na padech jen cue svých přechodů (A, B, … podle času): zelená = start, růžová = předání další skladbě, červená = drop, fialová = echo out. Původní hot cue jsou zálohované (Obnovit původní cue)."
+      },
+      "hot": {
+        "one": "Do {count} skladby se přidaly hot cue přechodů na nejvyšší volné pady (H, G, …).",
+        "few": "Do {count} skladeb se přidaly hot cue přechodů na nejvyšší volné pady (H, G, …).",
+        "other": "Do {count} skladeb se přidaly hot cue přechodů na nejvyšší volné pady (H, G, …)."
+      },
+      "memory": {
+        "one": "Do {count} skladby se zapsaly memory cue přechodů, v tabulce je poznáš podle ▾.",
+        "few": "Do {count} skladeb se zapsaly memory cue přechodů, v tabulce je poznáš podle ▾.",
+        "other": "Do {count} skladeb se zapsaly memory cue přechodů, v tabulce je poznáš podle ▾."
+      },
+      "sync": "Na flashku je dostaneš synchronizací."
+    },
+    "flow": {
+      "title": "Průběh setu",
+      "legend": "výška = BPM · barva = tónina",
+      "hard": {
+        "one": "{count} tvrdý přechod",
+        "few": "{count} tvrdé přechody",
+        "other": "{count} tvrdých přechodů"
+      },
+      "smooth": "všechny přechody sedí"
+    }
   },
   "en": {
     "order": {
@@ -39,7 +151,12 @@
       "suggestHint": "The planner picks and orders the tracks by key, tempo and energy"
     },
     "energy": "Energy",
-    "curves": { "warmup": "Warm-up", "peak": "Peak", "journey": "Journey", "closing": "Closing" },
+    "curves": {
+      "warmup": "Warm-up",
+      "peak": "Peak",
+      "journey": "Journey",
+      "closing": "Closing"
+    },
     "level": "Level",
     "levels": {
       "beginner": "Beginner",
@@ -59,7 +176,104 @@
       "memoryHint": "As memory cues; the pads stay as they are"
     },
     "length": "Set length",
-    "lengthHint": "when the planner picks the tracks"
+    "lengthHint": "when the planner picks the tracks",
+    "title": "Planner",
+    "close": "Close planner",
+    "pool": {
+      "one": "{count} track to pick from, about {minutes} min of music",
+      "other": "{count} tracks to pick from, about {minutes} min of music"
+    },
+    "lengthShort": "Length",
+    "lengthKeepHint": "The length only applies to a suggested order",
+    "lengthAllHint": "0 = all tracks",
+    "all": "all",
+    "keepIntro": "Your order stays; the planner only checks it and plans the transitions.",
+    "suggestIntro": "The planner picks the tracks and finds the best order.",
+    "restore": "Restore original cues ({n})",
+    "restoreHint": "Brings back the hot cues the tracks had before a plan was first applied",
+    "computing": "Planning…",
+    "plan": "Plan",
+    "replan": "Plan again",
+    "emptyNoTracks": "First put the tracks the planner should pick from into the set: select them in Whole library, right-click and choose Add to set.",
+    "emptyIntro": {
+      "one": "The planner goes through {count} track (tempo, key, energy and the Mix in and Mix out spots from Smart Cue), finds an order that follows the chosen energy curve and tells you how to play each transition. Tracks with AI analysis have more precise spots.",
+      "other": "The planner goes through {count} tracks (tempo, key, energy and the Mix in and Mix out spots from Smart Cue), finds an order that follows the chosen energy curve and tells you how to play each transition. Tracks with AI analysis have more precise spots."
+    },
+    "yourOrder": "Your order",
+    "suggestedOrder": "Suggested order",
+    "leftOut": {
+      "one": "{count} didn't fit and stays at the end of the set",
+      "other": "{count} didn't fit and stay at the end of the set"
+    },
+    "harmony": {
+      "one": "{ok} of {count} transition in harmony",
+      "other": "{ok} of {count} transitions in harmony"
+    },
+    "tempoRange": "tempo ±{pitch} %",
+    "boosts": {
+      "one": "{count} energy boost",
+      "other": "{count} energy boosts"
+    },
+    "hardOnes": {
+      "one": "{count} tricky",
+      "other": "{count} tricky"
+    },
+    "listenHint": "Plays the transitions one after another: both tracks over each other as planned",
+    "listen": "Listen to transitions",
+    "saved": "Saved",
+    "saveCues": "Save transition cues",
+    "applyAll": "Apply order and cues",
+    "energyBars": "Energy across the set, colored by key",
+    "barHint": "{title} · {key} · energy {energy} (target {target})",
+    "startInSet": "Start in the set",
+    "transHint": "{relation} · pitch {pitch} % · energy {energy}",
+    "bars": {
+      "one": "{count} bar",
+      "other": "{count} bars"
+    },
+    "fromTime": "from {time}",
+    "preview": "Play transition",
+    "previewHint": "Play the transition: both tracks over each other as planned",
+    "previewError": "Can't play the preview: {error}",
+    "inTrack": "In “{title}”:",
+    "tempoFar": "tempo too far apart",
+    "relation": {
+      "same": "same key",
+      "relative": "relative",
+      "plus1": "+1 Camelot",
+      "minus1": "−1 Camelot",
+      "plus2": "energy boost",
+      "plus7": "+7 boost",
+      "diagonal": "diagonal",
+      "clash": "keys clash",
+      "unknown": "key unknown"
+    },
+    "notice": {
+      "kept": "Set “{name}” keeps your order.",
+      "reordered": "Set “{name}” is reordered by the plan.",
+      "only": {
+        "one": "{count} track now has only its transition cues on the pads (A, B, … by time): green = start, pink = handover to the next track, red = drop, purple = echo out. The original hot cues are backed up (Restore original cues).",
+        "other": "{count} tracks now have only their transition cues on the pads (A, B, … by time): green = start, pink = handover to the next track, red = drop, purple = echo out. The original hot cues are backed up (Restore original cues)."
+      },
+      "hot": {
+        "one": "{count} track got transition hot cues on its highest free pads (H, G, …).",
+        "other": "{count} tracks got transition hot cues on their highest free pads (H, G, …)."
+      },
+      "memory": {
+        "one": "Transition memory cues were written to {count} track; in the table you'll spot them by ▾.",
+        "other": "Transition memory cues were written to {count} tracks; in the table you'll spot them by ▾."
+      },
+      "sync": "Sync takes them to the stick."
+    },
+    "flow": {
+      "title": "Set flow",
+      "legend": "height = BPM · color = key",
+      "hard": {
+        "one": "{count} rough transition",
+        "other": "{count} rough transitions"
+      },
+      "smooth": "all transitions fit"
+    }
   },
   "de": {
     "order": {
@@ -70,7 +284,12 @@
       "suggestHint": "Der Planer wählt die Tracks aus und ordnet sie nach Tonart, Tempo und Energie"
     },
     "energy": "Energie",
-    "curves": { "warmup": "Warm-up", "peak": "Peak", "journey": "Journey", "closing": "Closing" },
+    "curves": {
+      "warmup": "Warm-up",
+      "peak": "Peak",
+      "journey": "Journey",
+      "closing": "Closing"
+    },
     "level": "Stufe",
     "levels": {
       "beginner": "Einsteiger",
@@ -90,6 +309,103 @@
       "memoryHint": "Als Memory Cues; die Pads bleiben, wie sie sind"
     },
     "length": "Set-Länge",
-    "lengthHint": "wenn der Planer die Tracks auswählt"
+    "lengthHint": "wenn der Planer die Tracks auswählt",
+    "title": "Planer",
+    "close": "Planer schließen",
+    "pool": {
+      "one": "{count} Track zur Auswahl, etwa {minutes} Min. Musik",
+      "other": "{count} Tracks zur Auswahl, etwa {minutes} Min. Musik"
+    },
+    "lengthShort": "Länge",
+    "lengthKeepHint": "Die Länge gilt nur für eine vorgeschlagene Reihenfolge",
+    "lengthAllHint": "0 = alle Tracks",
+    "all": "alle",
+    "keepIntro": "Deine Reihenfolge bleibt; der Planer prüft sie nur und plant die Übergänge.",
+    "suggestIntro": "Der Planer wählt die Tracks aus und findet die beste Reihenfolge.",
+    "restore": "Ursprüngliche Cues wiederherstellen ({n})",
+    "restoreHint": "Holt die Hot Cues zurück, die die Tracks vor dem ersten Anwenden eines Plans hatten",
+    "computing": "Wird geplant…",
+    "plan": "Planen",
+    "replan": "Neu planen",
+    "emptyNoTracks": "Leg zuerst die Tracks ins Set, aus denen der Planer wählen soll: Markier sie in Ganze Bibliothek und wähl per Rechtsklick Zu Set hinzufügen.",
+    "emptyIntro": {
+      "one": "Der Planer geht {count} Track durch (Tempo, Tonart, Energie und die Stellen für Mix-in und Mix-out aus Smart Cue), findet eine Reihenfolge nach der gewählten Energiekurve und schreibt dir zu jedem Übergang, wie du ihn spielst. Tracks mit KI-Analyse haben genauere Stellen.",
+      "other": "Der Planer geht {count} Tracks durch (Tempo, Tonart, Energie und die Stellen für Mix-in und Mix-out aus Smart Cue), findet eine Reihenfolge nach der gewählten Energiekurve und schreibt dir zu jedem Übergang, wie du ihn spielst. Tracks mit KI-Analyse haben genauere Stellen."
+    },
+    "yourOrder": "Deine Reihenfolge",
+    "suggestedOrder": "Vorgeschlagene Reihenfolge",
+    "leftOut": {
+      "one": "{count} hat nicht gepasst und bleibt am Ende des Sets",
+      "other": "{count} haben nicht gepasst und bleiben am Ende des Sets"
+    },
+    "harmony": {
+      "one": "{ok} von {count} Übergang harmonisch",
+      "other": "{ok} von {count} Übergängen harmonisch"
+    },
+    "tempoRange": "Tempo ±{pitch} %",
+    "boosts": {
+      "one": "{count} Energy-Boost",
+      "other": "{count} Energy-Boosts"
+    },
+    "hardOnes": {
+      "one": "{count} schwierig",
+      "other": "{count} schwierig"
+    },
+    "listenHint": "Spielt die Übergänge nacheinander ab: beide Tracks übereinander wie geplant",
+    "listen": "Übergänge anhören",
+    "saved": "Gespeichert",
+    "saveCues": "Übergangs-Cues speichern",
+    "applyAll": "Reihenfolge und Cues übernehmen",
+    "energyBars": "Energie im Verlauf des Sets, Farbe nach Tonart",
+    "barHint": "{title} · {key} · Energie {energy} (Ziel {target})",
+    "startInSet": "Start im Set",
+    "transHint": "{relation} · Pitch {pitch} % · Energie {energy}",
+    "bars": {
+      "one": "{count} Takt",
+      "other": "{count} Takte"
+    },
+    "fromTime": "ab {time}",
+    "preview": "Übergang abspielen",
+    "previewHint": "Übergang abspielen: beide Tracks übereinander wie geplant",
+    "previewError": "Die Vorschau lässt sich nicht abspielen: {error}",
+    "inTrack": "In „{title}“:",
+    "tempoFar": "Tempo zu weit auseinander",
+    "relation": {
+      "same": "gleiche Tonart",
+      "relative": "Paralleltonart",
+      "plus1": "+1 Camelot",
+      "minus1": "−1 Camelot",
+      "plus2": "Energy-Boost",
+      "plus7": "+7-Boost",
+      "diagonal": "Diagonale",
+      "clash": "Tonarten passen nicht",
+      "unknown": "Tonart unbekannt"
+    },
+    "notice": {
+      "kept": "Set „{name}“ bleibt in deiner Reihenfolge.",
+      "reordered": "Set „{name}“ ist nach dem Plan neu sortiert.",
+      "only": {
+        "one": "{count} Track hat auf den Pads nur noch die Cues seiner Übergänge (A, B, … nach Zeit): Grün = Start, Pink = Übergabe an den nächsten Track, Rot = Drop, Lila = Echo-out. Die ursprünglichen Hot Cues sind gesichert (Ursprüngliche Cues wiederherstellen).",
+        "other": "{count} Tracks haben auf den Pads nur noch die Cues ihrer Übergänge (A, B, … nach Zeit): Grün = Start, Pink = Übergabe an den nächsten Track, Rot = Drop, Lila = Echo-out. Die ursprünglichen Hot Cues sind gesichert (Ursprüngliche Cues wiederherstellen)."
+      },
+      "hot": {
+        "one": "{count} Track hat Übergangs-Hot-Cues auf den höchsten freien Pads bekommen (H, G, …).",
+        "other": "{count} Tracks haben Übergangs-Hot-Cues auf den höchsten freien Pads bekommen (H, G, …)."
+      },
+      "memory": {
+        "one": "In {count} Track wurden Übergangs-Memory-Cues geschrieben; in der Tabelle erkennst du sie an ▾.",
+        "other": "In {count} Tracks wurden Übergangs-Memory-Cues geschrieben; in der Tabelle erkennst du sie an ▾."
+      },
+      "sync": "Per Sync kommen sie auf den Stick."
+    },
+    "flow": {
+      "title": "Set-Verlauf",
+      "legend": "Höhe = BPM · Farbe = Tonart",
+      "hard": {
+        "one": "{count} harter Übergang",
+        "other": "{count} harte Übergänge"
+      },
+      "smooth": "alle Übergänge passen"
+    }
   }
 }

@@ -2,7 +2,8 @@
   import { BrainCircuit, Check, LoaderCircle, MapPin, Replace, SquarePlus, WandSparkles, X } from "@lucide/svelte";
   import type { Cue, SmartCue } from "./api";
   import { SLOT_LETTERS, blankCue, firstFreeSlot } from "./cues";
-  import { cueTime, plural } from "./format";
+  import { cueTime } from "./format";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   interface Props {
@@ -70,20 +71,20 @@
     <span class="tile"><WandSparkles size={16} /></span>
     <div class="titles">
       <span class="title">Smart Cue</span>
-      <span class="sub">{list.length} {plural(list.length, "místo", "místa", "míst")} ve skladbě · {chosen.length} {plural(chosen.length, "vybrané", "vybrané", "vybraných")}</span>
+      <span class="sub">{t("deck.smart.spots", { count: list.length })} · {t("deck.smart.chosen", { count: chosen.length })}</span>
     </div>
-    {#if hasAi}<span class="detr" title="Body navrhl model CUE-DETR"><BrainCircuit size={12} /> CUE-DETR</span>{/if}
-    <button class="x" onclick={() => (app.smartOpen = false)} aria-label="Zavřít"><X size={16} /></button>
+    {#if hasAi}<span class="detr" title={t("deck.smart.detrHint")}><BrainCircuit size={12} /> CUE-DETR</span>{/if}
+    <button class="x" onclick={() => (app.smartOpen = false)} aria-label={t("common.close")}><X size={16} /></button>
   </div>
   {#if !hasAi && trackId != null && app.deckHere}
     <div class="ai">
       {#if running}
-        <LoaderCircle size={14} class="spin" /> AI analýza běží…
+        <LoaderCircle size={14} class="spin" /> {t("deck.smart.aiRunning")}
       {:else if app.aiInstalled}
-        <span>Přesnější body z modelu natrénovaného na cue profi DJů.</span>
-        <button class="btn small" onclick={() => app.aiAnalyze([trackId])}><BrainCircuit size={13} /> AI analýza</button>
+        <span>{t("deck.smart.aiPitch")}</span>
+        <button class="btn small" onclick={() => app.aiAnalyze([trackId])}><BrainCircuit size={13} /> {t("deck.smart.aiAnalyze")}</button>
       {:else}
-        <span>AI analýza (CUE-DETR) není k dispozici: aplikaci chybí instalátor nástrojů (uv).</span>
+        <span>{t("deck.smart.aiMissing")}</span>
       {/if}
     </div>
   {/if}
@@ -92,30 +93,30 @@
       {@const on = picked.has(s.timeMs)}
       <div class="row" class:on>
         <label class="check">
-          <input type="checkbox" checked={on} onchange={() => toggle(s)} aria-label="Vybrat {s.label}" />
+          <input type="checkbox" checked={on} onchange={() => toggle(s)} aria-label={t("deck.smart.pick", { label: s.label })} />
           <span class="box">{#if on}<Check size={12} strokeWidth={3} />{/if}</span>
         </label>
         <span class="chip" style:background="rgb({s.color[0]} {s.color[1]} {s.color[2]})"></span>
-        <button class="time readout" onclick={() => setTime(s.timeMs / 1000)} title="Skočit sem">{cueTime(s.timeMs)}</button>
-        <span class="label">{s.label}{#if s.ai}<span class="badge" title="Bod navrhl CUE-DETR">AI</span>{/if}</span>
-        <span class="bar">takt {s.bar}</span>
-        <span class="meter" title="Jak výrazná je změna: {Math.round(s.confidence * 100)} %">
+        <button class="time readout" onclick={() => setTime(s.timeMs / 1000)} title={t("deck.smart.jump")}>{cueTime(s.timeMs)}</button>
+        <span class="label">{s.label}{#if s.ai}<span class="badge" title={t("deck.smart.aiHint")}>AI</span>{/if}</span>
+        <span class="bar">{t("deck.smart.bar", { bar: s.bar })}</span>
+        <span class="meter" title={t("deck.smart.strength", { percent: Math.round(s.confidence * 100) })}>
           <span class:high={s.confidence >= 0.7} style:width="{Math.round(s.confidence * 100)}%"></span>
         </span>
       </div>
     {/each}
   </div>
   <div class="foot">
-    <button class="btn ghost small" onclick={asMemory} disabled={chosen.length === 0}><MapPin size={14} /> Jako memory</button>
+    <button class="btn ghost small" onclick={asMemory} disabled={chosen.length === 0}><MapPin size={14} /> {t("deck.smart.asMemory")}</button>
     <span class="spacer"></span>
     {#if hotCount > 0}
-      <button class="btn small" onclick={fillFree} disabled={chosen.length === 0}><SquarePlus size={14} /> Na volné pady</button>
+      <button class="btn small" onclick={fillFree} disabled={chosen.length === 0}><SquarePlus size={14} /> {t("deck.smart.freePads")}</button>
       <button class="btn small primary" onclick={replaceHot} disabled={chosen.length === 0}>
-        <Replace size={14} /> Nahradit hot cue ({Math.min(8, chosen.length)})
+        <Replace size={14} /> {t("deck.smart.replace", { n: Math.min(8, chosen.length) })}
       </button>
     {:else}
       <button class="btn small primary" onclick={replaceHot} disabled={chosen.length === 0}>
-        Na pady {SLOT_LETTERS[0]}–{SLOT_LETTERS[Math.min(8, Math.max(1, chosen.length)) - 1]}
+        {t("deck.smart.toPads", { from: SLOT_LETTERS[0], to: SLOT_LETTERS[Math.min(8, Math.max(1, chosen.length)) - 1] })}
       </button>
     {/if}
   </div>

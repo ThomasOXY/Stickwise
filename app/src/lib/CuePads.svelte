@@ -3,6 +3,7 @@
   import type { Cue } from "./api";
   import { SLOT_LETTERS, beatsLater, blankCue, cssColor, firstFreeSlot, hotCue, replaceCue, snap, withoutSlot } from "./cues";
   import { cueTime } from "./format";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   interface Props {
@@ -48,7 +49,7 @@
     if (asHot) {
       const slot = firstFreeSlot(cues);
       if (slot == null) {
-        app.notice = "Všech 8 hot cue je obsazených. Smaž jeden, nebo ulož smyčku jako memory.";
+        app.notice = t("deck.pads.allTaken");
         return;
       }
       loop.slot = slot;
@@ -123,7 +124,7 @@
       class="pad"
       class:set={c}
       style:--c={c ? cssColor(c) : undefined}
-      title={c ? `${letter}: skok na ${cueTime(c.timeMs)} · pravým tlačítkem úpravy · ⇧${slot} smaže` : `Nastavit hot cue ${letter} na aktuální pozici (${slot})`}
+      title={c ? t("deck.pads.setHint", { letter, time: cueTime(c.timeMs), slot }) : t("deck.pads.emptyHint", { letter, slot })}
       onclick={(e) => (e.altKey ? openMenu(e, slot) : trigger(slot))}
       oncontextmenu={(e) => openMenu(e, slot)}
     >
@@ -131,81 +132,81 @@
       <span class="txt">
         {#if c}
           <span class="readout">{cueTime(c.timeMs)}</span>
-          <span class="cm">{c.comment || (c.loopEndMs ? "smyčka" : "")}</span>
+          <span class="cm">{c.comment || (c.loopEndMs ? t("deck.loop") : "")}</span>
         {:else}
           <span class="readout">–</span>
-          <span class="cm">volný</span>
+          <span class="cm">{t("deck.pads.free")}</span>
         {/if}
       </span>
       {#if c?.loopEndMs}<span class="tag">{c.loopBeats ? `${c.loopBeats[0]}` : "∞"}⟲</span>{/if}
     </button>
   {/each}
 
-  <div class="group" role="group" aria-label="Smyčka">
-    <button class="g" class:armed={loopIn != null} onclick={() => (loopIn = here())} title="Začátek smyčky">IN</button>
-    <button class="g" onclick={loopOut} disabled={loopIn == null} title="Konec smyčky, uloží memory smyčku">OUT</button>
+  <div class="group" role="group" aria-label={t("deck.pads.loop")}>
+    <button class="g" class:armed={loopIn != null} onclick={() => (loopIn = here())} title={t("deck.pads.loopIn")}>IN</button>
+    <button class="g" onclick={loopOut} disabled={loopIn == null} title={t("deck.pads.loopOut")}>OUT</button>
     {#each [4, 8, 16, 32] as n}
-      <button class="g" onclick={(e) => autoLoop(n, e.shiftKey)} title="Smyčka {n} dob od aktuální pozice. Se Shiftem jako hot cue.">{n}</button>
+      <button class="g" onclick={(e) => autoLoop(n, e.shiftKey)} title={t("deck.pads.autoLoop", { beats: n })}>{n}</button>
     {/each}
   </div>
   <div class="group" role="group" aria-label="Cue">
-    <button class="g icon" onclick={addMemory} title="Memory cue na aktuální pozici (M){memoryCount ? ` · ve skladbě ${memoryCount}` : ''}" aria-label="Přidat memory cue">
+    <button class="g icon" onclick={addMemory} title={memoryCount ? t("deck.pads.memoryHintCount", { n: memoryCount }) : t("deck.addMemoryHint")} aria-label={t("deck.addMemory")}>
       <BookmarkPlus size={14} />{#if memoryCount}<span class="n">{memoryCount}</span>{/if}
     </button>
     <button
       class="g icon"
       class:on={app.quantize}
       onclick={() => app.setQuantize(!app.quantize)}
-      title="Quantize: cue se přichytí na nejbližší dobu (Q)"
+      title={t("deck.pads.quantizeHint")}
       aria-label="Quantize"
       aria-pressed={app.quantize}
     >
       <Magnet size={14} />
     </button>
-    <button class="g icon" onclick={() => app.undo()} title="Vrátit (⌘Z)" aria-label="Vrátit"><Undo2 size={14} /></button>
+    <button class="g icon" onclick={() => app.undo()} title={t("deck.pads.undoHint")} aria-label={t("deck.pads.undo")}><Undo2 size={14} /></button>
   </div>
 </div>
 
 {#if menu}
   {@const c = hotCue(cues, menu.slot)}
   {#if c}
-    <div class="menu" style:left="{menu.x}px" style:top="{menu.y - 8}px" role="dialog" aria-label="Hot cue {SLOT_LETTERS[menu.slot - 1]}">
+    <div class="menu" style:left="{menu.x}px" style:top="{menu.y - 8}px" role="dialog" aria-label={t("deck.pads.menu", { letter: SLOT_LETTERS[menu.slot - 1] })}>
       <div class="head">
         <span class="letter" style:background={cssColor(c)}>{SLOT_LETTERS[menu.slot - 1]}</span>
         <span class="readout">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
       </div>
       <div class="swatches">
-        <button class="sw default" class:on={c.hotColor === 0} onclick={() => setColor(0)} title="Výchozí barva"></button>
+        <button class="sw default" class:on={c.hotColor === 0} onclick={() => setColor(0)} title={t("deck.pads.defaultColor")}></button>
         {#each app.palette as p}
           <button
             class="sw"
             class:on={c.hotColor === p.code}
             style:background="rgb({p.color[0]} {p.color[1]} {p.color[2]})"
             onclick={() => setColor(p.code)}
-            aria-label="Barva {p.code}"
+            aria-label={t("deck.pads.color", { code: p.code })}
           ></button>
         {/each}
       </div>
       <input
         type="text"
-        placeholder="Název, např. Drop"
+        placeholder={t("deck.pads.namePlaceholder")}
         bind:value={comment}
         onchange={() => update({ comment })}
         onkeydown={(e) => e.key === "Enter" && (update({ comment }), (menu = null))}
       />
       <div class="row">
-        <span class="lbl">Smyčka</span>
+        <span class="lbl">{t("deck.pads.loop")}</span>
         {#each [null, 4, 8, 16, 32] as n}
           <button
             class="btn small"
             class:on={n == null ? !c.loopEndMs : c.loopBeats?.[0] === n}
             onclick={() => setLoop(n)}
-          >{n ?? "Ne"}</button>
+          >{n ?? t("deck.pads.noLoop")}</button>
         {/each}
       </div>
       <div class="row">
-        <button class="btn small" onclick={() => update({ timeMs: here() })}>Přesunout sem</button>
-        <button class="btn small danger" onclick={() => (remove(menu!.slot), (menu = null))}><Trash size={12} /> Smazat</button>
+        <button class="btn small" onclick={() => update({ timeMs: here() })}>{t("deck.pads.moveHere")}</button>
+        <button class="btn small danger" onclick={() => (remove(menu!.slot), (menu = null))}><Trash size={12} /> {t("deck.pads.delete")}</button>
       </div>
     </div>
   {/if}

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { ArrowLeftRight, Folder, ListMusic, TriangleAlert } from "@lucide/svelte";
   import { peerApi, type Deletion, type MirrorChanges } from "./api";
-  import { plural, size } from "./format";
+  import { size } from "./format";
+  import { i18n, t } from "./i18n.svelte";
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
@@ -17,12 +18,12 @@
   function lines(c: MirrorChanges): string[] {
     const r = c.report;
     const out: string[] = [];
-    if (r.tracksAdded) out.push(`+ ${r.tracksAdded} ${plural(r.tracksAdded, "nová skladba", "nové skladby", "nových skladeb")} · ${size(c.newBytes)}`);
-    if (r.cuesUpdated) out.push(`novější cue u ${r.cuesUpdated} ${plural(r.cuesUpdated, "skladby", "skladeb", "skladeb")}`);
+    if (r.tracksAdded) out.push(t("peer.mirror.tracksAdded", { count: r.tracksAdded, size: size(c.newBytes) }));
+    if (r.cuesUpdated) out.push(t("peer.mirror.cuesUpdated", { count: r.cuesUpdated }));
     const other = r.tracksUpdated - r.cuesUpdated;
-    if (other > 0) out.push(`${other} ${plural(other, "skladba", "skladby", "skladeb")} s novějšími tagy, gridem nebo analýzou`);
-    if (r.playlistsAdded) out.push(`+ ${r.playlistsAdded} ${plural(r.playlistsAdded, "playlist", "playlisty", "playlistů")}`);
-    if (r.playlistsUpdated) out.push(`${r.playlistsUpdated} ${plural(r.playlistsUpdated, "upravený playlist", "upravené playlisty", "upravených playlistů")}`);
+    if (other > 0) out.push(t("peer.mirror.tracksUpdated", { count: other }));
+    if (r.playlistsAdded) out.push(t("peer.mirror.playlistsAdded", { count: r.playlistsAdded }));
+    if (r.playlistsUpdated) out.push(t("peer.mirror.playlistsUpdated", { count: r.playlistsUpdated }));
     return out;
   }
 
@@ -31,8 +32,7 @@
   const nothing = $derived(!here.length && !there.length && !p.deleteHere.length && !p.deleteThere.length);
 
   function day(ms: number): string {
-    const d = new Date(ms);
-    return `${d.getDate()}. ${d.getMonth() + 1}.`;
+    return new Date(ms).toLocaleDateString(i18n.lang, { day: "numeric", month: "numeric" });
   }
 
   function toggle(set: Set<string>, uid: string): Set<string> {
@@ -55,32 +55,32 @@
   }
 </script>
 
-{#snippet deletions(list: Deletion[], keep: Set<string>, flip: (uid: string) => void, where: string)}
+{#snippet deletions(list: Deletion[], keep: Set<string>, flip: (uid: string) => void)}
   <div class="pick">
     {#each list as d (d.uid)}
       <button class="row" onclick={() => flip(d.uid)}>
         <SheetCheck state={keep.has(d.uid) ? "off" : "on"} />
         {#if d.isFolder}<Folder size={14} />{:else}<ListMusic size={14} />{/if}
         <span class="pname">{d.name}</span>
-        <span class="pcount">{where} {day(d.deleted)}</span>
+        <span class="pcount">{t("peer.mirror.deletedOn", { date: day(d.deleted) })}</span>
       </button>
     {/each}
   </div>
 {/snippet}
 
-<SheetFrame id="mirror-title" icon={ArrowLeftRight} title="Zrcadlení s {r.peer}" sub="Obě knihovny budou stejné" width={680} onclose={() => answer(false)}>
+<SheetFrame id="mirror-title" icon={ArrowLeftRight} title={t("peer.mirror.title", { name: r.peer })} sub={t("peer.sheet.mirrorHint")} width={680} onclose={() => answer(false)}>
   <div class="body">
     {#if nothing}
-      <p class="same">Knihovny jsou stejné, není co synchronizovat.</p>
+      <p class="same">{t("peer.mirror.same")}</p>
     {:else}
       <div class="cols">
-        {#each [{ title: "Tento Mac", list: here }, { title: r.peer, list: there }] as side (side.title)}
+        {#each [{ title: t("peer.thisMac"), list: here }, { title: r.peer, list: there }] as side (side.title)}
           <div class="side">
             <div class="eyebrow">{side.title}</div>
             {#if side.list.length}
               {#each side.list as l (l)}<div class="line">{l}</div>{/each}
             {:else}
-              <div class="line quiet">beze změn</div>
+              <div class="line quiet">{t("peer.mirror.noChanges")}</div>
             {/if}
           </div>
         {/each}
@@ -88,37 +88,36 @@
 
       {#if p.deleteHere.length}
         <section>
-          <div class="eyebrow">Smazané na {r.peer} — smazat i tady?</div>
-          {@render deletions(p.deleteHere, keepHere, (u) => (keepHere = toggle(keepHere, u)), "smazáno")}
+          <div class="eyebrow">{t("peer.mirror.deletedThere", { name: r.peer })}</div>
+          {@render deletions(p.deleteHere, keepHere, (u) => (keepHere = toggle(keepHere, u)))}
         </section>
       {/if}
       {#if p.deleteThere.length}
         <section>
-          <div class="eyebrow">Smazané tady — smazat i na {r.peer}?</div>
-          {@render deletions(p.deleteThere, keepThere, (u) => (keepThere = toggle(keepThere, u)), "smazáno")}
+          <div class="eyebrow">{t("peer.mirror.deletedHere", { name: r.peer })}</div>
+          {@render deletions(p.deleteThere, keepThere, (u) => (keepThere = toggle(keepThere, u)))}
         </section>
       {/if}
       {#if p.deleteHere.length || p.deleteThere.length}
-        <p class="hint">Co odškrtneš, se nesmaže a vrátí se na Mac, kde bylo smazané. Skladby ani soubory se nemažou nikdy.</p>
+        <p class="hint">{t("peer.mirror.untickHint")}</p>
       {/if}
     {/if}
 
     {#if p.here.leftOut.length || p.there.leftOut.length}
       <p class="warn">
-        <TriangleAlert size={15} />Bez playlistů se skladbami na odpojeném disku:
-        {[...p.here.leftOut, ...p.there.leftOut].join(", ")}
+        <TriangleAlert size={15} />{t("peer.mirror.leftOut", { names: [...p.here.leftOut, ...p.there.leftOut].join(", ") })}
       </p>
     {/if}
     {#if !p.roomHere}
-      <p class="err"><TriangleAlert size={15} />Na disku pro hudbu není dost místa ({size(p.here.newBytes)}). Uvolni místo nebo změň složku v Sync mezi Macy.</p>
+      <p class="err"><TriangleAlert size={15} />{t("peer.mirror.noRoom", { size: size(p.here.newBytes) })}</p>
     {/if}
-    <p class="hint">Kde je úprava novější, vyhrává. Soubory, které už na Macu jsou, se nepřepíšou; přepsané cue jdou vrátit.</p>
+    <p class="hint">{t("peer.mirror.newerWins")}</p>
   </div>
 
   {#snippet foot()}
-    <button class="btn ghost lg" onclick={() => answer(false)}>{nothing ? "Zavřít" : "Zrušit"}</button>
+    <button class="btn ghost lg" onclick={() => answer(false)}>{t(nothing ? "common.close" : "common.cancel")}</button>
     <button class="btn primary lg" onclick={() => answer(true)} disabled={!p.roomHere || nothing}>
-      <ArrowLeftRight size={16} />Synchronizovat
+      <ArrowLeftRight size={16} />{t("peer.mirror.sync")}
     </button>
   {/snippet}
 </SheetFrame>

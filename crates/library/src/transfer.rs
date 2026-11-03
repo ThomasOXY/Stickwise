@@ -382,7 +382,7 @@ impl Library {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
             )?;
             if fp.is_empty() {
-                return Err(Error::Invalid(format!("Skladba {} ještě nemá otisk.", t.title)));
+                return Err(Error::Invalid(i18n::t!("library.noFingerprint", title = t.title)));
             }
             fingerprints.insert(id, fp.clone());
             if !sent.insert(fp.clone()) {

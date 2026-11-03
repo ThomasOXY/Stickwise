@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { num } from "./format";
 import { gridBeats, normalize, type Grid } from "./grid";
+import { t } from "./i18n.svelte";
 import {
   api,
   libApi,
@@ -168,10 +170,10 @@ class AppState {
   currentTitle = $derived.by(() => {
     const s = this.selection;
     if (!s || !this.data) return "";
-    if (s.kind === "all") return "Celá knihovna";
+    if (s.kind === "all") return t("shell.allLibrary");
     if (s.kind === "playlist") return this.data.playlists.find((p) => p.id === s.id)?.name ?? "";
     if (s.kind === "history") return this.data.history.find((p) => p.id === s.id)?.name ?? "";
-    return `Nepůjde na ${s.player}`;
+    return t("shell.notOnPlayer", { player: s.player });
   });
 
   async init() {
@@ -244,7 +246,7 @@ class AppState {
   /** The library as the same shape the stick views use. */
   private libraryView(d: LibraryData): StickData {
     return {
-      info: { path: "library", name: "Knihovna", totalBytes: 0, freeBytes: 0, filesystem: "" },
+      info: { path: "library", name: t("shell.libraryName"), totalBytes: 0, freeBytes: 0, filesystem: "" },
       playlists: d.playlists,
       history: [],
       tracks: d.tracks,
@@ -311,10 +313,18 @@ class AppState {
       await this.reloadLibrary();
       this.cues = {};
       this.loadCues(this.currentTrackIds);
-      this.notice =
-        `Z rekordboxu: ${r.tracksAdded} nových a ${r.tracksUpdated} aktualizovaných skladeb, ${r.playlists} playlistů, ${r.cues} cue.` +
-        (r.cuesKept ? ` Tvoje úpravy cue u ${r.cuesKept} skladeb zůstaly.` : "") +
-        (r.playlistsKept ? ` ${r.playlistsKept} playlistů upravených tady zůstalo beze změny.` : "");
+      this.notice = [
+        t("shell.notice.rekordboxImported", {
+          added: num(r.tracksAdded),
+          updated: num(r.tracksUpdated),
+          playlists: num(r.playlists),
+          cues: num(r.cues),
+        }),
+        r.cuesKept ? t("shell.notice.rekordboxCuesKept", { count: r.cuesKept }) : "",
+        r.playlistsKept ? t("shell.notice.rekordboxPlaylistsKept", { count: r.playlistsKept }) : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
     } catch (e) {
       this.error = String(e);
     } finally {
@@ -332,9 +342,9 @@ class AppState {
     this.addingFolders = true;
     try {
       if (!this.isLibrary) await this.openLibrary();
-      const t = target != null ? this.library?.playlists.find((p) => p.id === target) : undefined;
-      const parent = t ? (t.isFolder ? t.id : t.parentId) : 0;
-      const playlist = t && !t.isFolder ? t.id : null;
+      const dest = target != null ? this.library?.playlists.find((p) => p.id === target) : undefined;
+      const parent = dest ? (dest.isFolder ? dest.id : dest.parentId) : 0;
+      const playlist = dest && !dest.isFolder ? dest.id : null;
       const r = await libApi.addFolders(paths, parent, playlist);
       await this.reloadLibrary();
       const show = r.firstPlaylist ?? (r.loose.length && playlist != null ? playlist : null);
@@ -342,17 +352,23 @@ class AppState {
       else if (r.loose.length) this.select({ kind: "all" });
       const lists = r.playlistsCreated + r.playlistsUpdated;
       const parts = [
-        lists ? `${r.playlistsCreated} nových playlistů` + (r.playlistsUpdated ? `, ${r.playlistsUpdated} doplněných` : "") : "",
-        `${r.tracksAdded} nových skladeb` + (r.tracksKnown ? ` (${r.tracksKnown} už v knihovně bylo)` : ""),
+        lists ? t("shell.notice.foldersPlaylists", { count: r.playlistsCreated }) : "",
+        lists && r.playlistsUpdated ? t("shell.notice.foldersPlaylistsUpdated", { count: r.playlistsUpdated }) : "",
+        r.tracksKnown
+          ? t("shell.notice.foldersTracksKnown", { count: r.tracksAdded, known: r.tracksKnown })
+          : t("shell.notice.foldersTracks", { count: r.tracksAdded }),
       ].filter(Boolean);
       if (lists === 0 && r.tracksAdded + r.tracksKnown === 0) {
-        this.error = `Ve složce není žádná hudba (MP3, WAV, AIFF, FLAC, M4A): ${r.ignored.join(", ")}`;
+        this.error = t("shell.notice.noMusic", { names: r.ignored.join(", ") });
         return;
       }
-      this.notice =
-        `Ze složek: ${parts.join(", ")}.` +
-        (r.ignored.length ? ` Bez hudby, vynecháno: ${r.ignored.join(", ")}.` : "") +
-        (r.added.length ? " Analyzuju je na pozadí: waveform, beatgrid, tónina." : "");
+      this.notice = [
+        t("shell.notice.foldersAdded", { list: parts.join(", ") }),
+        r.ignored.length ? t("shell.notice.foldersIgnored", { names: r.ignored.join(", ") }) : "",
+        r.added.length ? t("shell.notice.foldersAnalyzing") : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       // New tracks are analysed right away.
       this.analyzeTracks(r.added);
     } catch (e) {
@@ -363,7 +379,7 @@ class AppState {
   }
 
   async createPlaylist(parent: number, kind: "playlist" | "folder" | "set") {
-    const name = kind === "set" ? "Nový set" : kind === "folder" ? "Nová složka" : "Nový playlist";
+    const name = t(kind === "set" ? "shell.notice.newSet" : kind === "folder" ? "shell.notice.newFolder" : "shell.notice.newPlaylist");
     try {
       const id = await libApi.createPlaylist(parent, name, kind);
       await this.reloadLibrary();
@@ -447,17 +463,17 @@ class AppState {
     const add = ids.filter((t) => !p.trackIds.includes(t));
     if (add.length === 0) return;
     await this.setPlaylistTracks(id, [...p.trackIds, ...add]);
-    this.notice = `Přidáno do „${p.name}“: ${add.length}`;
+    this.notice = t("shell.notice.addedTo", { name: p.name, count: num(add.length) });
   }
 
   /** A new set holding `ids`, ready to be named in the tree. */
   async newSetWith(ids: number[]) {
     try {
-      const id = await libApi.createPlaylist(0, "Nový set", "set");
+      const id = await libApi.createPlaylist(0, t("shell.notice.newSet"), "set");
       await libApi.setTracks(id, ids);
       await this.reloadLibrary();
       this.renaming = id;
-      this.notice = `Nový set s ${ids.length} skladbami. Pojmenuj ho vlevo v seznamu setů.`;
+      this.notice = t("shell.notice.newSetWith", { count: ids.length });
     } catch (e) {
       this.error = String(e);
     }
@@ -545,8 +561,8 @@ class AppState {
       const r = await api.writeCues(this.stickPath);
       this.notice =
         r.failed.length === 0
-          ? `Cue zapsány u ${r.written} skladeb. Záloha původních souborů: ${r.backupDir.replace(/^\/Users\/[^/]+/, "~")}`
-          : `Zapsáno ${r.written}, nepovedlo se ${r.failed.length}: ${r.failed.join("; ")}`;
+          ? t("shell.notice.cuesWritten", { count: r.written, dir: r.backupDir.replace(/^\/Users\/[^/]+/, "~") })
+          : t("shell.notice.cuesWrittenFailed", { written: num(r.written), count: num(r.failed.length), names: r.failed.join("; ") });
       await this.loadPending();
       await this.reloadDeck();
     } catch (e) {
@@ -561,7 +577,7 @@ class AppState {
       this.cues = {};
       this.memCount = {};
       if (this.selectedTrack != null) await this.selectTrack(this.selectedTrack, true);
-      this.notice = n ? `Původní cue jsou zpátky u ${n} skladeb.` : "Set nemá zálohované cue.";
+      this.notice = n ? t("shell.notice.cuesRestored", { count: n }) : t("shell.notice.noCueBackup");
       return n;
     } catch (e) {
       this.error = String(e);
@@ -596,11 +612,14 @@ class AppState {
       await this.loadCues(ids);
       await this.loadPending();
       if (this.deckHere) await this.reloadDeck();
-      this.notice =
-        `Smart Cue nastavil hot cue u ${r.applied} skladeb` +
-        (r.skipped ? `, ${r.skipped} už hot cue měly a zůstaly beze změny` : "") +
-        (r.failed ? `, ${r.failed} nejde rozebrat (chybí beatgrid nebo waveform)` : "") +
-        (this.isLibrary ? ". Na flashku se dostanou synchronizací." : ". Na flashku se zapíšou tlačítkem Zapsat cue.");
+      this.notice = [
+        t("shell.notice.smartApplied", { count: r.applied }),
+        r.skipped ? t("shell.notice.smartSkipped", { count: r.skipped }) : "",
+        r.failed ? t("shell.notice.smartFailed", { count: r.failed }) : "",
+        t(this.isLibrary ? "shell.notice.smartToStickSync" : "shell.notice.smartToStickWrite"),
+      ]
+        .filter(Boolean)
+        .join(" ");
     } catch (e) {
       this.error = String(e);
     }
@@ -673,7 +692,7 @@ class AppState {
       // A running analysis takes them in: one job over all of them.
       const running = this.analyzeJob;
       this.analyzeJob = await libApi.analyze(todo, again);
-      if (running === this.analyzeJob) this.notice = `Přidáno do běžící analýzy: ${todo.length} skladeb`;
+      if (running === this.analyzeJob) this.notice = t("shell.notice.addedToAnalysis", { count: todo.length });
     } catch (e) {
       this.error = String(e);
     }
@@ -687,14 +706,14 @@ class AppState {
       await this.reloadDeck();
     }
     if (job.state === "error") this.error = job.message;
-    else if (job.state === "done") this.notice = `${job.message}. Na flashku půjdou s waveformem i gridem.`;
+    else if (job.state === "done") this.notice = t("shell.notice.analysisDone", { message: job.message });
   }
 
   private async aiFinished(job: JobEvent) {
     this.aiJob = null;
     await this.loadAiStatus(this.currentTrackIds.concat(this.selectedTrack != null ? [this.selectedTrack] : []));
     if (job.state === "error") this.error = job.message;
-    else if (job.state === "done") this.notice = `${job.message}. Smart Cue teď používá cue body z AI.`;
+    else if (job.state === "done") this.notice = t("shell.notice.aiDone", { message: job.message });
     if (this.smartOpen) await this.loadSmart();
   }
 

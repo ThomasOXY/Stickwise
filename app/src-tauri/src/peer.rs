@@ -102,7 +102,7 @@ pub fn peer_set_music_dir(app: AppHandle, path: Option<String>) -> CmdResult<Pee
     match path {
         Some(p) => {
             if !Path::new(&p).is_absolute() || !Path::new(&p).is_dir() {
-                return Err(format!("Složka {p} neexistuje."));
+                return Err(i18n::t!("app.peer.folderMissing", path = p));
             }
             lib(&app, |l| l.set_meta(MUSIC_DIR_KEY, &p))?;
         }
@@ -214,7 +214,7 @@ pub struct PeerNode(pub Result<Node, String>);
 
 impl PeerNode {
     fn get(&self) -> CmdResult<&Node> {
-        self.0.as_ref().map_err(|e| format!("Sync mezi Macy neběží: {e}"))
+        self.0.as_ref().map_err(|e| i18n::t!("app.peer.notRunning", error = e))
     }
 }
 
@@ -340,34 +340,26 @@ struct OfferDto {
     summary: Summary,
 }
 
-fn plural(n: usize, one: &str, few: &str, many: &str) -> String {
-    let w = match n {
-        1 => one,
-        2..=4 => few,
-        _ => many,
-    };
-    format!("{n} {w}")
-}
-
 /// "12 nových skladeb, 2 playlisty, cue u 3 skladeb" — what changed.
 fn report_text(r: &ApplyReport) -> String {
     let mut parts = Vec::new();
     if r.tracks_added > 0 {
-        parts.push(plural(r.tracks_added, "nová skladba", "nové skladby", "nových skladeb"));
+        parts.push(i18n::t!("app.peer.newTracks", count = r.tracks_added));
     }
     let lists = r.playlists_added + r.playlists_updated;
     if lists > 0 {
-        parts.push(plural(lists, "playlist", "playlisty", "playlistů"));
+        parts.push(i18n::t!("app.peer.playlists", count = lists));
     }
     if r.cues_updated > 0 {
-        parts.push(format!("nové cue u {}", plural(r.cues_updated, "skladby", "skladeb", "skladeb")));
+        parts.push(i18n::t!("app.peer.newCues", count = r.cues_updated));
     }
     if r.playlists_deleted > 0 {
-        parts.push(format!("smazáno: {}", plural(r.playlists_deleted, "playlist", "playlisty", "playlistů")));
+        parts.push(i18n::t!("app.peer.deleted", count = r.playlists_deleted));
     }
-    let mut text = if parts.is_empty() { "všechno už tu bylo".to_string() } else { parts.join(", ") };
+    let mut text = if parts.is_empty() { i18n::t!("app.peer.nothingNew") } else { parts.join(", ") };
     if !r.skipped.is_empty() {
-        text.push_str(&format!(". Nepřišlo: {}", r.skipped.join("; ")));
+        text.push_str(". ");
+        text.push_str(&i18n::t!("app.peer.notArrived", tracks = r.skipped.join("; ")));
     }
     text
 }
@@ -438,7 +430,11 @@ impl Host for AppHost {
     }
 
     fn started(&self, from: &str, mirror: bool) {
-        *self.label.lock().unwrap() = if mirror { format!("Zrcadlení s {from}") } else { format!("Příjem z {from}") };
+        *self.label.lock().unwrap() = if mirror {
+            i18n::t!("app.peer.mirrorLabel", name = from)
+        } else {
+            i18n::t!("app.peer.receiveLabel", name = from)
+        };
         // The other Mac started a mirror: this one need not start its own.
         if mirror
             && let Ok(n) = self.app.state::<PeerNode>().get()
@@ -453,7 +449,7 @@ impl Host for AppHost {
     }
 
     fn cancelled(&self, from: &str) {
-        if let Some((ev, _)) = self.event("cancelled", &Progress::default(), format!("{from} zrcadlení nepotvrdil.")) {
+        if let Some((ev, _)) = self.event("cancelled", &Progress::default(), i18n::t!("app.peer.mirrorNotConfirmed", name = from)) {
             emit_job(&self.app, &ev);
             self.app.state::<Jobs>().finish(ev.id);
         }
@@ -468,8 +464,8 @@ impl Host for AppHost {
     fn finished(&self, from: &str, result: &Result<ApplyReport, String>) {
         let p = Progress::default();
         let (state, message) = match result {
-            Ok(r) => ("done", format!("Z {from}: {}", report_text(r))),
-            Err(e) => ("error", format!("Příjem z {from} se nepovedl: {e}")),
+            Ok(r) => ("done", i18n::t!("app.peer.received", name = from, report = report_text(r))),
+            Err(e) => ("error", i18n::t!("app.peer.receiveFailed", name = from, error = e)),
         };
         if let Some((mut ev, _)) = self.event(state, &p, message) {
             ev.files_done = ev.files_total;
@@ -508,9 +504,9 @@ pub fn peer_send(
     std::thread::spawn(move || {
         let mut ev = JobEvent {
             id: job,
-            label: format!("Posílání na {name}"),
+            label: i18n::t!("app.peer.sendLabel", name = name),
             state: "running",
-            current: format!("Čekám, až to {name} přijme…"),
+            current: i18n::t!("app.peer.waitingAccept", name = name),
             bytes_total: 1,
             ..Default::default()
         };
@@ -537,10 +533,10 @@ pub fn peer_send(
         ev.current.clear();
         ev.bytes_done = ev.bytes_total;
         (ev.state, ev.message) = match result {
-            Ok(Outcome::Sent(r)) => ("done", format!("Na {name}: {}", report_text(&r))),
+            Ok(Outcome::Sent(r)) => ("done", i18n::t!("app.peer.sent", name = name, report = report_text(&r))),
             Ok(Outcome::Declined(why)) => ("cancelled", why),
-            Err(_) if cancel.load(Ordering::Relaxed) => ("cancelled", "Posílání zastaveno.".into()),
-            Err(e) => ("error", format!("Poslat na {name} se nepovedlo: {e}")),
+            Err(_) if cancel.load(Ordering::Relaxed) => ("cancelled", i18n::t!("app.peer.sendStopped")),
+            Err(e) => ("error", i18n::t!("app.peer.sendFailed", name = name, error = e)),
         };
         emit_job(&app, &ev);
         app.state::<Jobs>().finish(job);
@@ -568,7 +564,7 @@ struct MirrorPreviewDto {
 #[tauri::command]
 pub fn peer_mirror(app: AppHandle, id: String) -> CmdResult<u32> {
     if app.state::<MirrorAsk>().pending.lock().unwrap().is_some() {
-        return Err("Jedno zrcadlení už čeká na potvrzení.".into());
+        return Err(i18n::t!("app.peer.mirrorPending"));
     }
     start_mirror(&app, id, false)
 }
@@ -581,16 +577,20 @@ fn start_mirror(app: &AppHandle, id: String, auto: bool) -> CmdResult<u32> {
     let name = node.get()?.peers().into_iter().find(|p| p.id == id).map(|p| p.name).unwrap_or_else(|| "Mac".into());
     let auto_state = app.state::<AutoMirror>();
     if !auto_state.running.lock().unwrap().insert(id.clone()) {
-        return Err(format!("Zrcadlení s {name} už běží."));
+        return Err(i18n::t!("app.peer.mirrorRunning", name = name));
     }
     auto_state.last.lock().unwrap().insert(id.clone(), Instant::now());
     let (job, cancel) = app.state::<Jobs>().start();
     let app = app.clone();
     std::thread::spawn(move || {
-        let label = if auto { format!("Automatické zrcadlení s {name}") } else { format!("Zrcadlení s {name}") };
+        let label = if auto {
+            i18n::t!("app.peer.autoMirrorLabel", name = name)
+        } else {
+            i18n::t!("app.peer.mirrorLabel", name = name)
+        };
         let host = AppHost::new(&app, Some((job, cancel.clone())), label.clone());
         let mut ev = JobEvent { id: job, label, state: "running", bytes_total: 1, ..Default::default() };
-        ev.current = "Porovnávám knihovny…".into();
+        ev.current = i18n::t!("app.peer.comparing");
         emit_job(&app, &ev);
         let result = (|| -> CmdResult<MirrorOutcome> {
             let mut session = app.state::<PeerNode>().get()?.connect(&id).map_err(err)?;
@@ -610,7 +610,7 @@ fn start_mirror(app: &AppHandle, id: String, auto: bool) -> CmdResult<u32> {
                     *pending = Some((request, tx));
                 }
                 let mut wait = ev.clone();
-                wait.current = "Čekám na potvrzení změn…".into();
+                wait.current = i18n::t!("app.peer.waitingConfirm");
                 emit_job(&app, &wait);
                 let _ = app.emit("peer-mirror-preview", MirrorPreviewDto { request, peer: name.clone(), preview: preview.clone() });
                 let answer = rx.recv_timeout(libsync::CONFIRM_TIMEOUT).ok().flatten();
@@ -624,11 +624,11 @@ fn start_mirror(app: &AppHandle, id: String, auto: bool) -> CmdResult<u32> {
         ev.bytes_done = ev.bytes_total;
         (ev.state, ev.message) = match &result {
             Ok(MirrorOutcome::Done { here, there }) => {
-                ("done", format!("Tady: {}. Na {name}: {}.", report_text(here), report_text(there)))
+                ("done", i18n::t!("app.peer.mirrored", here = report_text(here), name = name, there = report_text(there)))
             }
-            Ok(MirrorOutcome::Cancelled) => ("cancelled", "Zrcadlení zrušeno, nic se nezměnilo.".into()),
-            Err(_) if cancel.load(Ordering::Relaxed) => ("cancelled", "Zrcadlení zastaveno.".into()),
-            Err(e) => ("error", format!("Zrcadlení s {name} se nepovedlo: {e}")),
+            Ok(MirrorOutcome::Cancelled) => ("cancelled", i18n::t!("app.peer.mirrorCancelled")),
+            Err(_) if cancel.load(Ordering::Relaxed) => ("cancelled", i18n::t!("app.peer.mirrorStopped")),
+            Err(e) => ("error", i18n::t!("app.peer.mirrorFailed", name = name, error = e)),
         };
         emit_job(&app, &ev);
         app.state::<Jobs>().finish(job);

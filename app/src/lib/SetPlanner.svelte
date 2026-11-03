@@ -2,7 +2,8 @@
   import { Check, Headphones, LoaderCircle, Play, Route, Sparkles, Square, TrendingUp, TriangleAlert, Undo2, X } from "@lucide/svelte";
   import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
-  import { cueTime, keyColor, plural, time } from "./format";
+  import { cueTime, keyColor, time } from "./format";
+  import { t, type Key } from "./i18n.svelte";
   import { PLAN_CURVES, PLAN_LEVELS, prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
 
@@ -107,11 +108,11 @@
         leftOut: plan.leftOut,
         // Per track: mix in (from the transition into it), mix out (into the next one).
         // Per track: the cues of the transition into it and out of it.
-        marks: plan.tracks.map((t, k) => [
-          t.trackId,
+        marks: plan.tracks.map((p, k) => [
+          p.trackId,
           [
-            ...(k > 0 ? plan!.transitions[k - 1].bMarks : [[t.mixInMs, "Mix in"]]),
-            ...(k < plan!.transitions.length ? plan!.transitions[k].aMarks : [[t.mixOutMs, "Konec setu"]]),
+            ...(k > 0 ? plan!.transitions[k - 1].bMarks : [[p.mixInMs, "Mix in"]]),
+            ...(k < plan!.transitions.length ? plan!.transitions[k].aMarks : [[p.mixOutMs, "Set end"]]),
           ],
         ]),
         mode: cueMode,
@@ -127,13 +128,13 @@
       if (first != null) await app.selectTrack(first, true);
       else if (app.selectedTrack != null) await app.selectTrack(app.selectedTrack, true);
       app.notice =
-        (keepOrder ? `Set „${set.name}“ zůstal ve tvém pořadí. ` : `Set „${set.name}“ je přeřazený podle plánu. `) +
-        (cueMode === "only"
-          ? `${n + 1} skladeb má na padech jen cue svých přechodů (A, B, … podle času): zelená = start, růžová = předání další skladbě, červená = drop, fialová = echo out. Původní hot cue jsou zálohované (Obnovit původní cue). `
-          : cueMode === "hot"
-            ? `Do ${n + 1} skladeb se přidaly hot cue přechodů na nejvyšší volné pady (H, G, …). `
-            : `Do ${n + 1} skladeb se zapsaly memory cue přechodů, v tabulce je poznáš podle ▾. `) +
-        `Na flashku je dostaneš synchronizací.`;
+        [
+          t(keepOrder ? "planner.notice.kept" : "planner.notice.reordered", { name: set.name }),
+          t(cueMode === "only" ? "planner.notice.only" : cueMode === "hot" ? "planner.notice.hot" : "planner.notice.memory", {
+            count: n + 1,
+          }),
+          t("planner.notice.sync"),
+        ].join(" ");
     } catch (e) {
       app.error = String(e);
     } finally {
@@ -197,7 +198,7 @@
     audioA.currentTime = Math.max(0, start - 8 * bar);
     audioB.currentTime = tr.cueInMs / 1000;
     audioB.volume = 0;
-    audioA.play().catch((e) => (app.error = `Náhled nejde přehrát: ${e.message ?? e}`));
+    audioA.play().catch((e) => (app.error = t("planner.previewError", { error: e.message ?? e })));
     playingIdx = i;
     let bStarted = false;
     const tick = () => {
@@ -257,20 +258,23 @@
     if (!t.keyOk || !t.tempoOk) return "warn";
     return t.keyRelation === "+2" || t.keyRelation === "+7" ? "boost" : "ok";
   }
-  const RELATION: Record<string, string> = {
-    same: "stejná tónina",
-    relative: "relativní",
-    "+1": "+1 Camelot",
-    "-1": "−1 Camelot",
-    "+2": "energy boost",
-    "+7": "+7 boost",
-    diagonal: "diagonála",
-    clash: "tónina nesedí",
-    "?": "tónina neznámá",
+  const RELATION: Record<string, Key> = {
+    same: "planner.relation.same",
+    relative: "planner.relation.relative",
+    "+1": "planner.relation.plus1",
+    "-1": "planner.relation.minus1",
+    "+2": "planner.relation.plus2",
+    "+7": "planner.relation.plus7",
+    diagonal: "planner.relation.diagonal",
+    clash: "planner.relation.clash",
+    "?": "planner.relation.unknown",
   };
-  function warnText(t: Transition) {
-    if (!t.keyOk) return RELATION[t.keyRelation] ?? "tónina nesedí";
-    return "tempo moc daleko";
+  function relation(r: string): string {
+    return r in RELATION ? t(RELATION[r]) : r;
+  }
+  function warnText(tr: Transition) {
+    if (!tr.keyOk) return t(RELATION[tr.keyRelation] ?? "planner.relation.clash");
+    return t("planner.tempoFar");
   }
   function bpmStep(i: number) {
     if (!plan) return "";
@@ -295,60 +299,61 @@
 <section class="planner">
   <aside class="settings">
     <div class="shead">
-      <h2><Route size={17} /> Plánovač</h2>
-      <button class="btn icon ghost" onclick={() => (app.view = "tracks")} aria-label="Zavřít plánovač" title="Zavřít plánovač"><X size={15} /></button>
+      <h2><Route size={17} /> {t("planner.title")}</h2>
+      <button class="btn icon ghost" onclick={() => (app.view = "tracks")} aria-label={t("planner.close")} title={t("planner.close")}><X size={15} /></button>
     </div>
-    <p class="sub pool">{set?.name} · {pool} skladeb k výběru, zhruba {poolMinutes} min hudby</p>
+    <p class="sub pool">{set?.name} · {t("planner.pool", { count: pool, minutes: poolMinutes })}</p>
 
     <div class="group">
-      <span class="eyebrow">Pořadí</span>
+      <span class="eyebrow">{t("planner.order.title")}</span>
       <div class="seg">
-        <button class:on={keepOrder} onclick={() => (keepOrder = true)} title="Skladby zůstanou, jak jsi je seřadil; naplánují se jen přechody">Moje</button>
-        <button class:on={!keepOrder} onclick={() => (keepOrder = false)} title="Plánovač vybere a seřadí skladby podle tóniny, tempa a energie">Navrhnout</button>
+        <button class:on={keepOrder} onclick={() => (keepOrder = true)} title={t("planner.order.mineHint")}>{t("planner.order.mine")}</button>
+        <button class:on={!keepOrder} onclick={() => (keepOrder = false)} title={t("planner.order.suggestHint")}>{t("planner.order.suggest")}</button>
       </div>
     </div>
     <div class="group">
-      <span class="eyebrow">Energie</span>
+      <span class="eyebrow">{t("planner.energy")}</span>
       <div class="seg">
         {#each CURVES as [v, label]}
-          <button class:on={curve === v} onclick={() => (curve = v)}>{label}</button>
+          <button class:on={curve === v} onclick={() => (curve = v)}>{t(label)}</button>
         {/each}
       </div>
     </div>
     <div class="group">
-      <span class="eyebrow">Úroveň</span>
+      <span class="eyebrow">{t("planner.level")}</span>
       <div class="seg">
         {#each LEVELS as [v, label, hint]}
-          <button class:on={level === v} onclick={() => (level = v)} title={hint}>{label}</button>
+          <button class:on={level === v} onclick={() => (level = v)} title={t(hint)}>{t(label)}</button>
         {/each}
       </div>
     </div>
     <div class="group">
-      <span class="eyebrow">Cue přechodů</span>
+      <span class="eyebrow">{t("planner.cues")}</span>
       <div class="seg">
-        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title="Na padech zůstanou jen cue přechodů (start, swap, drop, mix out) v pořadí A, B, …; ostatní hot cue se zazálohují a smažou, memory cue zůstanou">Jen přechody</button>
-        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title="Tvoje hot cue zůstanou, cue přechodů přibudou na nejvyšší volné pady (H, G, …)">Na volné pady</button>
-        <button class:on={cueMode === "memory"} onclick={() => (cueMode = "memory")} title="Jako memory cue, pady zůstanou, jak jsou">Memory</button>
+        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title={t("planner.cueModes.onlyHint")}>{t("planner.cueModes.only")}</button>
+        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title={t("planner.cueModes.hotHint")}>{t("planner.cueModes.hot")}</button>
+        <button class:on={cueMode === "memory"} onclick={() => (cueMode = "memory")} title={t("planner.cueModes.memoryHint")}>{t("planner.cueModes.memory")}</button>
       </div>
     </div>
-    <label class="group len" class:off={keepOrder} title={keepOrder ? "Délka platí jen pro navržené pořadí" : "0 = všechny skladby"}>
-      <span class="eyebrow">Délka</span>
+    <label class="group len" class:off={keepOrder} title={keepOrder ? t("planner.lengthKeepHint") : t("planner.lengthAllHint")}>
+      <span class="eyebrow">{t("planner.lengthShort")}</span>
       <span class="slider">
         <input type="range" min="0" max={lenMax} step="5" bind:value={minutes} disabled={keepOrder} style:--p="{(minutes / lenMax) * 100}%" />
-        <span class="readout">{minutes === 0 ? "vše" : `${minutes} min`}</span>
+        <span class="readout">{minutes === 0 ? t("planner.all") : t("common.minutes", { count: minutes })}</span>
       </span>
     </label>
 
     <p class="hint">
-      {keepOrder ? "Tvoje pořadí zůstane, plánovač jen zkontroluje a naplánuje přechody. " : "Plánovač vybere skladby a najde nejlepší pořadí. "}{LEVELS.find((l) => l[0] === level)?.[2]}
+      {keepOrder ? t("planner.keepIntro") : t("planner.suggestIntro")}
+      {t(LEVELS.find((l) => l[0] === level)?.[2] ?? "planner.levels.beginnerHint")}
     </p>
 
     <div class="sfoot">
       {#if backups > 0}
-        <button class="btn ghost" onclick={restore} title="Vrátí hot cue, které skladby měly před prvním použitím plánu"><Undo2 size={14} /> Obnovit původní cue ({backups})</button>
+        <button class="btn ghost" onclick={restore} title={t("planner.restoreHint")}><Undo2 size={14} /> {t("planner.restore", { n: backups })}</button>
       {/if}
       <button class="btn primary lg run" onclick={run} disabled={busy || pool < 2}>
-        {#if busy && !plan}<LoaderCircle size={15} class="spin" /> Počítám…{:else}<Sparkles size={15} /> {plan ? "Naplánovat znovu" : "Naplánovat"}{/if}
+        {#if busy && !plan}<LoaderCircle size={15} class="spin" /> {t("planner.computing")}{:else}<Sparkles size={15} /> {plan ? t("planner.replan") : t("planner.plan")}{/if}
       </button>
     </div>
   </aside>
@@ -358,12 +363,9 @@
       <div class="empty">
         <Route size={28} />
         {#if pool < 2}
-          <p>Do setu nejdřív vlož skladby, ze kterých má plánovač vybírat: v Celé knihovně je označ a pravým tlačítkem dej Vložit do setu.</p>
+          <p>{t("planner.emptyNoTracks")}</p>
         {:else}
-          <p>
-            Plánovač projde {pool} skladeb (tempo, tóninu, energii a místa pro Mix in a Mix out ze Smart Cue), najde pořadí podle
-            zvolené křivky energie a ke každému přechodu napíše, jak ho zahrát. Skladby s AI analýzou mají přesnější body.
-          </p>
+          <p>{t("planner.emptyIntro", { count: pool })}</p>
         {/if}
       </div>
     {:else}
@@ -371,62 +373,62 @@
         <span class="score readout" class:warn={score < 70} style:--p="{score}%">{score}</span>
         <div class="rtitle">
           <h3>
-            {keepOrder ? "Tvoje pořadí" : "Návrh pořadí"}
-            <span class="sub">{plan.tracks.length} skladeb · {time(plan.totalSeconds)}{#if plan.leftOut.length} · {plan.leftOut.length} se nevešlo, zůstanou na konci setu{/if}</span>
+            {keepOrder ? t("planner.yourOrder") : t("planner.suggestedOrder")}
+            <span class="sub">{t("common.tracks", { count: plan.tracks.length })} · {time(plan.totalSeconds)}{#if plan.leftOut.length} · {t("planner.leftOut", { count: plan.leftOut.length })}{/if}</span>
           </h3>
           <span class="sub">
-            {counts.ok} z {plan.transitions.length} přechodů v harmonii · tempo ±{maxPitch.toFixed(0)} %{#if counts.boost} · {counts.boost} energy {plural(counts.boost, "boost", "boosty", "boostů")}{/if}{#if counts.warn} · {counts.warn} {plural(counts.warn, "náročný", "náročné", "náročných")}{/if}
+            {t("planner.harmony", { ok: counts.ok, count: plan.transitions.length })} · {t("planner.tempoRange", { pitch: maxPitch.toFixed(0) })}{#if counts.boost} · {t("planner.boosts", { count: counts.boost })}{/if}{#if counts.warn} · {t("planner.hardOnes", { count: counts.warn })}{/if}
           </span>
         </div>
-        <button class="btn" onclick={previewAll} disabled={!plan.transitions.length} title="Přehraje přechody jeden po druhém: obě skladby přes sebe podle plánu">
-          {#if chain}<Square size={13} fill="currentColor" /> Zastavit{:else}<Headphones size={15} /> Poslechnout přechody{/if}
+        <button class="btn" onclick={previewAll} disabled={!plan.transitions.length} title={t("planner.listenHint")}>
+          {#if chain}<Square size={13} fill="currentColor" /> {t("common.stop")}{:else}<Headphones size={15} /> {t("planner.listen")}{/if}
         </button>
         <button class="btn primary" onclick={apply} disabled={busy || applied}>
-          {#if applied}<Check size={15} /> Uloženo{:else}<Check size={15} /> {keepOrder ? "Uložit cue přechodů" : "Použít pořadí a cue"}{/if}
+          {#if applied}<Check size={15} /> {t("planner.saved")}{:else}<Check size={15} /> {keepOrder ? t("planner.saveCues") : t("planner.applyAll")}{/if}
         </button>
       </div>
 
-      <div class="bars" role="img" aria-label="Energie v průběhu setu, barva podle tóniny">
-        {#each plan.tracks as t, i (t.trackId)}
+      <div class="bars" role="img" aria-label={t("planner.energyBars")}>
+        {#each plan.tracks as pt, i (pt.trackId)}
           {@const end = i + 1 < plan.tracks.length ? plan.tracks[i + 1].start : plan.totalSeconds}
           <button
             class="bar"
-            class:sel={app.selectedTrack === t.trackId}
-            style:flex-grow={Math.max(1, end - t.start)}
-            style:--k={keyColor(t.key)}
-            style:--h="{(t.energy / 10) * 100}%"
-            style:--t="{(t.target / 10) * 100}%"
-            title="{title(t.trackId)} · {t.key || '?'} · energie {t.energy.toFixed(1)} (cíl {t.target.toFixed(1)})"
-            onclick={() => app.selectTrack(t.trackId)}
+            class:sel={app.selectedTrack === pt.trackId}
+            style:flex-grow={Math.max(1, end - pt.start)}
+            style:--k={keyColor(pt.key)}
+            style:--h="{(pt.energy / 10) * 100}%"
+            style:--t="{(pt.target / 10) * 100}%"
+            title={t("planner.barHint", { title: title(pt.trackId), key: pt.key || "?", energy: pt.energy.toFixed(1), target: pt.target.toFixed(1) })}
+            onclick={() => app.selectTrack(pt.trackId)}
           ><span class="fill"></span><i></i></button>
         {/each}
       </div>
 
       <div class="list">
-        {#each plan.tracks as t, i (t.trackId)}
-          <div class="track" class:sel={app.selectedTrack === t.trackId}>
+        {#each plan.tracks as pt, i (pt.trackId)}
+          <div class="track" class:sel={app.selectedTrack === pt.trackId}>
             <span class="readout pos">{i + 1}</span>
-            <button class="name" onclick={() => app.selectTrack(t.trackId)}>
-              <span class="tt">{title(t.trackId)}</span><span class="ar">{artist(t.trackId)}</span>
+            <button class="name" onclick={() => app.selectTrack(pt.trackId)}>
+              <span class="tt">{title(pt.trackId)}</span><span class="ar">{artist(pt.trackId)}</span>
             </button>
-            <span class="readout at" title="Začátek v setu">{time(t.start)}</span>
-            <span class="readout en" title="Energie">E {t.energy.toFixed(1)}</span>
-            <span class="readout bpm">{t.bpm.toFixed(2)}</span>
-            <span class="keypill" style:--k={keyColor(t.key)}>{t.key || "?"}</span>
+            <span class="readout at" title={t("planner.startInSet")}>{time(pt.start)}</span>
+            <span class="readout en" title={t("planner.energy")}>E {pt.energy.toFixed(1)}</span>
+            <span class="readout bpm">{pt.bpm.toFixed(2)}</span>
+            <span class="keypill" style:--k={keyColor(pt.key)}>{pt.key || "?"}</span>
           </div>
           {#if plan.transitions[i]}
             {@const tr = plan.transitions[i]}
             {@const k = kind(tr)}
             <div class="trans {k}">
-              <button class="chip" onclick={() => (open = open === i ? null : i)} aria-expanded={open === i} title="{RELATION[tr.keyRelation] ?? tr.keyRelation} · pitch {tr.pitchPercent > 0 ? '+' : ''}{tr.pitchPercent.toFixed(1)} % · energie {tr.energyStep > 0 ? '+' : ''}{tr.energyStep.toFixed(1)}">
+              <button class="chip" onclick={() => (open = open === i ? null : i)} aria-expanded={open === i} title={t("planner.transHint", { relation: relation(tr.keyRelation), pitch: `${tr.pitchPercent > 0 ? "+" : ""}${tr.pitchPercent.toFixed(1)}`, energy: `${tr.energyStep > 0 ? "+" : ""}${tr.energyStep.toFixed(1)}` })}>
                 {#if k === "ok"}<Check size={13} />{:else if k === "boost"}<TrendingUp size={13} />{:else}<TriangleAlert size={13} />{/if}
-                <span>{t.key || "?"} → {plan.tracks[i + 1].key || "?"}</span>
+                <span>{pt.key || "?"} → {plan.tracks[i + 1].key || "?"}</span>
                 <span>·</span><span>{bpmStep(i)}</span>
-                <span>·</span><span>{k === "boost" ? "energy boost" : k === "warn" ? warnText(tr) : `${tr.bars} taktů`}</span>
+                <span>·</span><span>{k === "boost" ? t("planner.relation.plus2") : k === "warn" ? warnText(tr) : t("planner.bars", { count: tr.bars })}</span>
               </button>
               <span class="tech" style:--c={TECH_COLOR[tr.technique] ?? "var(--text-2)"}>{tr.techniqueName}</span>
-              <span class="from">od {cueTime(tr.startAtMs)}</span>
-              <button class="prev" class:on={playingIdx === i} onclick={() => preview(i)} title="Přehrát přechod: obě skladby přes sebe podle plánu" aria-label="Přehrát přechod">
+              <span class="from">{t("planner.fromTime", { time: cueTime(tr.startAtMs) })}</span>
+              <button class="prev" class:on={playingIdx === i} onclick={() => preview(i)} title={t("planner.previewHint")} aria-label={t("planner.preview")}>
                 {#if playingIdx === i}<Square size={10} fill="currentColor" />{:else}<Play size={10} fill="currentColor" />{/if}
               </button>
             </div>
@@ -434,11 +436,11 @@
               <ul class="tips">
                 {#each tr.tips as tip}<li>{tip}</li>{/each}
                 <li class="marks">
-                  <span>V „{title(tr.from)}“:</span>
+                  <span>{t("planner.inTrack", { title: title(tr.from) })}</span>
                   {#each tr.aMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
                 </li>
                 <li class="marks">
-                  <span>V „{title(tr.to)}“:</span>
+                  <span>{t("planner.inTrack", { title: title(tr.to) })}</span>
                   {#each tr.bMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
                 </li>
               </ul>

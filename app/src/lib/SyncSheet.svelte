@@ -19,7 +19,8 @@
     Usb,
   } from "@lucide/svelte";
   import { api, libApi, type EngineStatus, type Playlist, type SyncPlan } from "./api";
-  import { fsName, gb, plural, size, time } from "./format";
+  import { fsName, gb, num, size, time } from "./format";
+  import { t, type Key } from "./i18n.svelte";
   import SheetCheck from "./SheetCheck.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import SheetSwitch from "./SheetSwitch.svelte";
@@ -153,22 +154,22 @@
     try {
       await api.eject(stick);
       app.syncOpen = false;
-      app.notice = "Flashka je vysunutá, můžeš ji vytáhnout.";
+      app.notice = t("sync.ejected");
     } catch (e) {
-      failed = `Flashku nejde vysunout: ${e}`;
+      failed = t("sync.ejectFailed", { error: String(e) });
     }
   }
 
   // Progress: the steps, how far the whole sync is, copy speed and time left.
-  const STEPS: [string, string][] = [
-    ["analyze", "Analýza"],
-    ["backup", "Záloha"],
-    ["copy", "Kopírování"],
-    ["analysis", "Cue a waveformy"],
-    ["database", "Databáze"],
-    ["settings", "Nastavení"],
-    ["engine", "Denon"],
-    ["verify", "Kontrola"],
+  const STEPS: [string, Key][] = [
+    ["analyze", "sync.steps.analyze"],
+    ["backup", "sync.steps.backup"],
+    ["copy", "sync.steps.copy"],
+    ["analysis", "sync.steps.analysis"],
+    ["database", "sync.steps.database"],
+    ["settings", "sync.steps.settings"],
+    ["engine", "sync.steps.engine"],
+    ["verify", "sync.steps.verify"],
   ];
   const steps = $derived(
     STEPS.filter(
@@ -206,6 +207,8 @@
     return { total, used, add: plan.copyBytes, after: free - plan.copyBytes };
   });
   const pct = (b: number, total: number) => `${Math.min(100, Math.max(0, (b / total) * 100))}%`;
+  /** A text split around its `{name}` placeholder, so the value can sit in its own markup. */
+  const around = (key: Key, name: string) => t(key, { [name]: "\u0000" }).split("\u0000");
 </script>
 
 <svelte:window
@@ -216,12 +219,12 @@
 <SheetFrame
   id="sync-title"
   icon={Usb}
-  title={job?.state === "running" ? `Synchronizuji ${stickInfo?.name ?? ""}` : "Synchronizovat na flashku"}
+  title={job?.state === "running" ? t("sync.titleRunning", { name: stickInfo?.name ?? "" }) : t("sync.title")}
   sub={job
     ? stickInfo?.name
-      ? `Flashka ${stickInfo.name}`
+      ? t("sync.stickNamed", { name: stickInfo.name })
       : undefined
-    : "Vybrané sety a playlisty budou na flashce přesně tak, jak je máš v knihovně. Hudba se kopíruje jen tam, kde chybí."}
+    : t("sync.sub")}
   width={job ? 640 : 1100}
   onclose={job?.state === "running" ? undefined : () => (app.syncOpen = false)}
 >
@@ -229,9 +232,9 @@
     <div class="cols">
       <div class="left">
         <section>
-          <div class="step"><span class="num">1</span><h3>Flashka</h3></div>
+          <div class="step"><span class="num">1</span><h3>{t("sync.stick")}</h3></div>
           {#if app.sticks.length === 0}
-            <p class="none"><Usb size={14} /> Připoj flashku. Objeví se tady sama.</p>
+            <p class="none"><Usb size={14} /> {t("sync.noStick")}</p>
           {:else}
             <div class="sticks">
               {#each app.sticks as s (s.path)}
@@ -245,7 +248,7 @@
                   <span class="cap">
                     <span style:width={s.totalBytes ? pct(s.totalBytes - s.freeBytes, s.totalBytes) : "0%"}></span>
                   </span>
-                  <span class="meta">{fsName(s.filesystem)} · volných {gb(s.freeBytes)} z {gb(s.totalBytes)} GB</span>
+                  <span class="meta">{t("sync.stickMeta", { fs: fsName(s.filesystem), free: gb(s.freeBytes), total: gb(s.totalBytes) })}</span>
                 </label>
               {/each}
             </div>
@@ -254,10 +257,12 @@
 
         <section>
           <div class="step">
-            <span class="num">2</span><h3>Co na ní bude</h3>
+            <span class="num">2</span><h3>{t("sync.content")}</h3>
             <span class="count">
-              {pickedSets} {plural(pickedSets, "set", "sety", "setů")} · {pickedLists}
-              {plural(pickedLists, "playlist", "playlisty", "playlistů")} vybrané
+              {t("sync.picked", {
+                sets: t("sync.sets", { count: pickedSets }),
+                playlists: t("sync.playlists", { count: pickedLists }),
+              })}
             </span>
           </div>
           <div class="pick">
@@ -269,8 +274,8 @@
                 <SheetCheck state={st} />
                 {#if node.isFolder}<Folder size={14} />{:else if node.isSet}<Sparkles size={14} class="set" />{:else}<ListMusic size={14} />{/if}
                 <span class="pname">{node.name}</span>
-                {#if node.isSet}<span class="tag">set</span>{/if}
-                {#if st === "some"}<span class="tag part">částečně</span>{/if}
+                {#if node.isSet}<span class="tag">{t("sync.setTag")}</span>{/if}
+                {#if st === "some"}<span class="tag part">{t("sync.partial")}</span>{/if}
                 <span class="readout n">{subtreeTracks(node)}</span>
               </label>
             {/each}
@@ -278,45 +283,42 @@
         </section>
 
         <section>
-          <div class="step"><span class="num">3</span><h3>Možnosti</h3></div>
+          <div class="step"><span class="num">3</span><h3>{t("sync.options")}</h3></div>
           <div class="opts">
             <SheetSwitch
               bind:checked={flat}
-              label="Všechny playlisty rovnou nahoru, bez složek"
-              desc="Na přehrávači se nemusíš proklikávat složkami. Stejné názvy dostanou do závorky jméno složky."
+              label={t("stick.flat")}
+              desc={t("stick.flatHint")}
             />
             <SheetSwitch
               bind:checked={writeSettings}
-              label="Zapsat i moje nastavení přehrávače (My Settings)"
-              desc="Quantize, auto cue, jas, waveform a další, jak je máš uložené."
+              label={t("stick.writeSettings")}
+              desc={t("stick.writeSettingsHint")}
             >
               {#snippet extra()}
-                <button class="link" onclick={(e) => (e.preventDefault(), openSettings("player"))}>upravit</button>
+                <button class="link" onclick={(e) => (e.preventDefault(), openSettings("player"))}>{t("stick.edit")}</button>
               {/snippet}
             </SheetSwitch>
             <SheetSwitch
               checked={!!engine}
               onchange={(on) => setEngine(on ? "3.0.1" : null)}
-              label="Hybridní flashka i pro Denon"
-              desc="Engine DJ knihovna nad stejnými soubory, hudba na flashce jen jednou."
+              label={t("stick.hybrid")}
+              desc={t("stick.hybridHint")}
             />
             {#if engine}
               <div class="engine">
-                <div class="seg eng" role="radiogroup" aria-label="Nejstarší Denon">
+                <div class="seg eng" role="radiogroup" aria-label={t("stick.oldestDenon")}>
                   {#each ENGINE as o (o.schema)}
                     <button role="radio" aria-checked={engine === o.schema} class:on={engine === o.schema} onclick={() => setEngine(o.schema)}>
-                      {o.label}<span class="n">{o.note}</span>
+                      {o.label}<span class="n">{t(o.note)}</span>
                     </button>
                   {/each}
                 </div>
                 <p class="note">
-                  Vyber nejstarší firmware Denonu, na kterém budeš hrát; novější ho přečtou taky. Denon si knihovnu při
-                  prvním použití převede na svou verzi a starší přehrávač ji pak nepřečte, další synchronizace ji ale vrátí
-                  zpátky.
+                  {t("sync.engineNote")}
                   {#if engineStatus?.version}
-                    Na flashce už je Denon knihovna {engineStatus.version} ({engineStatus.tracks} skladeb): nahradí se, stará
-                    půjde do zálohy.
-                    {#if newer(engineStatus.version, engine)}Převedl ji novější Engine OS, zapíšu zpátky {engine}.{/if}
+                    {t("sync.engineExisting", { version: engineStatus.version, count: num(engineStatus.tracks) })}
+                    {#if newer(engineStatus.version, engine)}{t("sync.engineConverted", { version: engine })}{/if}
                   {/if}
                 </p>
               </div>
@@ -326,36 +328,36 @@
       </div>
 
       <aside class="right">
-        <div class="eyebrow">Co se stane</div>
+        <div class="eyebrow">{t("sync.whatHappens")}</div>
         {#if plan}
           <div class="hero">
             <span class="readout big">{plan.tracks}</span>
-            <span class="unit">{plural(plan.tracks, "skladba", "skladby", "skladeb")}</span>
+            <span class="unit">{t("sync.tracksUnit", { count: plan.tracks })}</span>
           </div>
-          <p class="hero-sub">v {plan.playlists} {plural(plan.playlists, "playlistu", "playlistech", "playlistech")}</p>
+          <p class="hero-sub">{t("sync.inPlaylists", { count: plan.playlists })}</p>
 
           <div class="facts">
             <div class="fact">
               <span class="ic"><Copy size={15} /></span>
-              <span class="ft"><b>Zkopírovat</b><small>nové nebo změněné soubory</small></span>
+              <span class="ft"><b>{t("sync.copy")}</b><small>{t("sync.copyHint")}</small></span>
               <span class="fv"><span class="readout">{plan.copyFiles}</span><small>{size(plan.copyBytes)}</small></span>
             </div>
             <div class="fact">
               <span class="ic ok"><CheckCheck size={15} /></span>
-              <span class="ft"><b>Už na flashce</b><small>stejný soubor, nic se nekopíruje</small></span>
+              <span class="ft"><b>{t("sync.reuse")}</b><small>{t("sync.reuseHint")}</small></span>
               <span class="fv"><span class="readout">{plan.reuseFiles}</span></span>
             </div>
             {#if plan.noAnalysis.length}
               <div class="fact">
                 <span class="ic violet"><AudioWaveform size={15} /></span>
-                <span class="ft"><b>Analyzovat</b><small>před zápisem: waveform, beatgrid, tónina</small></span>
+                <span class="ft"><b>{t("sync.analyze")}</b><small>{t("sync.analyzeHint")}</small></span>
                 <span class="fv"><span class="readout">{plan.noAnalysis.length}</span></span>
               </div>
             {/if}
             {#if plan.missingAudio.length}
               <div class="fact">
                 <span class="ic warn"><FileX size={15} /></span>
-                <span class="ft"><b>Chybí na Macu</b><small>nemají soubor, vynechají se</small></span>
+                <span class="ft"><b>{t("sync.missing")}</b><small>{t("sync.missingHint")}</small></span>
                 <span class="fv"><span class="readout">{plan.missingAudio.length}</span></span>
               </div>
             {/if}
@@ -364,55 +366,53 @@
           {#if space}
             <div class="space">
               <div class="space-head">
-                <span>Místo na flashce po synchronizaci</span>
-                <span class="readout" class:bad={!fits}>{fits ? `${gb(Math.max(0, space.after))} GB volných` : "nevejde se"}</span>
+                <span>{t("sync.spaceAfter")}</span>
+                <span class="readout" class:bad={!fits}>{fits ? t("sync.spaceFree", { gb: gb(Math.max(0, space.after)) }) : t("sync.noFit")}</span>
               </div>
               <div class="bar">
                 <span class="used" style:width={pct(space.used, space.total)}></span>
                 <span class="add" class:bad={!fits} style:width={pct(space.add, space.total)}></span>
               </div>
               <div class="legend">
-                <span><i class="used"></i>obsazeno {gb(space.used)} GB</span>
+                <span><i class="used"></i>{t("sync.spaceUsed", { gb: gb(space.used) })}</span>
                 <span><i class="add" class:bad={!fits}></i>+{size(space.add)}</span>
               </div>
             </div>
           {/if}
 
           {#if !fits}
-            <div class="callout danger"><CircleX size={15} /><span>Na flashce je málo místa ({size(plan.freeBytes)} volných).</span></div>
+            <div class="callout danger"><CircleX size={15} /><span>{t("sync.lowSpace", { size: size(plan.freeBytes) })}</span></div>
           {/if}
           {#if plan.missingAudio.length}
             <div class="callout">
               <CircleAlert size={15} />
-              <span>{plan.missingAudio.length} skladeb nemá soubor na Macu, vynechají se.</span>
+              <span>{t("sync.missingNote", { count: num(plan.missingAudio.length) })}</span>
             </div>
           {/if}
           {#if plan.noAnalysis.length}
             <div class="callout">
               <CircleAlert size={15} />
-              <span>{plan.noAnalysis.length} skladeb nemá analýzu: před zápisem je zanalyzuju (waveform, beatgrid, tónina).</span>
+              <span>{t("sync.noAnalysisNote", { count: num(plan.noAnalysis.length) })}</span>
             </div>
           {/if}
         {:else if planning}
-          <p class="wait"><LoaderCircle size={14} class="spin" /> Počítám, co je potřeba zkopírovat…</p>
+          <p class="wait"><LoaderCircle size={14} class="spin" /> {t("sync.planning")}</p>
         {:else}
-          <p class="wait">Vyber flashku a aspoň jeden set nebo playlist.</p>
+          <p class="wait">{t("sync.pickPrompt")}</p>
         {/if}
         {#if failed}<div class="callout danger"><CircleX size={15} /><span>{failed}</span></div>{/if}
 
         <div class="safety" class:open={safetyOpen}>
           <button class="safety-head" onclick={() => (safetyOpen = !safetyOpen)} aria-expanded={safetyOpen}>
             <ShieldCheck size={16} />
-            <span>Bezpečné: nejdřív záloha, databáze se přepíše až nakonec. Vytažení flashky nic nerozbije.</span>
+            <span>{t("sync.safety")}</span>
             <ChevronDown size={15} class="chev" />
           </button>
           {#if safetyOpen}
             <p>
-              Knihovna na flashce se vymění celá: playlisty, které nevybereš, z přehrávače zmizí. Hudba na flashce zůstane,
-              nic se nemaže. Stará databáze se nejdřív zazálohuje do ~/Stickwise/backups a nová se zapíše až nakonec, takže
-              vytažení flashky uprostřed nic nerozbije. Historie hraní z přehrávače zůstane jen v záloze.
-              {#if stickInfo?.filesystem === "exfat"}Flashka je exFAT: CDJ-2000NXS2 a starší ji nepřečtou.{/if}
-              OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) zatím nezapisujeme.
+              {t("sync.safetyText")}
+              {#if stickInfo?.filesystem === "exfat"}{t("sync.safetyExfat")}{/if}
+              {t("sync.safetyOneLibrary")}
             </p>
           {/if}
         </div>
@@ -423,7 +423,7 @@
       <div class="run-head">
         <span class="readout pct">{Math.floor(fraction * 100)} %</span>
         <span class="time">
-          {#if remaining != null}zbývá <span class="readout">~{time(remaining)}</span>{:else}<span class="readout">{time(elapsed)}</span>{/if}
+          {#if remaining != null}{@const [a, b] = around("sync.timeLeft", "time")}{a}<span class="readout">~{time(remaining)}</span>{b}{:else}<span class="readout">{time(elapsed)}</span>{/if}
         </span>
       </div>
       <div class="bigbar"><div style:width="{fraction * 100}%"></div></div>
@@ -431,32 +431,34 @@
         {#each steps as [key, label], i (key)}
           <li class:past={i < stepIndex} class:now={i === stepIndex}>
             {#if i < stepIndex}<Check size={12} />{:else if i === stepIndex}<LoaderCircle size={12} class="spin" />{:else}<span class="pip"></span>{/if}
-            {label}
+            {t(label)}
           </li>
         {/each}
       </ol>
       <p class="cur">{job.current}</p>
       <div class="stats">
         {#if job.phase === "copy"}
-          <span>Skladba <span class="readout">{Math.min(job.filesDone + 1, job.filesTotal)} / {job.filesTotal}</span></span>
+          {@const [a, b] = around("sync.trackProgress", "progress")}
+          <span>{a}<span class="readout">{Math.min(job.filesDone + 1, job.filesTotal)} / {job.filesTotal}</span>{b}</span>
           <span><span class="readout">{size(job.bytesDone)} / {size(job.bytesTotal)}</span></span>
           {#if speed > 0}<span><span class="readout">{(speed / 1e6).toFixed(1)}</span> MB/s</span>{/if}
         {:else if job.phase === "analysis" || job.phase === "analyze"}
-          <span>Skladba <span class="readout">{job.filesDone} / {job.filesTotal}</span></span>
+          {@const [a, b] = around("sync.trackProgress", "progress")}
+          <span>{a}<span class="readout">{job.filesDone} / {job.filesTotal}</span>{b}</span>
         {/if}
       </div>
-      <p class="hint"><ShieldCheck size={14} /> Flashku nevytahuj. Kdyby se to stalo, zůstane na ní předchozí knihovna.</p>
+      <p class="hint"><ShieldCheck size={14} /> {t("sync.dontUnplug")}</p>
     </div>
   {:else}
     <div class="body done">
       {#if job.state === "done"}
         <span class="done-ic"><CircleCheck size={30} /></span>
-        <h3>Hotovo</h3>
+        <h3>{t("common.done")}</h3>
       {:else if job.state === "cancelled"}
-        <h3>Synchronizace zastavena</h3>
+        <h3>{t("sync.stopped")}</h3>
       {:else}
         <span class="done-ic bad"><CircleX size={30} /></span>
-        <h3>Synchronizace skončila s problémem</h3>
+        <h3>{t("sync.failed")}</h3>
       {/if}
       <p>{job.message}</p>
     </div>
@@ -465,19 +467,19 @@
   {#snippet foot()}
     {#if !job}
       {#if stickInfo}
-        <span class="remember"><History size={14} /> Výběr si pamatuju pro {stickInfo.name}</span>
+        <span class="remember"><History size={14} /> {t("sync.remember", { name: stickInfo.name })}</span>
       {/if}
-      <button class="btn ghost lg" onclick={() => (app.syncOpen = false)}>Zrušit</button>
+      <button class="btn ghost lg" onclick={() => (app.syncOpen = false)}>{t("common.cancel")}</button>
       <button class="btn primary lg" onclick={start} disabled={!stick || !plan || picked.size === 0 || !fits}>
         <Usb size={16} />
-        Synchronizovat{plan ? ` ${plan.tracks} ${plural(plan.tracks, "skladbu", "skladby", "skladeb")}` : ""}
+        {plan ? t("sync.startCount", { count: num(plan.tracks) }) : t("sync.start")}
       </button>
     {:else if job.state === "running"}
-      <button class="btn lg" onclick={() => api.cancelJob(job.id)}>Zastavit</button>
+      <button class="btn lg" onclick={() => api.cancelJob(job.id)}>{t("common.stop")}</button>
     {:else}
-      <button class="btn ghost lg" onclick={() => (app.syncOpen = false)}>Zavřít</button>
+      <button class="btn ghost lg" onclick={() => (app.syncOpen = false)}>{t("common.close")}</button>
       {#if job.state === "done"}
-        <button class="btn primary lg" onclick={eject}><Eject size={16} /> Vysunout flashku</button>
+        <button class="btn primary lg" onclick={eject}><Eject size={16} /> {t("sync.eject")}</button>
       {/if}
     {/if}
   {/snippet}

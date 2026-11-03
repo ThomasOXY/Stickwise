@@ -1,0 +1,83 @@
+{
+  "cs": {
+    "technique": {
+      "longBlend": "Dlouhý blend",
+      "breakdownBlend": "Breakdown blend",
+      "dropSwap": "Drop swap",
+      "doubleDrop": "Double drop",
+      "echoOut": "Echo out / střih"
+    },
+    "tip": {
+      "longBlend": "Na Mix out skladby A pusť B od Mix in, blend {blend} taktů, basy přehoď v polovině (po {half} taktech).",
+      "breakdownStart": "Na začátku posledního breakdownu A pusť B od Mix in, basy B zatím stažené.",
+      "breakdownWeave": "Melodie se přes breakdown proplétají; na konci breakdownu A stáhni a pusť basy B.",
+      "swapBuild": "Během breakdownu A pusť buildup B (basy B dole).",
+      "swapDrop": "Přesně na drop A stáhni A a nech dropnout B místo něj — publikum čeká drop A a přijde B.",
+      "doubleStart": "Pusť B tak, aby jeho drop padl přesně na drop A.",
+      "doubleDrop": "Na dropu nech hrát obě, basy jen z jedné; po 8–16 taktech A stáhni.",
+      "echoOut": "Na konci fráze dej na A echo (1/2 nebo 3/4 beat) a stáhni ho.",
+      "echoIn": "B pusť čistě na první dobu další fráze, bez překryvu melodií.",
+      "tempo": "Tempo: {from} → {to} BPM, příchozí skladbu posuň o {pitch} %.",
+      "keyFits": "Tónina {from} → {to}: sedí, melodie můžou hrát přes sebe.",
+      "keyBoost": "Tónina {from} → {to}: energy boost, překryv melodií jen krátce.",
+      "keyUnknown": "Tónina neznámá, poslouchej, jestli se melodie nepere.",
+      "keyClash": "Tónina {from} → {to} se tluče: melodie přes sebe nepouštěj.",
+      "energyUp": "Velký skok energie nahoru: nech to bouchnout na dropu B.",
+      "energyDown": "Energie jde dolů: nech A dohrát, ať to nespadne náhle."
+    }
+  },
+  "en": {
+    "technique": {
+      "longBlend": "Long blend",
+      "breakdownBlend": "Breakdown blend",
+      "dropSwap": "Drop swap",
+      "doubleDrop": "Double drop",
+      "echoOut": "Echo out / cut"
+    },
+    "tip": {
+      "longBlend": "At track A's Mix out, start B from its Mix in, blend for {blend} bars, swap the bass halfway (after {half} bars).",
+      "breakdownStart": "At the start of A's last breakdown, start B from its Mix in, keep B's bass down for now.",
+      "breakdownWeave": "Let the melodies weave through the breakdown; at the end of A's breakdown, pull A out and bring in B's bass.",
+      "swapBuild": "During A's breakdown, start B's build-up (B's bass down).",
+      "swapDrop": "Right on A's drop, pull A out and let B drop instead — the crowd expects A's drop and gets B.",
+      "doubleStart": "Start B so its drop lands exactly on A's drop.",
+      "doubleDrop": "Let both play through the drop, bass from one only; pull A out after 8–16 bars.",
+      "echoOut": "At the end of a phrase, put an echo on A (1/2 or 3/4 beat) and pull it out.",
+      "echoIn": "Start B clean on the first beat of the next phrase, no overlapping melodies.",
+      "tempo": "Tempo: {from} → {to} BPM, shift the incoming track by {pitch} %.",
+      "keyFits": "Key {from} → {to}: fits, the melodies can play over each other.",
+      "keyBoost": "Key {from} → {to}: energy boost, overlap the melodies only briefly.",
+      "keyUnknown": "Key unknown, listen whether the melodies clash.",
+      "keyClash": "Key {from} → {to} clashes: don't let the melodies overlap.",
+      "energyUp": "Big jump in energy: let it hit on B's drop.",
+      "energyDown": "Energy goes down: let A play out so it doesn't drop off suddenly."
+    }
+  },
+  "de": {
+    "technique": {
+      "longBlend": "Langer Blend",
+      "breakdownBlend": "Breakdown-Blend",
+      "dropSwap": "Drop-Swap",
+      "doubleDrop": "Double Drop",
+      "echoOut": "Echo-out / Schnitt"
+    },
+    "tip": {
+      "longBlend": "Starte B am Mix out von Track A ab dem Mix in, blende {blend} Takte, tausch die Bässe in der Mitte (nach {half} Takten).",
+      "breakdownStart": "Starte B am Anfang des letzten Breakdowns von A ab dem Mix in, die Bässe von B bleiben vorerst unten.",
+      "breakdownWeave": "Die Melodien verweben sich über den Breakdown; am Ende des Breakdowns von A zieh A raus und gib die Bässe von B rein.",
+      "swapBuild": "Starte während des Breakdowns von A den Build-up von B (Bässe von B unten).",
+      "swapDrop": "Genau auf dem Drop von A zieh A raus und lass stattdessen B droppen — das Publikum erwartet den Drop von A und bekommt B.",
+      "doubleStart": "Starte B so, dass sein Drop genau auf den Drop von A fällt.",
+      "doubleDrop": "Lass auf dem Drop beide laufen, Bass nur von einem; nach 8–16 Takten zieh A raus.",
+      "echoOut": "Leg am Ende der Phrase ein Echo auf A (1/2 oder 3/4 Beat) und zieh es raus.",
+      "echoIn": "Starte B sauber auf der Eins der nächsten Phrase, ohne überlappende Melodien.",
+      "tempo": "Tempo: {from} → {to} BPM, verschieb den nächsten Track um {pitch} %.",
+      "keyFits": "Tonart {from} → {to}: passt, die Melodien dürfen übereinander laufen.",
+      "keyBoost": "Tonart {from} → {to}: Energy Boost, Melodien nur kurz überlappen.",
+      "keyUnknown": "Tonart unbekannt, hör hin, ob sich die Melodien beißen.",
+      "keyClash": "Tonart {from} → {to} beißt sich: lass die Melodien nicht übereinander laufen.",
+      "energyUp": "Großer Energiesprung nach oben: lass es auf dem Drop von B knallen.",
+      "energyDown": "Die Energie geht runter: lass A ausspielen, damit es nicht plötzlich abfällt."
+    }
+  }
+}

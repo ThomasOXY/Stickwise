@@ -74,10 +74,3 @@ export function rgb(c: [number, number, number] | null | undefined, slot = 0): s
 export function fsName(fs: string): string {
   return ({ msdos: "FAT32", exfat: "exFAT", hfs: "HFS+", apfs: "APFS" } as Record<string, string>)[fs] ?? fs;
 }
-
-/** Czech plural: 1 skladba, 2–4 skladby, 5+ skladeb. */
-export function plural(n: number, one: string, few: string, many: string): string {
-  if (n === 1) return one;
-  if (n >= 2 && n <= 4) return few;
-  return many;
-}

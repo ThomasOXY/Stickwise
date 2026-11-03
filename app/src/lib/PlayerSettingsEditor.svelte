@@ -2,6 +2,8 @@
   import { AudioWaveform, CircleCheck, Disc3, Lightbulb, Monitor, RotateCcw, SlidersHorizontal, SlidersVertical } from "@lucide/svelte";
   import type { Component } from "svelte";
   import { playerApi, type PlayerSettings, type SettingField, type SettingValues } from "./api";
+  import { num } from "./format";
+  import { t, type Key } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   /**
@@ -28,12 +30,12 @@
 
   const stickName = $derived(stick ? (app.sticks.find((s) => s.path === stick)?.name ?? stick.split("/").pop()) : null);
 
-  const GROUPS: [string, string][] = [
-    ["player", "Přehrávání"],
-    ["waveform", "Waveform a tónina"],
-    ["display", "Displej"],
-    ["light", "Osvětlení"],
-    ["mixer", "Mixer (DJM)"],
+  const GROUPS: [string, Key][] = [
+    ["player", "player.groups.player"],
+    ["waveform", "player.groups.waveform"],
+    ["display", "player.groups.display"],
+    ["light", "player.groups.light"],
+    ["mixer", "player.groups.mixer"],
   ];
 
   const ICONS: Record<string, Component<{ size?: number }>> = {
@@ -49,11 +51,11 @@
   let active = $state("player");
   const current = $derived(groups.find((x) => x.g === active) ?? groups[0]);
 
-  const SOURCES: Record<PlayerSettings["source"], string> = {
-    stick: "Načteno z flashky",
-    profile: "Tvoje uložené nastavení",
-    rekordbox: "Převzato z rekordboxu",
-    default: "Výchozí hodnoty",
+  const SOURCES: Record<PlayerSettings["source"], Key> = {
+    stick: "player.sources.stick",
+    profile: "player.sources.profile",
+    rekordbox: "player.sources.rekordbox",
+    default: "player.sources.default",
   };
 
   $effect(() => {
@@ -87,7 +89,7 @@
         done = await playerApi.write(stick, values);
       } else {
         await playerApi.save(values);
-        done = "Uloženo. Zapíše se na flashku při synchronizaci a formátování.";
+        done = t("player.saved");
       }
       loaded = { ...loaded!, values: { ...values }, profile: { ...values } };
     } catch (e) {
@@ -98,18 +100,18 @@
   }
 
   $effect(() => {
-    source = loaded ? SOURCES[loaded.source] : null;
+    source = loaded ? t(SOURCES[loaded.source]) : null;
   });
 </script>
 
 <div class="editor">
   <div class="cols">
-    <nav aria-label="Skupiny nastavení">
+    <nav aria-label={t("player.groupsLabel")}>
       {#each groups as x (x.g)}
         {@const Icon = ICONS[x.g] ?? SlidersHorizontal}
         <button class:on={current?.g === x.g} onclick={() => (active = x.g)}>
           <Icon size={16} />
-          <span>{x.title}</span>
+          <span>{t(x.title)}</span>
           <em>{x.list.length}</em>
         </button>
       {/each}
@@ -118,21 +120,20 @@
     <div class="pane">
       {#if loaded?.playerSaved.length}
         <p class="note">
-          Část nastavení na flashce uložil přímo přehrávač ({loaded.playerSaved.join(", ")}). Zápisem ho přepíšeš, stará
-          verze zůstane v záloze.
+          {t("player.playerSaved", { list: loaded.playerSaved.join(", ") })}
         </p>
       {/if}
       {#if !loaded && !failed}
-        <p class="wait">Načítám…</p>
+        <p class="wait">{t("common.loading")}</p>
       {/if}
 
       {#if current && loaded}
-        <h3>{current.title}</h3>
+        <h3>{t(current.title)}</h3>
         <div class="rows">
           {#each current.list as f (f.key)}
             {@const differs = stick && loaded.source === "stick" && values[f.key] !== loaded.profile[f.key]}
             <div class="row">
-              <span class="label" title={differs ? "Liší se od tvého uloženého nastavení" : undefined}>
+              <span class="label" title={differs ? t("player.differs") : undefined}>
                 {f.label}{#if differs}<span class="diff"></span>{/if}
               </span>
               {#if f.options.length > 5}
@@ -163,16 +164,16 @@
   </div>
 
 <footer>
-  <button class="btn ghost lg" onclick={defaults} disabled={!loaded || busy}><RotateCcw size={15} /> Výchozí</button>
+  <button class="btn ghost lg" onclick={defaults} disabled={!loaded || busy}><RotateCcw size={15} /> {t("common.default")}</button>
   {#if done}
     <span class="status ok"><CircleCheck size={14} /> {done}</span>
   {:else if changed}
-    <span class="status">{changed} {changed === 1 ? "změna" : changed < 5 ? "změny" : "změn"}</span>
+    <span class="status">{t("player.changes", { count: num(changed) })}</span>
   {/if}
   <span class="grow"></span>
-  {#if onclose}<button class="btn ghost lg" onclick={onclose} disabled={busy}>Zavřít</button>{/if}
+  {#if onclose}<button class="btn ghost lg" onclick={onclose} disabled={busy}>{t("common.close")}</button>{/if}
   <button class="btn primary lg" onclick={save} disabled={!loaded || busy}>
-    {stick ? `Zapsat na ${stickName}` : "Uložit"}
+    {stick ? t("player.writeTo", { name: stickName ?? "" }) : t("common.save")}
   </button>
 </footer>
 </div>

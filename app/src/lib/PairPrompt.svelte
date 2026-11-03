@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Laptop } from "@lucide/svelte";
   import { peerApi } from "./api";
+  import { t } from "./i18n.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
 
@@ -11,23 +12,22 @@
     const req = r.request;
     app.pairRequest = null;
     await peerApi.answer(req, accept);
-    if (accept) app.notice = `Spárováno s ${r.peer.name}.`;
+    if (accept) app.notice = t("peer.pair.paired", { name: r.peer.name });
   }
+
+  const check = $derived(t("peer.pair.checkCode").split("{name}"));
 </script>
 
-<SheetFrame id="pair-title" icon={Laptop} title="{r.peer.name} se chce spárovat" sub="Sync mezi Macy" width={480} onclose={() => answer(false)}>
+<SheetFrame id="pair-title" icon={Laptop} title={t("peer.pair.title", { name: r.peer.name })} sub={t("peer.title")} width={480} onclose={() => answer(false)}>
   <div class="body">
     <div class="code readout">{r.code}</div>
-    <p>
-      Zkontroluj, že <strong>{r.peer.name}</strong> ukazuje stejný kód. Když se kódy liší, odmítni: někdo jiný se tváří jako
-      tvůj Mac.
-    </p>
-    <p class="quiet">Spárované Macy si mezi sebou můžou posílat knihovnu. Spárování jde kdykoli zrušit.</p>
+    <p>{check[0]}<strong>{r.peer.name}</strong>{check[1]}</p>
+    <p class="quiet">{t("peer.pair.info")}</p>
   </div>
 
   {#snippet foot()}
-    <button class="btn ghost lg" onclick={() => answer(false)}>Odmítnout</button>
-    <button class="btn primary lg" onclick={() => answer(true)}>Kód sedí, spárovat</button>
+    <button class="btn ghost lg" onclick={() => answer(false)}>{t("peer.decline")}</button>
+    <button class="btn primary lg" onclick={() => answer(true)}>{t("peer.pair.accept")}</button>
   {/snippet}
 </SheetFrame>
 

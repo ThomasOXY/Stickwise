@@ -378,11 +378,11 @@ pub struct SyncReport {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
-    #[error("Na flashce je málo místa: potřeba {need} MB, volných {free} MB.")]
+    #[error("{}", i18n::t!("usb.noSpace", need = .need, free = .free))]
     NoSpace { need: u64, free: u64 },
     #[error("{0}")]
     Io(String),
-    #[error("Nová databáze neprošla kontrolou, flashka zůstala beze změny: {0}")]
+    #[error("{}", i18n::t!("usb.verifyFailed", error = .0))]
     Verify(String),
 }
 
@@ -749,7 +749,7 @@ pub fn execute(
         total: 1,
         ..Default::default()
     });
-    std::fs::create_dir_all(backup_dir).map_err(io("záloha"))?;
+    std::fs::create_dir_all(backup_dir).map_err(io(i18n::t!("usb.backup")))?;
     for f in [
         "PIONEER/rekordbox/export.pdb",
         "PIONEER/rekordbox/exportExt.pdb",
@@ -759,8 +759,8 @@ pub fn execute(
         let src = stick.join(f);
         if src.is_file() {
             let dst = backup_dir.join(f);
-            std::fs::create_dir_all(dst.parent().unwrap()).map_err(io("záloha"))?;
-            std::fs::copy(&src, &dst).map_err(io(format!("záloha {f}")))?;
+            std::fs::create_dir_all(dst.parent().unwrap()).map_err(io(i18n::t!("usb.backup")))?;
+            std::fs::copy(&src, &dst).map_err(io(i18n::t!("usb.backupOf", name = f)))?;
         }
     }
 
@@ -870,7 +870,7 @@ pub fn execute(
             if let Err(e) = written {
                 report
                     .warnings
-                    .push(format!("{} – {}: analýza se nezapsala ({e})", t.artist, t.title));
+                    .push(i18n::t!("usb.anlzNotWritten", artist = t.artist, title = t.title, error = e));
                 continue;
             }
             report.anlz_written += 1;
@@ -962,7 +962,7 @@ pub fn execute(
         if let Err(e) = crate::settings::write(stick, settings, &backup_dir.join("PIONEER")) {
             report
                 .warnings
-                .push(format!("Nastavení přehrávače se nezapsalo: {e}"));
+                .push(i18n::t!("usb.settingsNotWritten", error = e));
         } else {
             report.settings_written = true;
         }
@@ -979,17 +979,19 @@ pub fn execute(
         });
         match crate::engine::install(req, plan, schema, backup_dir) {
             Ok(e) => {
+                // Only the missing-audio warnings; {path} ends the text in every language.
+                let missing = i18n::t!("usb.denonMissingAudio", path = "");
                 report.warnings.extend(
                     e.warnings
                         .iter()
-                        .filter(|w| w.starts_with("Denon nenajde"))
+                        .filter(|w| w.starts_with(&missing))
                         .cloned(),
                 );
                 report.engine = Some(e);
             }
             Err(e) => report
                 .warnings
-                .push(format!("Denon knihovna se nezapsala: {e}")),
+                .push(i18n::t!("usb.denonNotWritten", error = e)),
         }
     }
 
@@ -1007,12 +1009,12 @@ pub fn execute(
         if !resolve(stick, &t.file_path).is_file() {
             report
                 .warnings
-                .push(format!("Chybí audio: {}", t.file_path));
+                .push(i18n::t!("usb.missingAudio", path = t.file_path));
         }
         if !t.analyze_path.is_empty() && !resolve(stick, &t.analyze_path).is_file() {
             report
                 .warnings
-                .push(format!("Chybí analýza: {}", t.analyze_path));
+                .push(i18n::t!("usb.missingAnalysis", path = t.analyze_path));
         }
     }
     report.tracks = back.tracks.len();

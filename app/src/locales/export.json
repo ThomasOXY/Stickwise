@@ -6,7 +6,59 @@
     "history": "Zahrnout historii",
     "historyHint": "Playlisty historie hraní z přehrávače.",
     "duplicates": "Skladba ve více playlistech",
-    "dup": { "clone": "Klon (nezabírá místo)", "copy": "Kopie", "symlink": "Odkaz" }
+    "dup": {
+      "clone": "Klon (nezabírá místo)",
+      "copy": "Kopie",
+      "symlink": "Odkaz"
+    },
+    "title": "Exportovat playlisty na disk",
+    "titleRunning": "Exportuji playlisty",
+    "sub": "Z flashky {name} do složky na Macu, jako obyčejné složky s hudbou. Flashka zůstane beze změny.",
+    "where": "Kam",
+    "playlists": "Playlisty",
+    "selectAll": "Vybrat vše",
+    "select": "Vybrat {name}",
+    "naming": "Pojmenování",
+    "dupCount": {
+      "one": "{count} skladba je ve více playlistech",
+      "few": "{count} skladby jsou ve více playlistech",
+      "other": "{count} skladeb je ve více playlistech"
+    },
+    "preview": "Náhled",
+    "moreFiles": {
+      "one": "+ {count} další",
+      "few": "+ {count} další",
+      "other": "+ {count} dalších"
+    },
+    "morePlaylists": {
+      "one": "+ {count} další playlist",
+      "few": "+ {count} další playlisty",
+      "other": "+ {count} dalších playlistů"
+    },
+    "pickOne": "Vyber aspoň jeden playlist.",
+    "historyFolder": "Historie",
+    "files": "Souborů",
+    "diskSpace": "Na disk zabere",
+    "clones": "Klonů (bez místa navíc)",
+    "copies": "Kopií navíc",
+    "links": "Odkazů",
+    "readOnly": "Z flashky se jen čte, nic se na ni nezapíše.",
+    "running": "Z flashky {name} do {dest}",
+    "progress": "{progress} skladeb",
+    "doneText": {
+      "one": "{count} skladba je v {dest}",
+      "few": "{count} skladby jsou v {dest}",
+      "other": "{count} skladeb je v {dest}"
+    },
+    "stopped": "Export zastaven",
+    "stoppedHint": "Hotové soubory zůstaly na disku. Další export naváže tam, kde skončil.",
+    "failed": "Export skončil s chybami",
+    "start": {
+      "one": "Exportovat {count} skladbu",
+      "few": "Exportovat {count} skladby",
+      "other": "Exportovat {count} skladeb"
+    },
+    "reveal": "Otevřít ve Finderu"
   },
   "en": {
     "numbered": "Number by order (01 – …)",
@@ -15,7 +67,54 @@
     "history": "Include history",
     "historyHint": "The player's play history playlists.",
     "duplicates": "Track in several playlists",
-    "dup": { "clone": "Clone (takes no space)", "copy": "Copy", "symlink": "Link" }
+    "dup": {
+      "clone": "Clone (takes no space)",
+      "copy": "Copy",
+      "symlink": "Link"
+    },
+    "title": "Export playlists to disk",
+    "titleRunning": "Exporting playlists",
+    "sub": "From the stick {name} to a folder on your Mac, as plain music folders. The stick stays unchanged.",
+    "where": "Where to",
+    "playlists": "Playlists",
+    "selectAll": "Select all",
+    "select": "Select {name}",
+    "naming": "Naming",
+    "dupCount": {
+      "one": "{count} track is in several playlists",
+      "other": "{count} tracks are in several playlists"
+    },
+    "preview": "Preview",
+    "moreFiles": {
+      "one": "+ {count} more",
+      "other": "+ {count} more"
+    },
+    "morePlaylists": {
+      "one": "+ {count} more playlist",
+      "other": "+ {count} more playlists"
+    },
+    "pickOne": "Pick at least one playlist.",
+    "historyFolder": "History",
+    "files": "Files",
+    "diskSpace": "Space on disk",
+    "clones": "Clones (no extra space)",
+    "copies": "Extra copies",
+    "links": "Links",
+    "readOnly": "The stick is only read, nothing gets written to it.",
+    "running": "From the stick {name} to {dest}",
+    "progress": "{progress} tracks",
+    "doneText": {
+      "one": "{count} track is in {dest}",
+      "other": "{count} tracks are in {dest}"
+    },
+    "stopped": "Export stopped",
+    "stoppedHint": "Finished files stay on the disk. The next export picks up where this one stopped.",
+    "failed": "The export finished with errors",
+    "start": {
+      "one": "Export {count} track",
+      "other": "Export {count} tracks"
+    },
+    "reveal": "Open in Finder"
   },
   "de": {
     "numbered": "Nach Reihenfolge nummerieren (01 – …)",
@@ -24,6 +123,53 @@
     "history": "Verlauf einbeziehen",
     "historyHint": "Die Verlaufs-Playlists des Players.",
     "duplicates": "Track in mehreren Playlists",
-    "dup": { "clone": "Klon (belegt keinen Platz)", "copy": "Kopie", "symlink": "Verknüpfung" }
+    "dup": {
+      "clone": "Klon (belegt keinen Platz)",
+      "copy": "Kopie",
+      "symlink": "Verknüpfung"
+    },
+    "title": "Playlists auf Festplatte exportieren",
+    "titleRunning": "Playlists werden exportiert",
+    "sub": "Vom Stick {name} in einen Ordner auf dem Mac, als ganz normale Musikordner. Der Stick bleibt unverändert.",
+    "where": "Wohin",
+    "playlists": "Playlists",
+    "selectAll": "Alle auswählen",
+    "select": "{name} auswählen",
+    "naming": "Benennung",
+    "dupCount": {
+      "one": "{count} Track ist in mehreren Playlists",
+      "other": "{count} Tracks sind in mehreren Playlists"
+    },
+    "preview": "Vorschau",
+    "moreFiles": {
+      "one": "+ {count} weitere",
+      "other": "+ {count} weitere"
+    },
+    "morePlaylists": {
+      "one": "+ {count} weitere Playlist",
+      "other": "+ {count} weitere Playlists"
+    },
+    "pickOne": "Wähl mindestens eine Playlist.",
+    "historyFolder": "Verlauf",
+    "files": "Dateien",
+    "diskSpace": "Platz auf der Festplatte",
+    "clones": "Klone (kein zusätzlicher Platz)",
+    "copies": "Zusätzliche Kopien",
+    "links": "Verknüpfungen",
+    "readOnly": "Vom Stick wird nur gelesen, nichts wird darauf geschrieben.",
+    "running": "Vom Stick {name} nach {dest}",
+    "progress": "{progress} Tracks",
+    "doneText": {
+      "one": "{count} Track ist in {dest}",
+      "other": "{count} Tracks sind in {dest}"
+    },
+    "stopped": "Export gestoppt",
+    "stoppedHint": "Fertige Dateien bleiben auf der Festplatte. Der nächste Export macht dort weiter, wo dieser aufgehört hat.",
+    "failed": "Export mit Fehlern beendet",
+    "start": {
+      "one": "{count} Track exportieren",
+      "other": "{count} Tracks exportieren"
+    },
+    "reveal": "Im Finder öffnen"
   }
 }

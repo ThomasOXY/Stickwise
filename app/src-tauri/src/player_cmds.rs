@@ -208,12 +208,9 @@ pub async fn settings_write(
         usb_tools::settings::write(&stick, &s, &backup).map_err(err)?;
         let back = usb_tools::settings::read(&stick);
         if back.found.len() != SettingFile::ALL.len() || back.settings != s {
-            return Err("Nastavení na flashce po zápisu nesedí, zkontroluj flashku.".into());
+            return Err(i18n::t!("app.player.settingsMismatch"));
         }
-        Ok(format!(
-            "Nastavení je na flashce {}. Přehrávač ho nabídne po vložení flashky (MENU → MY SETTINGS).",
-            stick_name(&stick)
-        ))
+        Ok(i18n::t!("app.player.settingsWritten", stick = stick_name(&stick)))
     })
     .await
 }
@@ -253,21 +250,21 @@ pub async fn list_disks(app: AppHandle) -> CmdResult<Vec<Disk>> {
     blocking(move || format::list(&protected(&app)).map_err(err)).await
 }
 
-/// diskutil's progress lines, in Czech, with how far the erase is.
+/// diskutil's progress lines, in the DJ's language, with how far the erase is.
 fn erase_step(line: &str) -> (String, f64) {
     let steps: [(&str, &str, f64); 7] = [
-        ("Started erase", "Začínám", 0.10),
-        ("Unmounting", "Odpojuji flashku", 0.15),
-        ("Creating the partition map", "Vytvářím oddíl", 0.25),
-        ("Waiting for partitions", "Čekám na oddíl", 0.35),
-        ("Formatting", "Formátuji", 0.45),
-        ("Mounting", "Připojuji flashku", 0.80),
-        ("Finished erase", "Smazáno", 0.85),
+        ("Started erase", "app.format.step.start", 0.10),
+        ("Unmounting", "app.format.step.unmount", 0.15),
+        ("Creating the partition map", "app.format.step.partition", 0.25),
+        ("Waiting for partitions", "app.format.step.waitPartition", 0.35),
+        ("Formatting", "app.format.step.formatting", 0.45),
+        ("Mounting", "app.format.step.mount", 0.80),
+        ("Finished erase", "app.format.step.erased", 0.85),
     ];
     steps
         .iter()
         .find(|s| line.starts_with(s.0))
-        .map_or((line.to_string(), -1.0), |s| (s.1.to_string(), s.2))
+        .map_or((line.to_string(), -1.0), |s| (i18n::t!(s.1), s.2))
 }
 
 /// Erase a stick as FAT32 or exFAT and prepare it for the players. The
@@ -282,7 +279,7 @@ pub fn format_start(
     confirm: String,
     write_settings: bool,
 ) -> CmdResult<u32> {
-    let fs = Filesystem::parse(&filesystem).ok_or("Neznámý souborový systém.")?;
+    let fs = Filesystem::parse(&filesystem).ok_or_else(|| i18n::t!("app.format.unknownFs"))?;
     let name = format::volume_name(&name, fs).map_err(err)?;
     let settings = if write_settings {
         Some(profile(&app)?.0)
@@ -293,11 +290,11 @@ pub fn format_start(
     std::thread::spawn(move || {
         let mut ev = dto::JobEvent {
             id,
-            label: format!("Formátování {name}"),
+            label: i18n::t!("app.format.label", name = name),
             state: "running",
             files_total: 1,
             bytes_total: 1,
-            current: "Zálohuji databázi a nastavení".into(),
+            current: i18n::t!("app.format.backingUp"),
             phase: "backup".into(),
             fraction: Some(0.02),
             ..Default::default()
@@ -309,7 +306,7 @@ pub fn format_start(
                 .map_err(err)?
                 .into_iter()
                 .find(|d| d.id == disk)
-                .ok_or("Flashka už není připojená.")?;
+                .ok_or_else(|| i18n::t!("app.format.stickGone"))?;
             let backup = backup_before_format(&current);
             ev.phase = "erase".into();
             let mount = format::format(&disk, fs, &name, &confirm, &protected, |line| {
@@ -324,13 +321,13 @@ pub fn format_start(
             })
             .map_err(err)?;
             ev.phase = "prepare".into();
-            ev.current = "Připravuji flashku pro přehrávače".into();
+            ev.current = i18n::t!("app.format.preparing");
             ev.fraction = Some(0.9);
             emit_job(&app, &ev);
             format::prepare(&mount, &name, &timestamp()[..10]).map_err(err)?;
             if let Some(s) = &settings {
                 ev.phase = "settings".into();
-                ev.current = "Zapisuji nastavení přehrávače".into();
+                ev.current = i18n::t!("app.format.writingSettings");
                 ev.fraction = Some(0.95);
                 emit_job(&app, &ev);
                 let tmp = std::env::temp_dir().join(format!("rbx-format-{id}"));
@@ -345,18 +342,21 @@ pub fn format_start(
                 ev.files_done = 1;
                 ev.bytes_done = 1;
                 ev.dest = mount.display().to_string();
-                let mut msg = format!(
-                    "Flashka {name} je naformátovaná ({}) a připravená, můžeš na ni synchronizovat.",
-                    match fs {
+                let mut msg = i18n::t!(
+                    "app.format.done",
+                    name = name,
+                    fs = match fs {
                         Filesystem::Fat32 => "FAT32",
                         Filesystem::ExFat => "exFAT",
                     }
                 );
                 if settings.is_some() {
-                    msg += " Nastavení přehrávače je na ní.";
+                    msg += " ";
+                    msg += &i18n::t!("app.format.settingsOn");
                 }
                 if let Some(b) = backup {
-                    msg += &format!(" Stará databáze je v záloze {}.", b.display());
+                    msg += " ";
+                    msg += &i18n::t!("app.format.oldBackup", path = b.display());
                 }
                 ev.message = msg;
             }

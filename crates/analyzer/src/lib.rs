@@ -23,7 +23,7 @@ use pioneer_formats::anlz::{AnlzFile, Beat, BeatGrid, Section, build_path, compl
 pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("nejde dekódovat: {0}")]
+    #[error("{}", i18n::t!("analyzer.cantDecode", error = .0))]
     Decode(String),
     #[error("model Beat This!: {0}")]
     Model(String),

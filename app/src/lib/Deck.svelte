@@ -22,6 +22,7 @@
   import { api } from "./api";
   import { cssColor } from "./cues";
   import { cueTime, keyColor, size, time } from "./format";
+  import { t } from "./i18n.svelte";
   import { prefs } from "./prefs.svelte";
   import { app } from "./state.svelte";
   import CuePads from "./CuePads.svelte";
@@ -60,8 +61,8 @@
   const cues = $derived(detail?.cues ?? []);
   const from = $derived(
     app.deck?.source === "library"
-      ? "Hraje z knihovny"
-      : `Hraje z flashky ${app.sticks.find((s) => s.path === app.deck?.stickPath)?.name ?? ""}`,
+      ? t("deck.fromLibrary")
+      : t("deck.fromStick", { name: app.sticks.find((s) => s.path === app.deck?.stickPath)?.name ?? "" }),
   );
   const ghosts = $derived(
     app.smartOpen && app.smart
@@ -168,7 +169,7 @@
 
   export function toggle() {
     if (!audio || !track) return;
-    if (audio.paused) audio.play().catch((e) => (app.error = `Skladbu nejde přehrát: ${e.message ?? e}`));
+    if (audio.paused) audio.play().catch((e) => (app.error = t("deck.playError", { error: e.message ?? e })));
     else audio.pause();
   }
 
@@ -261,7 +262,7 @@
     ></audio>
 
     <div class="top">
-      <button class="play" class:on={playing} onclick={toggle} aria-label={playing ? "Pozastavit" : "Přehrát"}>
+      <button class="play" class:on={playing} onclick={toggle} aria-label={playing ? t("deck.pause") : t("deck.play")}>
         {#if playing}<Pause size={18} fill="currentColor" />{:else}<Play size={18} fill="currentColor" />{/if}
       </button>
       <div class="art">
@@ -273,13 +274,13 @@
       </div>
       <div class="flags">
         {#if !app.deckHere}
-          <span class="chip" title="Skladba zůstala na decku po přepnutí zdroje">{from}</span>
+          <span class="chip" title={t("deck.fromHint")}>{from}</span>
         {/if}
         {#if issue}
-          <span class="chip fault"><span class="dot fault"></span>{app.formatOverride.get(track.id) ?? track.format}, na CDJ nepůjde</span>
+          <span class="chip fault"><span class="dot fault"></span>{t("deck.notOnCdj", { format: app.formatOverride.get(track.id) ?? track.format })}</span>
         {/if}
         {#if detail?.edited}
-          <span class="chip edited">Cue upravené, zatím jen v aplikaci <button onclick={() => app.revertCues()}>Vrátit</button></span>
+          <span class="chip edited">{t("deck.edited")} <button onclick={() => app.revertCues()}>{t("deck.revert")}</button></span>
         {/if}
       </div>
 
@@ -289,7 +290,7 @@
             class="tool"
             class:on={app.smartOpen}
             onclick={() => (app.smartOpen ? (app.smartOpen = false) : app.loadSmart())}
-            title="Smart Cue: najde dropy, breaky a další místa pro cue"
+            title={t("deck.smartHint")}
           >
             <WandSparkles size={14} /> Smart Cue
           </button>
@@ -298,12 +299,12 @@
           class="tool"
           class:on={app.gridOpen}
           onclick={() => (app.gridOpen = !app.gridOpen)}
-          title="Úprava beatgridu: tempo, posun, první doba taktu, metronom"
+          title={t("deck.gridHint")}
         >
           <Grid3x3 size={14} /> Grid
         </button>
         {#if styles.length > 1}
-          <div class="styles" role="radiogroup" aria-label="Styl waveformu">
+          <div class="styles" role="radiogroup" aria-label={t("deck.waveStyle")}>
             {#each styles as s}
               <button role="radio" aria-checked={activeStyle === s} class:on={activeStyle === s} onclick={() => (style = s)}>
                 {STYLE_LABELS[s]}
@@ -314,15 +315,15 @@
         <button
           class="tool icon"
           onclick={() => zoom(1.5)}
-          aria-label="Oddálit"
-          title="Oddálit (zobrazeno {span < 10 ? span.toFixed(1) : Math.round(span)} s)"
+          aria-label={t("deck.zoomOut")}
+          title={t("deck.zoomOutHint", { seconds: span < 10 ? span.toFixed(1) : Math.round(span) })}
           disabled={span >= MAX_SPAN}><ZoomOut size={14} /></button
         >
         <button
           class="tool icon"
           onclick={() => zoom(1 / 1.5)}
-          aria-label="Přiblížit"
-          title="Přiblížit (zobrazeno {span < 10 ? span.toFixed(1) : Math.round(span)} s)"
+          aria-label={t("deck.zoomIn")}
+          title={t("deck.zoomInHint", { seconds: span < 10 ? span.toFixed(1) : Math.round(span) })}
           disabled={span <= MIN_SPAN}><ZoomIn size={14} /></button
         >
       </div>
@@ -334,11 +335,11 @@
         </div>
         <div class="ro">
           <span class="readout v" style:color={keyColor(track.key)}>{track.key || "–"}</span>
-          <span class="eyebrow">Tónina</span>
+          <span class="eyebrow">{t("deck.key")}</span>
         </div>
         <div class="ro time">
           <span class="v"><span class="readout">{time(position)}</span> <span class="readout dim">−{time(duration - position)}</span></span>
-          <span class="eyebrow">Čas</span>
+          <span class="eyebrow">{t("deck.time")}</span>
         </div>
       </div>
 
@@ -346,8 +347,8 @@
         <button
           class="vol-btn"
           onclick={() => (muted && fader === 0 ? setFader(0.7) : (muted = !muted))}
-          aria-label={muted ? "Zapnout zvuk" : "Ztlumit"}
-          title={muted ? "Zapnout zvuk" : "Ztlumit"}
+          aria-label={muted ? t("deck.unmute") : t("deck.mute")}
+          title={muted ? t("deck.unmute") : t("deck.mute")}
         >
           {#if muted || fader === 0}<VolumeX size={15} />{:else if fader < 0.5}<Volume1 size={15} />{:else}<Volume2 size={15} />{/if}
         </button>
@@ -359,21 +360,21 @@
           value={muted ? 0 : fader}
           oninput={(e) => setFader(Number(e.currentTarget.value))}
           style:--fill="{(muted ? 0 : fader) * 100}%"
-          aria-label="Hlasitost"
-          title="Hlasitost {Math.round((muted ? 0 : fader) * 100)} %"
+          aria-label={t("deck.volume")}
+          title={t("deck.volumeHint", { percent: Math.round((muted ? 0 : fader) * 100) })}
         />
       </div>
 
       {#if !collapsed}
-        <button class="corner" onclick={() => (big = !big)} aria-label={big ? "Zmenšit deck" : "Zvětšit deck"} title={big ? "Zmenšit deck" : "Zvětšit deck: větší waveform, memory cue a soubor"}>
+        <button class="corner" onclick={() => (big = !big)} aria-label={big ? t("deck.shrink") : t("deck.grow")} title={big ? t("deck.shrink") : t("deck.growHint")}>
           {#if big}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}
         </button>
       {/if}
       <button
         class="corner"
         onclick={() => (collapsed = !collapsed)}
-        aria-label={collapsed ? "Rozbalit deck" : "Sbalit deck"}
-        title={collapsed ? "Rozbalit deck" : "Sbalit deck"}
+        aria-label={collapsed ? t("deck.expand") : t("deck.collapse")}
+        title={collapsed ? t("deck.expand") : t("deck.collapse")}
       >
         {#if collapsed}<ChevronUp size={16} />{:else}<ChevronDown size={16} />{/if}
       </button>
@@ -416,22 +417,22 @@
           <span class="eyebrow">Memory</span>
           <div class="mems">
             {#each memories as c}
-              <button class="mem" onclick={() => setTime(c.timeMs / 1000)} title="Skok na {cueTime(c.timeMs)}">
+              <button class="mem" onclick={() => setTime(c.timeMs / 1000)} title={t("deck.jumpTo", { time: cueTime(c.timeMs) })}>
                 <i style:border-top-color={c.color ? cssColor(c) : "var(--danger)"}></i>
                 <span class="readout">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
                 {#if c.comment || c.loopEndMs}
-                  <span class="lbl">{c.comment || `smyčka ${c.loopBeats?.[0] ?? ""}`.trim()}</span>
+                  <span class="lbl">{c.comment || (c.loopBeats ? t("deck.loopBeats", { beats: c.loopBeats[0] }) : t("deck.loop"))}</span>
                 {/if}
               </button>
             {/each}
             {#if pads}
-              <button class="mem add" onclick={() => pads?.addMemory()} aria-label="Přidat memory cue" title="Memory cue na aktuální pozici (M)">
+              <button class="mem add" onclick={() => pads?.addMemory()} aria-label={t("deck.addMemory")} title={t("deck.addMemoryHint")}>
                 <Plus size={13} />
               </button>
             {/if}
           </div>
           <span class="path" title={track.absPath}><FileAudio size={13} /> <span>{shortPath(track.absPath)}</span></span>
-          <button class="btn ghost finder" onclick={() => api.reveal(track.absPath)}><FolderOpen size={13} /> Ve Finderu</button>
+          <button class="btn ghost finder" onclick={() => api.reveal(track.absPath)}><FolderOpen size={13} /> {t("deck.finder")}</button>
         </div>
       {/if}
     </div>
@@ -440,7 +441,7 @@
       <SmartCuePanel {setTime} />
     {/if}
   {:else}
-    <p class="idle">Vyber skladbu v tabulce. Mezerníkem ji pustíš, kolečkem myši nad waveformem přiblížíš.</p>
+    <p class="idle">{t("deck.idle")}</p>
   {/if}
 </footer>
 

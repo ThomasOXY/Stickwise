@@ -1,35 +1,37 @@
 <script lang="ts">
   import { CircleCheck, RotateCw, Settings, ShieldCheck } from "@lucide/svelte";
+  import { t } from "./i18n.svelte";
   import SheetFrame from "./SheetFrame.svelte";
   import { access as a } from "./access.svelte";
+
+  const step1 = $derived(t("shell.access.step1").split("{path}"));
+  // "{app} … {plus} …": the pieces around both.
+  const step2 = $derived(t("shell.access.step2").split(/\{app\}|\{plus\}/));
 </script>
 
-<SheetFrame id="access-title" icon={ShieldCheck} title="Povol Stickwise přístup k disku" sub="Jednou a natrvalo" width={540} onclose={() => a.close()}>
+<SheetFrame id="access-title" icon={ShieldCheck} title={t("shell.access.title")} sub={t("shell.access.sub")} width={540} onclose={() => a.close()}>
   <div class="body">
     {#if a.granted}
-      <p class="ok"><CircleCheck size={18} />Přístup k disku je povolený.</p>
+      <p class="ok"><CircleCheck size={18} />{t("shell.access.granted")}</p>
     {:else}
-      <p>
-        Hudbu čte Stickwise z externích disků, flashek a z knihovny rekordboxu. Bez plného přístupu k disku se macOS ptá
-        pořád dokola, nebo mu soubory rovnou nedá.
-      </p>
+      <p>{t("shell.access.why")}</p>
       <ol>
-        <li>Otevři <strong>Nastavení › Soukromí a zabezpečení › Plný přístup k disku</strong>.</li>
-        <li>Zapni <strong>Stickwise</strong>. Když v seznamu chybí, přidej ho tlačítkem <strong>+</strong> ze složky Aplikace.</li>
-        <li>Restartuj Stickwise.</li>
+        <li>{step1[0]}<strong>{t("shell.access.step1Path")}</strong>{step1[1]}</li>
+        <li>{step2[0]}<strong>Stickwise</strong>{step2[1]}<strong>+</strong>{step2[2]}</li>
+        <li>{t("shell.access.step3")}</li>
       </ol>
-      <p class="quiet">Síť (hledání dalších Maců) se zeptá jen jednou. Po povolení vydrží i přes aktualizace.</p>
+      <p class="quiet">{t("shell.access.network")}</p>
     {/if}
   </div>
 
   {#snippet foot()}
     {#if a.granted}
-      <button class="btn ghost lg" onclick={() => a.close()}>Hotovo</button>
-      <button class="btn primary lg" onclick={() => a.restart()}><RotateCw size={16} />Restartovat</button>
+      <button class="btn ghost lg" onclick={() => a.close()}>{t("common.done")}</button>
+      <button class="btn primary lg" onclick={() => a.restart()}><RotateCw size={16} />{t("common.restart")}</button>
     {:else}
-      <button class="btn ghost lg" onclick={() => a.close()}>Později</button>
-      <button class="btn lg" onclick={() => a.restart()}><RotateCw size={16} />Restartovat</button>
-      <button class="btn primary lg" onclick={() => a.settings()}><Settings size={16} />Otevřít Nastavení</button>
+      <button class="btn ghost lg" onclick={() => a.close()}>{t("common.later")}</button>
+      <button class="btn lg" onclick={() => a.restart()}><RotateCw size={16} />{t("common.restart")}</button>
+      <button class="btn primary lg" onclick={() => a.settings()}><Settings size={16} />{t("shell.access.openSettings")}</button>
     {/if}
   {/snippet}
 </SheetFrame>

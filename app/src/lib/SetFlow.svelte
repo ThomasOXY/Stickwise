@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Track } from "./api";
   import { keyColor, keyOrder } from "./format";
+  import { t } from "./i18n.svelte";
   import { app } from "./state.svelte";
 
   let { tracks }: { tracks: Track[] } = $props();
@@ -34,24 +35,24 @@
 
 <div class="flow">
   <div class="head">
-    <span class="label">Průběh setu</span>
-    <span class="legend">výška = BPM · barva = tónina</span>
+    <span class="label">{t("planner.flow.title")}</span>
+    <span class="legend">{t("planner.flow.legend")}</span>
     {#if hardCount > 0}
-      <span class="hard"><i></i>{hardCount} {hardCount === 1 ? "tvrdý přechod" : hardCount < 5 ? "tvrdé přechody" : "tvrdých přechodů"}</span>
+      <span class="hard"><i></i>{t("planner.flow.hard", { count: hardCount })}</span>
     {:else if tracks.length > 1}
-      <span class="smooth"><i></i>všechny přechody sedí</span>
+      <span class="smooth"><i></i>{t("planner.flow.smooth")}</span>
     {/if}
   </div>
   <div class="bars">
-    {#each tracks as t, i (`${i}:${t.id}`)}
+    {#each tracks as tr, i (`${i}:${tr.id}`)}
       <button
         class="bar"
-        class:cur={t.id === app.selectedTrack}
-        style:height="{height(t.bpm)}%"
-        style:--c={keyColor(t.key)}
-        title="{i + 1}. {t.title} · {t.bpm ? t.bpm.toFixed(1) : '–'} BPM · {t.key || '–'}"
-        onclick={() => app.selectTrack(t.id)}
-        aria-label="{i + 1}. {t.title}"
+        class:cur={tr.id === app.selectedTrack}
+        style:height="{height(tr.bpm)}%"
+        style:--c={keyColor(tr.key)}
+        title="{i + 1}. {tr.title} · {tr.bpm ? tr.bpm.toFixed(1) : '–'} BPM · {tr.key || '–'}"
+        onclick={() => app.selectTrack(tr.id)}
+        aria-label="{i + 1}. {tr.title}"
       ></button>
     {/each}
   </div>

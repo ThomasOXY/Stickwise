@@ -222,7 +222,7 @@ pub fn install(
         for (from, to) in r.renamed {
             report
                 .warnings
-                .push(format!("Denon: playlist „{from}“ přejmenován na „{to}“"));
+                .push(i18n::t!("usb.denonRenamed", from = from, to = to));
         }
         let bytes = std::fs::read(&built).map_err(|e| e.to_string())?;
 
@@ -235,7 +235,7 @@ pub fn install(
             let f = dir.join(name);
             if f.is_file() {
                 std::fs::create_dir_all(&saved).map_err(|e| e.to_string())?;
-                std::fs::copy(&f, saved.join(name)).map_err(|e| format!("záloha {name}: {e}"))?;
+                std::fs::copy(&f, saved.join(name)).map_err(|e| format!("{}: {e}", i18n::t!("usb.backupOf", name = name)))?;
                 if name != "m.db" {
                     std::fs::create_dir_all(&aside).map_err(|e| e.to_string())?;
                     std::fs::rename(&f, aside.join(name)).map_err(|e| format!("{name}: {e}"))?;
@@ -246,15 +246,15 @@ pub fn install(
         crate::format::remove_apple_double(&stick.join("Engine Library"));
 
         // Read back what the Denon will read.
-        let back = engine_library::read(&live).map_err(|e| format!("kontrola m.db: {e}"))?;
+        let back = engine_library::read(&live).map_err(|e| format!("{}: {e}", i18n::t!("usb.checkOf", name = "m.db")))?;
         if back.tracks.len() != lib.tracks.len() {
-            return Err("Denon knihovna po zápisu nesedí.".to_string());
+            return Err(i18n::t!("usb.denonMismatch"));
         }
         for t in &back.tracks {
             if !resolve(stick, &t.path).is_file() {
                 report
                     .warnings
-                    .push(format!("Denon nenajde audio: {}", t.path));
+                    .push(i18n::t!("usb.denonMissingAudio", path = t.path));
             }
         }
         Ok(())

@@ -1,5 +1,84 @@
 {
-  "cs": {},
-  "en": {},
-  "de": {}
+  "cs": {
+    "title": "Nastavení přehrávače",
+    "sheetTitle": "Nastavení přehrávače · {name}",
+    "sheetSub": "My Settings na flashce. CDJ/XDJ je po vložení flashky nabídne načíst (MENU → MY SETTINGS).",
+    "groups": {
+      "player": "Přehrávání",
+      "waveform": "Waveform a tónina",
+      "display": "Displej",
+      "light": "Osvětlení",
+      "mixer": "Mixer (DJM)"
+    },
+    "groupsLabel": "Skupiny nastavení",
+    "sources": {
+      "stick": "Načteno z flashky",
+      "profile": "Tvoje uložené nastavení",
+      "rekordbox": "Převzato z rekordboxu",
+      "default": "Výchozí hodnoty"
+    },
+    "saved": "Uloženo. Zapíše se na flashku při synchronizaci a formátování.",
+    "playerSaved": "Část nastavení na flashce uložil přímo přehrávač ({list}). Zápisem ho přepíšeš, stará verze zůstane v záloze.",
+    "differs": "Liší se od tvého uloženého nastavení",
+    "changes": {
+      "one": "{count} změna",
+      "few": "{count} změny",
+      "other": "{count} změn"
+    },
+    "writeTo": "Zapsat na {name}"
+  },
+  "en": {
+    "title": "Player settings",
+    "sheetTitle": "Player settings · {name}",
+    "sheetSub": "My Settings on the stick. When you plug in the stick, the CDJ/XDJ offers to load them (MENU → MY SETTINGS).",
+    "groups": {
+      "player": "Playback",
+      "waveform": "Waveform and key",
+      "display": "Display",
+      "light": "Lighting",
+      "mixer": "Mixer (DJM)"
+    },
+    "groupsLabel": "Setting groups",
+    "sources": {
+      "stick": "Loaded from the stick",
+      "profile": "Your saved settings",
+      "rekordbox": "Taken from rekordbox",
+      "default": "Default values"
+    },
+    "saved": "Saved. It gets written to the stick when you sync or format.",
+    "playerSaved": "Some of the settings on the stick were saved by the player itself ({list}). Writing overwrites them; the old version stays in the backup.",
+    "differs": "Differs from your saved settings",
+    "changes": {
+      "one": "{count} change",
+      "other": "{count} changes"
+    },
+    "writeTo": "Write to {name}"
+  },
+  "de": {
+    "title": "Player-Einstellungen",
+    "sheetTitle": "Player-Einstellungen · {name}",
+    "sheetSub": "My Settings auf dem Stick. Steckst du den Stick ein, bietet der CDJ/XDJ an, sie zu laden (MENU → MY SETTINGS).",
+    "groups": {
+      "player": "Wiedergabe",
+      "waveform": "Waveform und Tonart",
+      "display": "Display",
+      "light": "Beleuchtung",
+      "mixer": "Mixer (DJM)"
+    },
+    "groupsLabel": "Einstellungsgruppen",
+    "sources": {
+      "stick": "Vom Stick geladen",
+      "profile": "Deine gespeicherten Einstellungen",
+      "rekordbox": "Aus rekordbox übernommen",
+      "default": "Standardwerte"
+    },
+    "saved": "Gespeichert. Wird beim Sync und Formatieren auf den Stick geschrieben.",
+    "playerSaved": "Einen Teil der Einstellungen auf dem Stick hat der Player selbst gespeichert ({list}). Beim Schreiben überschreibst du sie, die alte Version bleibt im Backup.",
+    "differs": "Weicht von deinen gespeicherten Einstellungen ab",
+    "changes": {
+      "one": "{count} Änderung",
+      "other": "{count} Änderungen"
+    },
+    "writeTo": "Auf {name} schreiben"
+  }
 }
