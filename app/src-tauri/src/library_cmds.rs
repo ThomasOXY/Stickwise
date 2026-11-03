@@ -983,7 +983,7 @@ pub fn sync_start(
         emit_job(&app, &ev);
         let home = std::env::var("HOME").unwrap_or_default();
         let backup = PathBuf::from(home)
-            .join("RB-EXPORT/backups")
+            .join("Stickwise/backups")
             .join(&name)
             .join(format!("sync-{}", timestamp()));
         let result = sync::execute(&req, &plan, &backup, &cancel, |p| {

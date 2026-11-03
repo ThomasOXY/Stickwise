@@ -1,6 +1,6 @@
 [package]
 name = "rbx-app"
-description = "RB-EXPORT desktop app"
+description = "Stickwise desktop app"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

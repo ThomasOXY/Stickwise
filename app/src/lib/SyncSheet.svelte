@@ -412,7 +412,7 @@
           {#if safetyOpen}
             <p>
               Knihovna na flashce se vymění celá: playlisty, které nevybereš, z přehrávače zmizí. Hudba na flashce zůstane,
-              nic se nemaže. Stará databáze se nejdřív zazálohuje do ~/RB-EXPORT/backups a nová se zapíše až nakonec, takže
+              nic se nemaže. Stará databáze se nejdřív zazálohuje do ~/Stickwise/backups a nová se zapíše až nakonec, takže
               vytažení flashky uprostřed nic nerozbije. Historie hraní z přehrávače zůstane jen v záloze.
               {#if stickInfo?.filesystem === "exfat"}Flashka je exFAT: CDJ-2000NXS2 a starší ji nepřečtou.{/if}
               OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) zatím nezapisujeme.

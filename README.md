@@ -1,4 +1,4 @@
-# RB-EXPORT
+# Stickwise
 
 Vlastní exporter / správce knihovny pro Pioneer CDJ/XDJ (a Denon) — náhrada rekordbox exportu, která nerozbije flashku.
 Plán: [PLAN.md](PLAN.md).
@@ -34,4 +34,4 @@ update odmítne, takže klíč neztrať.
 
 Appka není podepsaná Apple certifikátem: při **první** instalaci z DMG ji macOS zablokuje,
 povol ji v Nastavení → Soukromí a zabezpečení → „Přesto otevřít“
-(nebo `xattr -cr /Applications/RB-EXPORT.app`). Další aktualizace už jdou bez dotazu.
+(nebo `xattr -cr /Applications/Stickwise.app`). Další aktualizace už jdou bez dotazu.

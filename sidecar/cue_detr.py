@@ -1,4 +1,4 @@
-"""CUE-DETR cue point estimation for RB-EXPORT.
+"""CUE-DETR cue point estimation for Stickwise.
 
 Inference adapted from ETH DISCO's cue-detr (MIT License, Copyright (c) 2024
 ETH DISCO, https://github.com/ETH-DISCO/cue-detr): the track becomes a mel

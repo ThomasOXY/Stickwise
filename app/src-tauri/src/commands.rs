@@ -841,7 +841,7 @@ pub async fn write_cues(app: AppHandle, path: String) -> CmdResult<dto::CueWrite
             .collect();
         let home = std::env::var("HOME").unwrap_or_default();
         let backup = PathBuf::from(home)
-            .join("RB-EXPORT/backups")
+            .join("Stickwise/backups")
             .join(&name)
             .join(format!("cues-{}", timestamp()));
         let report = usb_tools::cue_write::write_cues(&stick, &edits, &backup);

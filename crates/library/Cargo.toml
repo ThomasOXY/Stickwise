@@ -1,6 +1,6 @@
 [package]
 name = "library"
-description = "RB-EXPORT local library: tracks, playlists, sets, cues (SQLite)"
+description = "Stickwise local library: tracks, playlists, sets, cues (SQLite)"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

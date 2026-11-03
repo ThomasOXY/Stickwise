@@ -202,7 +202,7 @@ pub async fn settings_write(
         }
         apply(&mut s, &values)?;
         let backup = home()
-            .join("RB-EXPORT/backups")
+            .join("Stickwise/backups")
             .join(stick_name(&stick))
             .join(format!("settings-{}", timestamp()));
         usb_tools::settings::write(&stick, &s, &backup).map_err(err)?;
@@ -223,7 +223,8 @@ pub async fn settings_write(
 /// Disks formatting must never touch: the app's data, the library's music
 /// and analysis, rekordbox's own library.
 fn protected(app: &AppHandle) -> Vec<PathBuf> {
-    let mut out = vec![home().join("RB-EXPORT")];
+    // RB-EXPORT is the app's old name; older backups stay there.
+    let mut out = vec![home().join("Stickwise"), home().join("RB-EXPORT")];
     if let Ok(d) = app.path().app_data_dir() {
         out.push(d);
     }
@@ -397,7 +398,7 @@ fn backup_before_format(disk: &Disk) -> Option<PathBuf> {
             continue;
         }
         let dir = home()
-            .join("RB-EXPORT/backups")
+            .join("Stickwise/backups")
             .join(stick_name(mount))
             .join(format!("format-{}", timestamp()));
         for f in files {

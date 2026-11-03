@@ -1,4 +1,4 @@
-# RB-EXPORT — vlastní exporter, analyzátor a správce knihovny pro Pioneer CDJ/XDJ
+# Stickwise (dříve RB-EXPORT) — vlastní exporter, analyzátor a správce knihovny pro Pioneer CDJ/XDJ
 
 > Cíl: spolehlivý export na USB pro CDJ/XDJ (hot cue, memory cue, loopy, beatgrid, waveformy, playlisty),
 > vlastní analýza, správa playlistů, náhled skladby a waveformu.
@@ -212,7 +212,7 @@ Tohle je hlavní důvod projektu, takže to je v návrhu od prvního dne:
 
 1. **Nikdy nepsat databázi přímo na USB.** Celý `PIONEER/` se sestaví ve **staging adresáři na disku počítače**.
 2. **Validace před zápisem:** vygenerovaný `export.pdb` a všechny ANLZ se znovu načtou vlastním parserem **a** rekordcrate; každý track musí mít existující audio soubor a ANLZ.
-3. **Záloha:** stávající `PIONEER/` z flashky se zkopíruje do `~/RB-EXPORT/backups/<usb-id>/<datum>/` (malé, jen DB + ANLZ, ne audio).
+3. **Záloha:** stávající `PIONEER/` z flashky se zkopíruje do `~/Stickwise/backups/<usb-id>/<datum>/` (malé, jen DB + ANLZ, ne audio).
 4. **Audio soubory** (`Contents/`) se kopírují inkrementálně: porovnání velikost + hash; zápis do `soubor.tmp` → `fsync` → rename.
 5. **Databáze až nakonec:** `PIONEER.new/` na USB → `fsync` → přejmenovat starý na `PIONEER.old/` → `PIONEER.new/` na `PIONEER/` → smazat `PIONEER.old/`. Při výpadku uprostřed zůstane vždy jedna kompletní verze.
 6. **Journal na USB** (`.rbx/journal.json`): co se právě dělá; po přerušení aplikace při dalším připojení dokončí nebo vrátí operaci.

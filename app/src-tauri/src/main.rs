@@ -79,5 +79,5 @@ fn main() {
             player_cmds::format_start,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running RB-EXPORT");
+        .expect("error while running Stickwise");
 }

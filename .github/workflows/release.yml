@@ -76,7 +76,7 @@ jobs:
         with:
           projectPath: app
           tagName: ${{ env.TAG }}
-          releaseName: RB-EXPORT ${{ env.TAG }}
+          releaseName: Stickwise ${{ env.TAG }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false

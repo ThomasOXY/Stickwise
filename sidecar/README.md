@@ -1,4 +1,4 @@
-# RB-EXPORT analysis sidecar
+# Stickwise analysis sidecar
 
 Local Python tools the app runs for analysis it cannot do itself yet.
 

@@ -154,7 +154,7 @@
             <TriangleAlert size={16} />
             <p>
               <strong>Všechno na {confirmName} ({gb(disk.size)} GB) se smaže</strong>: hudba, playlisty, historie hraní.
-              Databáze a nastavení se předtím zazálohují do ~/RB-EXPORT/backups, hudba ne.
+              Databáze a nastavení se předtím zazálohují do ~/Stickwise/backups, hudba ne.
             </p>
           </div>
           {#if !disk.removable}

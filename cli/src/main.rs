@@ -9,7 +9,7 @@ use usb_tools::extract;
 use usb_tools::{compat, verify};
 
 #[derive(Parser)]
-#[command(name = "rbx", version, about = "RB-EXPORT: Pioneer USB tools")]
+#[command(name = "rbx", version, about = "Stickwise: Pioneer USB tools")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

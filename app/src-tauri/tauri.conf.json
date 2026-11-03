@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RB-EXPORT",
+  "productName": "Stickwise",
   "version": "0.1.0",
   "identifier": "cz.thomasoxy.rbexport",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "RB-EXPORT",
+        "title": "Stickwise",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,

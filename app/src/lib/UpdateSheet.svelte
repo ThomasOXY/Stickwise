@@ -55,7 +55,7 @@
       ? "Tohle je nového"
       : u.update && u.available
         ? [`Máš ${u.current}`, day(u.update.date)].filter(Boolean).join(" · ")
-        : `RB-EXPORT ${u.current}`,
+        : `Stickwise ${u.current}`,
   );
 </script>
 

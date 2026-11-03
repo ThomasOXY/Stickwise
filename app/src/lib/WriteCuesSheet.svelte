@@ -42,7 +42,7 @@
     <p class="note">
       <ShieldCheck size={15} class="ok" />
       <span>
-        Původní soubory se nejdřív zazálohují do ~/RB-EXPORT/backups. Každý soubor se zapíše vedle originálu, ověří a
+        Původní soubory se nejdřív zazálohují do ~/Stickwise/backups. Každý soubor se zapíše vedle originálu, ověří a
         teprve pak vymění, takže vytažení flashky uprostřed nic nerozbije.
       </span>
     </p>

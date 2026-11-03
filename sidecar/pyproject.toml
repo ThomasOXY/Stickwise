@@ -1,7 +1,7 @@
 [project]
 name = "rbx-sidecar"
 version = "0.1.0"
-description = "RB-EXPORT local audio analysis (CUE-DETR cue point estimation)"
+description = "Stickwise local audio analysis (CUE-DETR cue point estimation)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "torch>=2.3",

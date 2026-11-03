@@ -1,4 +1,4 @@
-"""Dump a rekordbox 6/7 library (master.db) to JSON for RB-EXPORT.
+"""Dump a rekordbox 6/7 library (master.db) to JSON for Stickwise.
 
 Usage: python rekordbox_dump.py MASTER_DIR OUT.json
 
