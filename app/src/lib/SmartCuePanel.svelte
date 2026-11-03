@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { BrainCircuit, LoaderCircle, Sparkles, X } from "@lucide/svelte";
+  import { BrainCircuit, Check, LoaderCircle, MapPin, Replace, SquarePlus, WandSparkles, X } from "@lucide/svelte";
   import type { Cue, SmartCue } from "./api";
   import { SLOT_LETTERS, blankCue, firstFreeSlot } from "./cues";
-  import { cueTime } from "./format";
+  import { cueTime, plural } from "./format";
   import { app } from "./state.svelte";
 
   interface Props {
@@ -67,10 +67,13 @@
 
 <div class="panel" role="dialog" aria-label="Smart Cue">
   <div class="head">
-    <Sparkles size={14} />
-    <span class="title">Smart Cue</span>
-    <span class="sub">{list.length} míst, {chosen.length} vybráno</span>
-    <button class="x" onclick={() => (app.smartOpen = false)} aria-label="Zavřít"><X size={14} /></button>
+    <span class="tile"><WandSparkles size={16} /></span>
+    <div class="titles">
+      <span class="title">Smart Cue</span>
+      <span class="sub">{list.length} {plural(list.length, "místo", "místa", "míst")} ve skladbě · {chosen.length} {plural(chosen.length, "vybrané", "vybrané", "vybraných")}</span>
+    </div>
+    {#if hasAi}<span class="detr" title="Body navrhl model CUE-DETR"><BrainCircuit size={12} /> CUE-DETR</span>{/if}
+    <button class="x" onclick={() => (app.smartOpen = false)} aria-label="Zavřít"><X size={16} /></button>
   </div>
   {#if !hasAi && trackId != null && app.deckHere}
     <div class="ai">
@@ -80,159 +83,254 @@
         <span>Přesnější body z modelu natrénovaného na cue profi DJů.</span>
         <button class="btn small" onclick={() => app.aiAnalyze([trackId])}><BrainCircuit size={13} /> AI analýza</button>
       {:else}
-        <span class="sub">AI analýza (CUE-DETR) není k dispozici: aplikaci chybí instalátor nástrojů (uv).</span>
+        <span>AI analýza (CUE-DETR) není k dispozici: aplikaci chybí instalátor nástrojů (uv).</span>
       {/if}
     </div>
   {/if}
   <div class="list">
     {#each list as s, i (`${i}:${s.timeMs}`)}
-      <div class="row" class:off={!picked.has(s.timeMs)}>
-        <input type="checkbox" checked={picked.has(s.timeMs)} onchange={() => toggle(s)} aria-label="Vybrat {s.label}" />
+      {@const on = picked.has(s.timeMs)}
+      <div class="row" class:on>
+        <label class="check">
+          <input type="checkbox" checked={on} onchange={() => toggle(s)} aria-label="Vybrat {s.label}" />
+          <span class="box">{#if on}<Check size={12} strokeWidth={3} />{/if}</span>
+        </label>
         <span class="chip" style:background="rgb({s.color[0]} {s.color[1]} {s.color[2]})"></span>
         <button class="time readout" onclick={() => setTime(s.timeMs / 1000)} title="Skočit sem">{cueTime(s.timeMs)}</button>
-        <span class="label">{s.label}</span>
-        {#if s.ai}<span class="badge" title="Bod navrhl CUE-DETR">AI</span>{/if}
+        <span class="label">{s.label}{#if s.ai}<span class="badge" title="Bod navrhl CUE-DETR">AI</span>{/if}</span>
         <span class="bar">takt {s.bar}</span>
-        <span class="conf" style:width="{Math.round(s.confidence * 28)}px" title="Jak výrazná je změna"></span>
+        <span class="meter" title="Jak výrazná je změna: {Math.round(s.confidence * 100)} %">
+          <span class:high={s.confidence >= 0.7} style:width="{Math.round(s.confidence * 100)}%"></span>
+        </span>
       </div>
     {/each}
   </div>
   <div class="foot">
+    <button class="btn ghost small" onclick={asMemory} disabled={chosen.length === 0}><MapPin size={14} /> Jako memory</button>
+    <span class="spacer"></span>
     {#if hotCount > 0}
-      <button class="btn small" onclick={fillFree} disabled={chosen.length === 0}>Doplnit volné pady</button>
+      <button class="btn small" onclick={fillFree} disabled={chosen.length === 0}><SquarePlus size={14} /> Na volné pady</button>
       <button class="btn small primary" onclick={replaceHot} disabled={chosen.length === 0}>
-        Nahradit hot cue ({Math.min(8, chosen.length)})
+        <Replace size={14} /> Nahradit hot cue ({Math.min(8, chosen.length)})
       </button>
     {:else}
       <button class="btn small primary" onclick={replaceHot} disabled={chosen.length === 0}>
         Na pady {SLOT_LETTERS[0]}–{SLOT_LETTERS[Math.min(8, Math.max(1, chosen.length)) - 1]}
       </button>
     {/if}
-    <button class="btn small" onclick={asMemory} disabled={chosen.length === 0}>Jako memory cue</button>
   </div>
 </div>
 
 <style>
   .panel {
     position: absolute;
-    right: 24px;
-    bottom: calc(100% + 8px);
-    width: 380px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+    right: 46px;
+    bottom: calc(100% - 6px);
+    width: 540px;
+    background: var(--surface-1);
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+    box-shadow: var(--shadow-pop);
     z-index: 25;
     display: flex;
     flex-direction: column;
-    max-height: 420px;
+    max-height: 460px;
   }
   .head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px 14px 8px;
-    color: var(--cue);
+    gap: 12px;
+    padding: 14px 16px 12px 18px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .tile {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .titles {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
   }
   .title {
+    font-size: 15px;
     font-weight: 600;
-    color: var(--text);
   }
   .sub {
     font-size: 12px;
-    color: var(--text-2);
+    color: var(--text-3);
+  }
+  .detr {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 12px;
+    background: rgb(155 92 240 / 0.14);
+    color: #b48cf5;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
   }
   .x {
-    margin-left: auto;
     border: 0;
     background: none;
     color: var(--text-2);
-    padding: 2px;
+    padding: 4px;
+    display: flex;
+    border-radius: 6px;
+  }
+  .x:hover {
+    color: var(--text);
+    background: var(--surface-2);
   }
   .list {
     overflow-y: auto;
-    padding: 0 6px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 28px;
-    padding: 0 8px;
-    border-radius: 4px;
+    gap: 12px;
+    height: 42px;
+    padding: 0 10px;
+    border-radius: 8px;
   }
   .row:hover {
-    background: var(--panel-2);
+    background: var(--surface-2);
   }
-  .row.off {
-    opacity: 0.5;
+  .row.on {
+    background: var(--surface-2);
   }
-  .row input {
-    accent-color: var(--cue);
+  .check {
+    position: relative;
+    display: flex;
+    cursor: pointer;
+  }
+  .check input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
     margin: 0;
+    cursor: pointer;
+  }
+  .box {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 0 0 1.5px var(--text-3);
+    color: var(--on-accent);
+  }
+  .row.on .box {
+    background: var(--accent);
+    box-shadow: none;
+  }
+  .check:has(input:focus-visible) .box {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
   .chip {
-    width: 10px;
-    height: 10px;
+    width: 3px;
+    height: 20px;
     border-radius: 2px;
+    flex: none;
   }
   .time {
     border: 0;
     background: none;
     padding: 0;
-    font-size: 15px;
-    width: 56px;
+    font-size: 16px;
+    width: 52px;
     text-align: left;
+    flex: none;
   }
   .time:hover {
-    color: var(--cue);
+    color: var(--accent);
   }
   .label {
     flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
     font-weight: 500;
+  }
+  .row:not(.on) .label,
+  .row:not(.on) .time {
+    color: var(--text-2);
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px #9b6cf0;
+    color: #b48cf5;
+  }
+  .bar {
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .meter {
+    width: 56px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--surface-3);
+    overflow: hidden;
+    flex: none;
+  }
+  .meter span {
+    display: block;
+    height: 100%;
+    min-width: 4px;
+    border-radius: 2px;
+    background: var(--text-3);
+  }
+  .meter span.high {
+    background: var(--success);
   }
   .ai {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 14px 8px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    background: var(--booth);
+    margin: 10px 16px 2px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--surface-2);
     font-size: 12px;
     color: var(--text-2);
   }
   .ai span {
     flex: 1;
   }
-  .badge {
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 3px;
-    border: 1px solid var(--cue);
-    color: var(--cue);
-  }
-  .bar {
-    font-size: 11px;
-    color: var(--text-2);
-  }
-  .conf {
-    height: 3px;
-    border-radius: 2px;
-    background: var(--text-3);
-    min-width: 4px;
-  }
   .foot {
     display: flex;
-    gap: 6px;
-    padding: 10px 14px 12px;
-    border-top: 1px solid var(--line);
-    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--hairline);
+  }
+  .spacer {
+    flex: 1;
   }
   .btn.small {
-    height: 26px;
-    padding: 0 10px;
-    font-size: 12px;
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
   }
 </style>

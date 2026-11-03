@@ -54,8 +54,8 @@
 {#if track}
   <aside class="panel">
     <div class="head">
-      <span>Detail skladby</span>
-      <button class="x" onclick={() => (app.detailOpen = false)} aria-label="Zavřít detail"><X size={14} /></button>
+      <span class="eyebrow">Detail skladby</span>
+      <button class="btn ghost icon x" onclick={() => (app.detailOpen = false)} aria-label="Zavřít detail"><X size={14} /></button>
     </div>
 
     <div class="who">
@@ -73,7 +73,7 @@
 
     <div class="readouts">
       <div><span class="readout big">{track.bpm.toFixed(2)}</span><span class="sub">BPM</span></div>
-      <div><span class="readout big"><i style:background={keyColor(track.key)}></i>{track.key}</span><span class="sub">Tónina</span></div>
+      <div><span class="readout big" style:color={track.key ? keyColor(track.key) : undefined}>{track.key || "–"}</span><span class="sub">Tónina</span></div>
       <div><span class="readout big">{time(track.duration)}</span><span class="sub">Délka</span></div>
     </div>
 
@@ -84,7 +84,7 @@
       <dt>Velikost</dt><dd>{d ? size(d.fileSize) : "…"}</dd>
     </dl>
 
-    <div class="sect"><span>Detail</span><span class="readout">{cueTime(windowMs[0])} – {cueTime(windowMs[1])}</span></div>
+    <div class="sect"><span class="eyebrow">Detail</span><span class="readout">{cueTime(windowMs[0])} – {cueTime(windowMs[1])}</span></div>
     <div class="detail">
       <canvas bind:this={canvas}></canvas>
       {#each beatsInWindow as [t, n]}
@@ -96,7 +96,7 @@
       {#if d && !wave}<span class="none">Bez waveformu</span>{/if}
     </div>
 
-    <div class="sect"><span>Hot cue</span></div>
+    <div class="sect"><span class="eyebrow">Hot cue</span></div>
     {#each hot as c (c.slot)}
       <div class="cue-row">
         <span class="badge" style:background={rgb(c.color, c.slot)}>{letter(c.slot)}</span>
@@ -109,7 +109,7 @@
       <p class="sub small">{missingSlots.length === 8 ? "Žádné hot cue. Nastavíš je pady pod waveformem nebo klávesami 1–8." : `${missingSlots.join(", ")} nenastaveno`}</p>
     {/if}
 
-    <div class="sect"><span>Memory cue a smyčky</span></div>
+    <div class="sect"><span class="eyebrow">Memory cue a smyčky</span></div>
     {#each memory as c, i (`${i}:${c.timeMs}`)}
       <div class="cue-row">
         {#if c.loopEndMs}
@@ -137,9 +137,10 @@
   .panel {
     width: 360px;
     flex: none;
-    border-left: 1px solid var(--line);
-    background: var(--panel);
-    padding: 16px 20px;
+    margin: 0 20px 16px 0;
+    padding: 16px 18px 18px;
+    border-radius: 16px;
+    background: var(--surface-2);
     overflow-y: auto;
     animation: slide 0.16s ease-out;
   }
@@ -153,26 +154,22 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
-    margin-bottom: 14px;
+    margin: -4px -6px 12px 0;
   }
   .x {
-    border: 0;
-    background: none;
-    color: var(--text-2);
-    padding: 2px;
+    width: 28px;
+    height: 28px;
   }
   .who {
     display: flex;
     gap: 14px;
+    align-items: center;
   }
   img,
   .noart {
     width: 72px;
     height: 72px;
-    border-radius: 4px;
+    border-radius: 10px;
     object-fit: cover;
     flex: none;
   }
@@ -180,76 +177,72 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--panel-2);
+    background: var(--surface-3);
     color: var(--text-3);
   }
   .title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.3;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
   }
   .sub {
     font-size: 12px;
-    color: var(--text-2);
+    color: var(--text-3);
   }
   .small {
-    margin: 6px 0 0;
+    margin: 8px 0 0;
   }
   .readouts {
     display: flex;
-    gap: 22px;
+    gap: 8px;
     margin: 16px 0 12px;
   }
   .readouts > div {
+    flex: 1;
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: var(--r-control);
+    background: var(--surface-3);
   }
   .big {
     font-size: 24px;
     line-height: 1.1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .big i {
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
   }
   dl {
     display: grid;
     grid-template-columns: auto 1fr auto 1fr;
     gap: 8px 10px;
     margin: 0;
-    padding: 12px 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
+    padding: 4px 2px;
     font-size: 12px;
   }
   dt {
-    color: var(--text-2);
+    color: var(--text-3);
   }
   dd {
     margin: 0;
     text-align: right;
+    color: var(--text-2);
   }
   .sect {
     display: flex;
     justify-content: space-between;
-    margin: 14px 0 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
+    align-items: baseline;
+    margin: 18px 0 8px;
   }
   .sect .readout {
+    font-size: 13px;
     font-weight: 500;
+    color: var(--text-3);
   }
   .detail {
     position: relative;
     height: 64px;
-    background: var(--booth);
-    border-radius: 4px;
+    background: var(--bg);
+    border-radius: var(--r-control);
     overflow: hidden;
   }
   canvas {
@@ -277,8 +270,8 @@
     font-weight: 700;
     line-height: 13px;
     text-align: center;
-    color: var(--booth);
-    border-radius: 0 0 2px 2px;
+    color: var(--bg);
+    border-radius: 0 0 3px 3px;
   }
   .none {
     position: absolute;
@@ -292,18 +285,22 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    height: 24px;
-    border-bottom: 1px solid var(--line);
+    height: 30px;
+    padding: 0 6px;
+    border-radius: 6px;
+  }
+  .cue-row:hover {
+    background: var(--surface-3);
   }
   .badge {
-    width: 14px;
-    height: 14px;
-    border-radius: 2px;
-    font-size: 10px;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    font-size: 10.5px;
     font-weight: 700;
-    color: var(--booth);
+    color: #fff;
     text-align: center;
-    line-height: 14px;
+    line-height: 18px;
   }
   .t {
     font-size: 15px;
@@ -312,15 +309,15 @@
   .tri {
     width: 0;
     height: 0;
-    margin: 0 2px;
+    margin: 0 4px;
     border-left: 5px solid transparent;
     border-right: 5px solid transparent;
     border-top: 8px solid var(--text-2);
   }
   .loop {
-    width: 14px;
+    width: 18px;
     height: 8px;
-    border-radius: 1px;
+    border-radius: 2px;
     border: 0;
     padding: 0;
     opacity: 0.55;
@@ -333,7 +330,7 @@
   .cm {
     flex: 1;
     min-width: 0;
-    height: 22px;
+    height: 24px;
     border-color: transparent;
     background: transparent;
     padding: 0 6px;
@@ -341,10 +338,11 @@
     color: var(--text-2);
   }
   .cm:hover {
-    border-color: var(--line);
+    background: var(--surface-2);
   }
   .cm:focus {
     color: var(--text);
+    background: var(--surface-2);
   }
   .del {
     border: 0;
@@ -358,10 +356,10 @@
     opacity: 1;
   }
   .del:hover {
-    color: var(--fault);
+    color: var(--danger);
   }
   .path {
-    margin: 16px 0 10px;
+    margin: 18px 0 10px;
     word-break: break-all;
   }
 </style>

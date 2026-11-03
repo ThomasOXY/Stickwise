@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { CircleCheck, RotateCcw } from "@lucide/svelte";
+  import { AudioWaveform, CircleCheck, Disc3, Lightbulb, Monitor, RotateCcw, SlidersHorizontal, SlidersVertical } from "@lucide/svelte";
+  import type { Component } from "svelte";
   import { playerApi, type PlayerSettings, type SettingField, type SettingValues } from "./api";
+  import SheetFrame from "./SheetFrame.svelte";
   import { app } from "./state.svelte";
 
   /** A stick path, or `null` for the DJ's own settings kept in the app. */
@@ -22,6 +24,19 @@
     ["light", "Osvětlení"],
     ["mixer", "Mixer (DJM)"],
   ];
+
+  const ICONS: Record<string, Component<{ size?: number }>> = {
+    player: Disc3,
+    waveform: AudioWaveform,
+    display: Monitor,
+    light: Lightbulb,
+    mixer: SlidersVertical,
+  };
+  const groups = $derived(
+    GROUPS.map(([g, title]) => ({ g, title, list: fields.filter((f) => f.group === g) })).filter((x) => x.list.length),
+  );
+  let active = $state("player");
+  const current = $derived(groups.find((x) => x.g === active) ?? groups[0]);
 
   const SOURCES: Record<PlayerSettings["source"], string> = {
     stick: "Načteno z flashky",
@@ -76,42 +91,54 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && !busy && close()} />
 
-<div class="dim"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ps-title">
-  <div class="body">
-    <h2 id="ps-title">Nastavení přehrávače{stickName ? ` · ${stickName}` : ""}</h2>
-    <p class="sub">
-      {#if stick}
-        My Settings na flashce. CDJ/XDJ je po vložení flashky nabídne načíst (MENU → MY SETTINGS).
-      {:else}
-        Tvoje nastavení CDJ a mixeru. Zapíše se na flashku při synchronizaci a formátování.
+<SheetFrame
+  id="ps-title"
+  icon={SlidersHorizontal}
+  title="Nastavení přehrávače{stickName ? ` · ${stickName}` : ''}"
+  sub={stick
+    ? "My Settings na flashce. CDJ/XDJ je po vložení flashky nabídne načíst (MENU → MY SETTINGS)."
+    : "Tvoje nastavení CDJ a mixeru. Zapíše se na flashku při synchronizaci a formátování."}
+  width={1000}
+  onclose={busy ? undefined : close}
+>
+  {#snippet badge()}
+    {#if loaded}<span class="src" class:stick={loaded.source === "stick"}>{SOURCES[loaded.source]}</span>{/if}
+  {/snippet}
+
+  <div class="cols">
+    <nav aria-label="Skupiny nastavení">
+      {#each groups as x (x.g)}
+        {@const Icon = ICONS[x.g] ?? SlidersHorizontal}
+        <button class:on={current?.g === x.g} onclick={() => (active = x.g)}>
+          <Icon size={16} />
+          <span>{x.title}</span>
+          <em>{x.list.length}</em>
+        </button>
+      {/each}
+    </nav>
+
+    <div class="pane">
+      {#if loaded?.playerSaved.length}
+        <p class="note">
+          Část nastavení na flashce uložil přímo přehrávač ({loaded.playerSaved.join(", ")}). Zápisem ho přepíšeš, stará
+          verze zůstane v záloze.
+        </p>
       {/if}
-      {#if loaded}<span class="src">{SOURCES[loaded.source]}</span>{/if}
-    </p>
-    {#if loaded?.playerSaved.length}
-      <p class="note">
-        Část nastavení na flashce uložil přímo přehrávač ({loaded.playerSaved.join(", ")}). Zápisem ho přepíšeš,
-        stará verze zůstane v záloze.
-      </p>
-    {/if}
+      {#if !loaded && !failed}
+        <p class="wait">Načítám…</p>
+      {/if}
 
-    {#if !loaded && !failed}
-      <p class="sub">Načítám…</p>
-    {/if}
-
-    {#each GROUPS as [group, title] (group)}
-      {@const list = fields.filter((f) => f.group === group)}
-      {#if list.length && loaded}
-        <h3>{title}</h3>
-        <div class="grid">
-          {#each list as f (f.key)}
+      {#if current && loaded}
+        <h3>{current.title}</h3>
+        <div class="rows">
+          {#each current.list as f (f.key)}
             {@const differs = stick && loaded.source === "stick" && values[f.key] !== loaded.profile[f.key]}
-            <div class="field">
+            <div class="row">
               <span class="label" title={differs ? "Liší se od tvého uloženého nastavení" : undefined}>
                 {f.label}{#if differs}<span class="diff"></span>{/if}
               </span>
               {#if f.options.length > 5}
-                <select value={values[f.key]} onchange={(e) => set(f.key, Number(e.currentTarget.value))}>
+                <select value={values[f.key]} onchange={(e) => set(f.key, Number(e.currentTarget.value))} aria-label={f.label}>
                   {#each f.options as o (o.value)}
                     <option value={o.value}>{o.label}</option>
                   {/each}
@@ -132,179 +159,179 @@
           {/each}
         </div>
       {/if}
-    {/each}
 
-    {#if failed}<p class="err">{failed}</p>{/if}
+      {#if failed}<p class="err">{failed}</p>{/if}
+    </div>
   </div>
-  <div class="foot">
-    <button class="btn" onclick={defaults} disabled={!loaded || busy}><RotateCcw size={14} /> Výchozí</button>
+
+  {#snippet foot()}
+    <button class="btn ghost lg" onclick={defaults} disabled={!loaded || busy}><RotateCcw size={15} /> Výchozí</button>
     {#if done}
-      <span class="done"><CircleCheck size={14} /> {done}</span>
+      <span class="status ok"><CircleCheck size={14} /> {done}</span>
     {:else if changed}
-      <span class="changes">{changed} {changed === 1 ? "změna" : changed < 5 ? "změny" : "změn"}</span>
+      <span class="status">{changed} {changed === 1 ? "změna" : changed < 5 ? "změny" : "změn"}</span>
     {/if}
-    <button class="btn" onclick={close} disabled={busy}>Zavřít</button>
-    <button class="btn primary" onclick={save} disabled={!loaded || busy}>
-      {stick ? "Zapsat na flashku" : "Uložit"}
+    <span class="grow"></span>
+    <button class="btn ghost lg" onclick={close} disabled={busy}>Zavřít</button>
+    <button class="btn primary lg" onclick={save} disabled={!loaded || busy}>
+      {stick ? `Zapsat na ${stickName}` : "Uložit"}
     </button>
-  </div>
-</div>
+  {/snippet}
+</SheetFrame>
 
 <style>
-  .dim {
-    position: fixed;
-    inset: 0;
-    background: rgb(10 11 14 / 0.55);
-    z-index: 20;
+  .src {
+    flex: none;
+    height: 26px;
+    line-height: 26px;
+    padding: 0 12px;
+    border-radius: 13px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
+    background: var(--surface-3);
   }
-  .sheet {
-    position: fixed;
-    top: 36px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 760px;
-    max-height: calc(100vh - 72px);
+  .src.stick {
+    color: var(--success);
+    background: var(--success-soft);
+  }
+  .cols {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  nav {
+    background: var(--surface-2);
+    padding: 16px 12px;
     display: flex;
     flex-direction: column;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
-    z-index: 21;
-    animation: drop 0.18s ease-out;
-  }
-  @keyframes drop {
-    from {
-      transform: translate(-50%, -12px);
-      opacity: 0;
-    }
-  }
-  .body {
-    padding: 20px;
+    gap: 2px;
     overflow-y: auto;
   }
-  h2 {
-    margin: 0;
-    font-size: 15px;
+  nav button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--r-control);
+    background: none;
+    color: var(--text-2);
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  nav button:hover {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+  nav button.on {
+    background: var(--surface-3);
+    color: var(--text);
     font-weight: 600;
+  }
+  nav button :global(svg) {
+    flex: none;
+    color: var(--text-3);
+  }
+  nav button.on :global(svg) {
+    color: var(--accent);
+  }
+  nav span {
+    flex: 1;
+  }
+  nav em {
+    font-style: normal;
+    font-family: var(--font-readout);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .pane {
+    overflow-y: auto;
+    padding: 20px 28px 24px;
+    min-height: 420px;
   }
   h3 {
-    margin: 18px 0 8px;
-    font-size: 11px;
+    margin: 0 0 8px;
+    font-size: 16px;
     font-weight: 600;
-    color: var(--text-2);
   }
-  .sub {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .src {
-    margin-left: 6px;
-    font-size: 10px;
-    color: var(--cue);
-    border: 1px solid rgb(242 163 58 / 0.5);
-    border-radius: 3px;
-    padding: 0 4px;
-  }
-  .note {
-    margin: 10px 0 0;
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--warn);
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 18px;
-  }
-  .field {
+  .rows {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 6px 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 58px;
+    padding: 8px 0;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+  .row:last-child {
+    box-shadow: none;
   }
   .label {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-family: var(--font-readout);
-    font-size: 10.5px;
-    letter-spacing: 0.04em;
-    color: var(--text-2);
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
   }
   .diff {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--cue);
+    background: var(--accent);
   }
   .seg {
-    display: flex;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    overflow: hidden;
-    background: var(--booth);
-  }
-  .seg button {
-    flex: 1;
-    min-width: 0;
-    border: 0;
-    border-right: 1px solid var(--line);
-    background: none;
-    color: var(--text-2);
-    font-size: 11px;
-    padding: 5px 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .seg button:last-child {
-    border-right: 0;
-  }
-  .seg button:hover {
-    color: var(--text);
-  }
-  .seg button.on {
-    background: var(--panel-2);
-    color: var(--cue);
-    font-weight: 600;
+    flex: none;
   }
   select {
-    background: var(--booth);
+    height: 34px;
+    min-width: 160px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--r-control);
+    background: var(--surface-2);
     color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 12px;
+    font: inherit;
+    font-size: 12.5px;
+  }
+  .note {
+    margin: 0 0 14px;
+    padding: 10px 14px;
+    border-radius: var(--r-panel);
+    background: var(--warning-soft);
+    color: var(--warning);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .wait {
+    color: var(--text-3);
   }
   .err {
-    color: var(--fault);
+    color: var(--danger);
   }
-  .foot {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
-    border-top: 1px solid var(--line);
-  }
-  .foot .btn:nth-of-type(2) {
-    margin-left: auto;
-  }
-  .done,
-  .changes {
-    margin-left: 8px;
+  .status {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    min-width: 0;
+    font-size: 12.5px;
     color: var(--text-2);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
   }
-  .done {
-    color: var(--play);
+  .status.ok {
+    color: var(--success);
+  }
+  .grow {
+    flex: 1;
   }
 </style>

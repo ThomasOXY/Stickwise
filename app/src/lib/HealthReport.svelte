@@ -1,6 +1,20 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, LoaderCircle, Lock } from "@lucide/svelte";
+  import {
+    Brush,
+    ChevronDown,
+    CircleCheck,
+    CircleX,
+    Disc3,
+    FileX2,
+    FolderSearch,
+    ListMusic,
+    LoaderCircle,
+    Lock,
+    TriangleAlert,
+    Wrench,
+  } from "@lucide/svelte";
   import { api } from "./api";
+  import { fsName, plural } from "./format";
   import { app } from "./state.svelte";
 
   let showWarnings = $state(false);
@@ -26,86 +40,112 @@
       Kontroluji skladby {app.verifyProgress[0]} / {app.verifyProgress[1]}
     </div>
   {:else}
-    <div class="summary">
-      <div><span class="readout n">{r.tracks}</span><span>skladeb</span></div>
-      <div><span class="readout n fault">{errors.length}</span><span>chyb</span></div>
-      <div><span class="readout n warn">{warnings.length}</span><span>varování</span></div>
-      <div><span class="readout n dim">{r.appleDouble}</span><span>souborů ._</span></div>
-      <div class="when">
-        <div>Kontrola flashky</div>
-        <div class="sub">Trvala {r.seconds.toFixed(0)} s</div>
+    <div class="stats">
+      <div class="stat">
+        <div class="head">Skladeb <ListMusic size={15} /></div>
+        <div class="val"><span class="readout n">{r.tracks}</span><span class="sub">zkontrolováno za {r.seconds.toFixed(1).replace(".", ",")} s</span></div>
+      </div>
+      <div class="stat">
+        <div class="head">Chyby <CircleX size={15} class="fault" /></div>
+        <div class="val"><span class="readout n fault">{errors.length}</span><span class="sub">{errors.length ? "nepůjdou přehrát" : "žádná skladba"}</span></div>
+      </div>
+      <div class="stat">
+        <div class="head">Varování <TriangleAlert size={15} class="warn" /></div>
+        <div class="val"><span class="readout n warn">{warnings.length}</span><span class="sub">{warnings.length ? "pojedou, ale…" : "nic"}</span></div>
+      </div>
+      <div class="stat">
+        <div class="head">Úklid <Brush size={15} /></div>
+        <div class="val"><span class="readout n">{r.appleDouble}</span><span class="sub">souborů ._ od macOS</span></div>
       </div>
     </div>
 
-    <h3>Přehrávače</h3>
-    <div class="grid players">
-      <span class="th">Přehrávač</span><span class="th">Souborový systém</span><span class="th">Formáty</span><span class="th">Výsledek</span>
-      {#each r.players as p}
-        {@const res = result(p)}
-        <span class="strong">{p.player}</span>
-        <span><span class="dot {p.filesystemOk ? 'ok' : 'fault'}"></span>{p.filesystemNote}</span>
-        <span><span class="dot {p.formatNote ? 'fault' : 'ok'}"></span>{p.formatNote || "Všechny formáty pojedou"}</span>
-        <span class="strong"><span class="dot {res.cls}"></span>{res.text}</span>
-      {/each}
-    </div>
-
-    <h3>Chyby <span class="count fault">{errors.length}</span></h3>
-    {#if errors.length === 0}
-      <p class="none">Žádná skladba nemá chybu.</p>
-    {/if}
-    <div class="issues">
-      {#each errors as i, n (`${n}:${i.trackId}:${i.kind}`)}
-        {@const t = app.trackById.get(i.trackId)}
-        <div class="issue">
-          <span class="dot fault"></span>
-          <div class="who">
-            <div class="strong">{t?.title ?? i.title}</div>
-            <div class="sub">{t?.artist ?? ""}</div>
-          </div>
-          <div class="what">
-            <div>{i.message}</div>
-            <div class="sub">{i.playlists.length ? `V playlistech: ${i.playlists.join(", ")}` : "Není v žádném playlistu"}</div>
-          </div>
-          <button class="btn" onclick={() => api.reveal(abs(i.filePath))}>Ukázat ve Finderu</button>
-          <button class="btn" disabled title="Brzy">Opravit…</button>
+    <div class="cols">
+      <div class="col">
+        <div class="title"><h3>Přehrávače</h3><span class="meta">Co na kterém pojede</span></div>
+        <div class="card players">
+          {#each r.players as p}
+            {@const res = result(p)}
+            <div class="player">
+              <span class="tile"><Disc3 size={16} /></span>
+              <span class="pname">{p.player}</span>
+              <span class="chips">
+                <span class="chip {p.filesystemOk ? 'ok' : 'fault'}" title={p.filesystemNote}>
+                  <i></i>{p.filesystemOk ? fsName(r.filesystem) : p.filesystemNote || `${fsName(r.filesystem)} nepřečte`}
+                </span>
+                <span class="chip {p.formatNote ? 'fault' : 'ok'}"><i></i>{p.formatNote || "Všechny formáty"}</span>
+              </span>
+              <span class="res {res.cls}">
+                {#if res.cls === "ok"}<CircleCheck size={15} />{:else if res.cls === "warn"}<TriangleAlert size={15} />{:else}<CircleX size={15} />{/if}
+                {res.text}
+              </span>
+            </div>
+          {/each}
         </div>
-      {/each}
-    </div>
-
-    <div class="bottom">
-      <div class="box">
-        <button class="toggle" onclick={() => (showWarnings = !showWarnings)}>
-          {#if showWarnings}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
-          <span class="strong">Varování</span><span class="count warn">{warnings.length}</span>
-        </button>
-        <p class="sub">
-          {warnings.length} skladeb má v databázi jinou velikost souboru než ve skutečnosti. Hrát půjdou.
-        </p>
-        {#if showWarnings}
-          <ul>
-            {#each warnings as w, n (`${n}:${w.trackId}`)}
-              <li><span>{w.title}</span><span class="sub">{w.message}</span></li>
-            {/each}
-          </ul>
-        {/if}
       </div>
-      <div class="box">
-        <div><span class="strong">Úklid</span> <span class="count">{r.appleDouble}</span></div>
-        <p class="sub">{r.appleDouble} souborů ._ od macOS. Zbytečně zabírají místo a na CDJ vypadají jako rozbité skladby.</p>
+
+      <div class="col">
+        <div class="title"><h3>Je potřeba opravit</h3><span class="meta"><Lock size={11} /> Kontrola jen četla, nic se nezapsalo</span></div>
+        {#if errors.length === 0 && warnings.length === 0 && r.appleDouble === 0}
+          <div class="card fine"><CircleCheck size={16} /> Všechno je v pořádku, není co opravovat.</div>
+        {/if}
+        <div class="fixes">
+          {#each errors as i, n (`${n}:${i.trackId}:${i.kind}`)}
+            {@const t = app.trackById.get(i.trackId)}
+            <div class="fix error">
+              <span class="tile fault"><FileX2 size={16} /></span>
+              <div class="what">
+                <div class="ft">{t?.title ?? i.title}{#if t?.artist}<span class="artist"> · {t.artist}</span>{/if}</div>
+                <div class="sub" title={i.message}>{i.message} · {i.playlists.length ? `v ${i.playlists.join(", ")}` : "v žádném playlistu"}</div>
+              </div>
+              <button class="btn icon ghost" onclick={() => api.reveal(abs(i.filePath))} title="Ukázat ve Finderu" aria-label="Ukázat ve Finderu"><FolderSearch size={15} /></button>
+              <button class="btn" disabled title="Brzy"><Wrench size={14} /> Opravit…</button>
+            </div>
+          {/each}
+
+          {#if warnings.length}
+            <div class="fix">
+              <button class="toggle" onclick={() => (showWarnings = !showWarnings)} aria-expanded={showWarnings}>
+                <span class="tile warn"><TriangleAlert size={16} /></span>
+                <div class="what">
+                  <div class="ft">{warnings.length} {plural(warnings.length, "varování", "varování", "varování")}</div>
+                  <div class="sub">jiná velikost souboru v databázi · hrát půjdou</div>
+                </div>
+                <ChevronDown size={16} class={showWarnings ? "chev open" : "chev"} />
+              </button>
+              {#if showWarnings}
+                <ul>
+                  {#each warnings as w, n (`${n}:${w.trackId}`)}
+                    <li><span>{w.title}</span><span class="sub">{w.message}</span></li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
+
+          {#if r.appleDouble > 0}
+            <div class="fix">
+              <span class="tile"><Brush size={16} /></span>
+              <div class="what">
+                <div class="ft">{r.appleDouble} souborů ._</div>
+                <div class="sub" title="Soubory ._ od macOS zbytečně zabírají místo a na CDJ vypadají jako rozbité skladby.">od macOS, zbytečné, na CDJ vypadají jako rozbité skladby</div>
+              </div>
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
-  <footer><Lock size={12} /> Kontrola jen četla, na flashku se nic nezapsalo.</footer>
 </section>
 
 <style>
   .health {
     flex: 1;
     overflow-y: auto;
-    padding: 18px 24px 0;
+    padding: 4px 28px 24px;
     min-width: 0;
     display: flex;
     flex-direction: column;
+    gap: 24px;
   }
   .loading {
     margin: auto;
@@ -114,132 +154,241 @@
     align-items: center;
     color: var(--text-2);
   }
-  .summary {
-    display: flex;
-    align-items: flex-end;
-    gap: 36px;
-    margin-bottom: 18px;
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
   }
-  .summary > div:not(.when) {
+  .stat {
+    background: var(--surface-2);
+    border-radius: var(--r-panel);
+    padding: 16px 16px 14px;
+  }
+  .head {
     display: flex;
-    flex-direction: column;
-    font-size: 11px;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
     color: var(--text-2);
+    margin-bottom: 10px;
+  }
+  .head :global(svg) {
+    color: var(--text-3);
+  }
+  .val {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+  .val .sub {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .n {
-    font-size: 30px;
+    font-size: 34px;
     line-height: 1;
     color: var(--text);
   }
   .n.fault,
-  .count.fault {
-    color: var(--fault);
+  .health :global(svg.fault) {
+    color: var(--danger);
   }
   .n.warn,
-  .count.warn {
-    color: var(--warn);
-  }
-  .n.dim {
-    color: var(--text-2);
-  }
-  .when {
-    margin-left: auto;
-    text-align: right;
-    font-weight: 600;
+  .health :global(svg.warn) {
+    color: var(--warning);
   }
   .sub {
     font-size: 12px;
-    color: var(--text-2);
-    font-weight: 400;
+    color: var(--text-3);
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
   }
   h3 {
-    margin: 10px 0 8px;
-    font-size: 13px;
+    margin: 0;
+    font-size: 15px;
     font-weight: 600;
   }
-  .count {
-    font-family: var(--font-readout);
-    font-weight: 600;
-    margin-left: 4px;
+  .meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-3);
   }
-  .grid {
-    display: grid;
-    grid-template-columns: 140px 1fr 1fr 1fr;
-    margin-bottom: 14px;
+  .card {
+    background: var(--surface-2);
+    border-radius: var(--r-panel);
   }
-  .grid > span {
+  .player {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 28px;
-    border-bottom: 1px solid var(--line);
-    color: var(--text-2);
-  }
-  .grid .th {
-    font-size: 11px;
-    height: 24px;
-  }
-  .grid .strong {
-    color: var(--text);
-  }
-  .strong {
-    font-weight: 500;
-    color: var(--text);
-  }
-  .none {
-    color: var(--text-2);
-  }
-  .issue {
-    display: grid;
-    grid-template-columns: 8px minmax(200px, 1fr) minmax(260px, 1.3fr) auto auto;
     gap: 14px;
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
+    height: 57px;
+    padding: 0 16px;
   }
-  .bottom {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin: 18px 0;
+  .player + .player {
+    border-top: 1px solid var(--hairline);
   }
-  .box {
-    background: var(--panel);
-    border-radius: 6px;
-    padding: 12px 16px;
-  }
-  .box p {
-    margin: 6px 0 0;
-  }
-  .toggle {
+  .tile {
+    flex: none;
     display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--surface-3);
+    color: var(--text-2);
+  }
+  .tile.fault {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .tile.warn {
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+  .pname {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .chips {
+    display: flex;
+    gap: 8px;
+  }
+  .chip {
+    display: inline-flex;
     align-items: center;
     gap: 6px;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    white-space: nowrap;
+    background: var(--surface-3);
+    color: var(--text-2);
+  }
+  .chip i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .chip.ok i {
+    background: var(--success);
+  }
+  .chip.fault {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .res {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 150px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .res.ok {
+    color: var(--success);
+  }
+  .res.warn {
+    color: var(--warning);
+  }
+  .res.fault {
+    color: var(--danger);
+  }
+  .fixes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .fix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border-radius: var(--r-panel);
+  }
+  .fix.error {
+    box-shadow: inset 0 0 0 1px rgb(240 88 92 / 0.22);
+  }
+  .what {
+    flex: 1;
+    min-width: 0;
+  }
+  .ft {
+    font-size: 13.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .artist {
+    color: var(--text-3);
+    font-weight: 400;
+  }
+  .what .sub {
+    margin-top: 2px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toggle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
     border: 0;
     background: none;
     padding: 0;
+    text-align: left;
+  }
+  .toggle :global(.chev) {
+    color: var(--text-3);
+    transition: transform 140ms ease;
+  }
+  .toggle :global(.chev.open) {
+    transform: rotate(180deg);
+  }
+  .fine {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px;
+    color: var(--success);
   }
   ul {
+    flex-basis: 100%;
     list-style: none;
-    margin: 10px 0 0;
-    padding: 0;
+    margin: 0;
+    padding: 0 0 0 44px;
     max-height: 220px;
     overflow-y: auto;
   }
   li {
     display: flex;
     flex-direction: column;
-    padding: 5px 0;
-    border-top: 1px solid var(--line);
-  }
-  footer {
-    margin-top: auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 0;
-    border-top: 1px solid var(--line);
-    font-size: 12px;
-    color: var(--text-2);
+    padding: 6px 0;
+    border-top: 1px solid var(--hairline);
   }
 </style>

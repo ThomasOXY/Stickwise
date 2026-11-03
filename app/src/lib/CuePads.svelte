@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Magnet, Trash, Undo2 } from "@lucide/svelte";
+  import { BookmarkPlus, Magnet, Trash, Undo2 } from "@lucide/svelte";
   import type { Cue } from "./api";
   import { SLOT_LETTERS, beatsLater, blankCue, cssColor, firstFreeSlot, hotCue, replaceCue, snap, withoutSlot } from "./cues";
   import { cueTime } from "./format";
@@ -128,38 +128,42 @@
       oncontextmenu={(e) => openMenu(e, slot)}
     >
       <span class="letter">{letter}</span>
-      {#if c}
-        <span class="txt">
+      <span class="txt">
+        {#if c}
           <span class="readout">{cueTime(c.timeMs)}</span>
-          {#if c.loopEndMs}<span class="tag">{c.loopBeats ? `${c.loopBeats[0]}` : "∞"}⟲</span>{/if}
-          {#if c.comment}<span class="cm">{c.comment}</span>{/if}
-        </span>
-      {/if}
+          <span class="cm">{c.comment || (c.loopEndMs ? "smyčka" : "")}</span>
+        {:else}
+          <span class="readout">–</span>
+          <span class="cm">volný</span>
+        {/if}
+      </span>
+      {#if c?.loopEndMs}<span class="tag">{c.loopBeats ? `${c.loopBeats[0]}` : "∞"}⟲</span>{/if}
     </button>
   {/each}
 
-  <span class="gap"></span>
-
-  <button class="btn small" onclick={addMemory} title="Memory cue na aktuální pozici (M)">
-    Memory{#if memoryCount}<span class="readout n">{memoryCount}</span>{/if}
-  </button>
   <div class="group" role="group" aria-label="Smyčka">
-    <button class="btn small" class:armed={loopIn != null} onclick={() => (loopIn = here())} title="Začátek smyčky">In</button>
-    <button class="btn small" onclick={loopOut} disabled={loopIn == null} title="Konec smyčky, uloží memory smyčku">Out</button>
+    <button class="g" class:armed={loopIn != null} onclick={() => (loopIn = here())} title="Začátek smyčky">IN</button>
+    <button class="g" onclick={loopOut} disabled={loopIn == null} title="Konec smyčky, uloží memory smyčku">OUT</button>
     {#each [4, 8, 16, 32] as n}
-      <button class="btn small" onclick={(e) => autoLoop(n, e.shiftKey)} title="Smyčka {n} dob od aktuální pozice. Se Shiftem jako hot cue.">{n}</button>
+      <button class="g" onclick={(e) => autoLoop(n, e.shiftKey)} title="Smyčka {n} dob od aktuální pozice. Se Shiftem jako hot cue.">{n}</button>
     {/each}
   </div>
-  <button
-    class="btn small icon"
-    class:on={app.quantize}
-    onclick={() => app.setQuantize(!app.quantize)}
-    title="Quantize: cue se přichytí na nejbližší dobu (Q)"
-    aria-pressed={app.quantize}
-  >
-    <Magnet size={13} />
-  </button>
-  <button class="btn small icon" onclick={() => app.undo()} title="Vrátit (⌘Z)"><Undo2 size={13} /></button>
+  <div class="group" role="group" aria-label="Cue">
+    <button class="g icon" onclick={addMemory} title="Memory cue na aktuální pozici (M){memoryCount ? ` · ve skladbě ${memoryCount}` : ''}" aria-label="Přidat memory cue">
+      <BookmarkPlus size={14} />{#if memoryCount}<span class="n">{memoryCount}</span>{/if}
+    </button>
+    <button
+      class="g icon"
+      class:on={app.quantize}
+      onclick={() => app.setQuantize(!app.quantize)}
+      title="Quantize: cue se přichytí na nejbližší dobu (Q)"
+      aria-label="Quantize"
+      aria-pressed={app.quantize}
+    >
+      <Magnet size={14} />
+    </button>
+    <button class="g icon" onclick={() => app.undo()} title="Vrátit (⌘Z)" aria-label="Vrátit"><Undo2 size={14} /></button>
+  </div>
 </div>
 
 {#if menu}
@@ -211,112 +215,138 @@
   .pads {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
   }
   .pad {
     position: relative;
-    width: 92px;
-    height: 30px;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 36px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0 8px 0 0;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--booth);
-    overflow: hidden;
+    gap: 8px;
+    padding: 0 8px 0 6px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--surface-1);
     text-align: left;
   }
   .pad:hover {
-    border-color: var(--text-3);
+    background: color-mix(in srgb, var(--surface-1) 70%, var(--surface-3));
   }
-  .pad .letter {
-    width: 20px;
-    align-self: stretch;
+  .letter {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
     font-size: 11px;
+    background: var(--surface-3);
     color: var(--text-3);
-    border-right: 1px solid var(--line);
-  }
-  .pad.set {
-    border-color: color-mix(in srgb, var(--c) 55%, transparent);
-    background: color-mix(in srgb, var(--c) 14%, var(--booth));
   }
   .pad.set .letter {
     background: var(--c);
-    color: var(--booth);
-    border-right: 0;
+    color: #fff;
+    text-shadow: 0 1px 1px rgb(0 0 0 / 0.25);
   }
   .txt {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    line-height: 1.05;
+    line-height: 1.1;
   }
   .txt .readout {
     font-size: 14px;
   }
+  .pad:not(.set) .txt .readout {
+    color: var(--text-3);
+  }
   .cm {
-    font-size: 10px;
-    color: var(--text-2);
+    font-size: 11px;
+    color: var(--text-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .tag {
     position: absolute;
-    right: 5px;
-    top: 3px;
+    right: 6px;
+    top: 4px;
     font-size: 10px;
     color: var(--text-2);
   }
-  .gap {
-    flex: 1;
-  }
   .group {
     display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    height: 36px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--surface-1);
+  }
+  .g {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     gap: 3px;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-2);
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .g:hover {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .g:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .g.on {
+    color: var(--accent);
+  }
+  .g.armed {
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .btn.small {
     height: 26px;
     padding: 0 9px;
     font-size: 12px;
   }
-  .btn.small.icon {
-    width: 26px;
-    padding: 0;
-  }
   .btn.on {
-    border-color: var(--cue);
-    color: var(--cue);
-  }
-  .btn.armed {
-    background: var(--cue);
-    border-color: var(--cue);
-    color: var(--booth);
+    background: var(--accent-soft);
+    color: var(--accent);
   }
   .btn.danger {
+    background: var(--danger-soft);
     color: #f2a3a5;
-    background: var(--panel);
-    border-color: rgb(229 72 77 / 0.45);
+  }
+  .btn.danger :global(svg) {
+    color: #f2a3a5;
   }
   .n {
-    margin-left: 6px;
+    font-family: var(--font-readout);
     font-size: 13px;
-    color: var(--text-2);
+    color: var(--text-3);
   }
   .menu {
     position: fixed;
     transform: translateY(-100%);
     width: 236px;
     padding: 10px;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: var(--panel);
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+    border-radius: 12px;
+    background: var(--surface-1);
+    box-shadow: var(--shadow-pop);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -330,12 +360,12 @@
   .head .letter {
     width: 18px;
     height: 18px;
-    border-radius: 3px;
+    border-radius: 5px;
     text-align: center;
     line-height: 18px;
     font-weight: 700;
     font-size: 11px;
-    color: var(--booth);
+    color: #fff;
   }
   .head .readout {
     font-size: 16px;

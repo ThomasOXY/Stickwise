@@ -1,7 +1,27 @@
 <script lang="ts">
-  import { Grid3x3, Minus, Pause, Play, Plus, Sparkles, Volume1, Volume2, VolumeX } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    ChevronUp,
+    FileAudio,
+    FolderOpen,
+    Grid3x3,
+    Maximize2,
+    Minimize2,
+    Music,
+    Pause,
+    Play,
+    Plus,
+    Volume1,
+    Volume2,
+    VolumeX,
+    WandSparkles,
+    ZoomIn,
+    ZoomOut,
+  } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { keyColor, time } from "./format";
+  import { api } from "./api";
+  import { cssColor } from "./cues";
+  import { cueTime, keyColor, size, time } from "./format";
   import { app } from "./state.svelte";
   import CuePads from "./CuePads.svelte";
   import GridPanel from "./GridPanel.svelte";
@@ -24,6 +44,10 @@
   let fader = $state(Number(localStorage.getItem("volume") ?? 1));
   let muted = $state(localStorage.getItem("muted") === "on");
   let resumeAfterScrub = false;
+  /** Collapsed: only the top row. Big: tall waveform, memory cues and the file. */
+  let collapsed = $state(localStorage.getItem("deck-collapsed") === "on");
+  let big = $state(localStorage.getItem("deck-big") === "on");
+  let pads = $state<ReturnType<typeof CuePads>>();
 
   // The deck keeps its track while the app switches between library and stick.
   const track = $derived(app.deck?.track);
@@ -53,6 +77,23 @@
     return { wave: detailWave, isDetail: true };
   });
 
+  const memories = $derived(cues.filter((c) => c.slot === 0).sort((a, b) => a.timeMs - b.timeMs));
+  const meta = $derived(
+    track
+      ? [track.artist, app.formatOverride.get(track.id) ?? track.format, track.fileSize ? size(track.fileSize) : ""]
+          .filter(Boolean)
+          .join(" · ")
+      : "",
+  );
+
+  /** The last folders of a path, enough to tell where the file is. */
+  function shortPath(p: string): string {
+    const parts = p.split("/");
+    return parts.length > 5 ? `…/${parts.slice(-4).join("/")}` : p;
+  }
+
+  $effect(() => localStorage.setItem("deck-collapsed", collapsed ? "on" : "off"));
+  $effect(() => localStorage.setItem("deck-big", big ? "on" : "off"));
   $effect(() => localStorage.setItem("wave-style", style));
   $effect(() => localStorage.setItem("wave-span", String(span)));
   $effect(() => localStorage.setItem("volume", String(fader)));
@@ -204,7 +245,7 @@
   });
 </script>
 
-<footer class="deck">
+<footer class="deck" class:collapsed class:big={big && !collapsed}>
   {#if track}
     <audio
       bind:this={audio}
@@ -218,32 +259,94 @@
       onloadedmetadata={() => (audioDuration = audio!.duration || 0)}
     ></audio>
 
-    <div class="info">
+    <div class="top">
       <button class="play" class:on={playing} onclick={toggle} aria-label={playing ? "Pozastavit" : "Přehrát"}>
-        {#if playing}<Pause size={15} fill="currentColor" />{:else}<Play size={15} fill="currentColor" />{/if}
+        {#if playing}<Pause size={18} fill="currentColor" />{:else}<Play size={18} fill="currentColor" />{/if}
       </button>
+      <div class="art">
+        {#if track.artwork}<img src={convertFileSrc(track.artwork)} alt="" />{:else}<Music size={18} />{/if}
+      </div>
       <div class="names">
         <div class="t">{track.title}</div>
-        <div class="a">{track.artist}</div>
+        <div class="a">{meta}</div>
       </div>
-      {#if !app.deckHere}
-        <span class="from" title="Skladba zůstala na decku po přepnutí zdroje">{from}</span>
-      {/if}
-      {#if issue}
-        <span class="pill"><span class="dot fault"></span>{app.formatOverride.get(track.id) ?? track.format}, na CDJ nepůjde</span>
-      {/if}
-      {#if detail?.edited}
-        <span class="edited">Cue upravené, zatím jen v aplikaci <button onclick={() => app.revertCues()}>Vrátit</button></span>
-      {/if}
+      <div class="flags">
+        {#if !app.deckHere}
+          <span class="chip" title="Skladba zůstala na decku po přepnutí zdroje">{from}</span>
+        {/if}
+        {#if issue}
+          <span class="chip fault"><span class="dot fault"></span>{app.formatOverride.get(track.id) ?? track.format}, na CDJ nepůjde</span>
+        {/if}
+        {#if detail?.edited}
+          <span class="chip edited">Cue upravené, zatím jen v aplikaci <button onclick={() => app.revertCues()}>Vrátit</button></span>
+        {/if}
+      </div>
+
+      <div class="tools">
+        <button
+          class="tool"
+          class:on={app.smartOpen}
+          onclick={() => (app.smartOpen ? (app.smartOpen = false) : app.loadSmart())}
+          title="Smart Cue: najde dropy, breaky a další místa pro cue"
+        >
+          <WandSparkles size={14} /> Smart Cue
+        </button>
+        <button
+          class="tool"
+          class:on={app.gridOpen}
+          onclick={() => (app.gridOpen = !app.gridOpen)}
+          title="Úprava beatgridu: tempo, posun, první doba taktu, metronom"
+        >
+          <Grid3x3 size={14} /> Grid
+        </button>
+        {#if styles.length > 1}
+          <div class="styles" role="radiogroup" aria-label="Styl waveformu">
+            {#each styles as s}
+              <button role="radio" aria-checked={activeStyle === s} class:on={activeStyle === s} onclick={() => (style = s)}>
+                {STYLE_LABELS[s]}
+              </button>
+            {/each}
+          </div>
+        {/if}
+        <button
+          class="tool icon"
+          onclick={() => zoom(1.5)}
+          aria-label="Oddálit"
+          title="Oddálit (zobrazeno {span < 10 ? span.toFixed(1) : Math.round(span)} s)"
+          disabled={span >= MAX_SPAN}><ZoomOut size={14} /></button
+        >
+        <button
+          class="tool icon"
+          onclick={() => zoom(1 / 1.5)}
+          aria-label="Přiblížit"
+          title="Přiblížit (zobrazeno {span < 10 ? span.toFixed(1) : Math.round(span)} s)"
+          disabled={span <= MIN_SPAN}><ZoomIn size={14} /></button
+        >
+      </div>
+
+      <div class="readouts">
+        <div class="ro">
+          <span class="readout v">{track.bpm.toFixed(2)}</span>
+          <span class="eyebrow">BPM</span>
+        </div>
+        <div class="ro">
+          <span class="readout v" style:color={keyColor(track.key)}>{track.key || "–"}</span>
+          <span class="eyebrow">Tónina</span>
+        </div>
+        <div class="ro time">
+          <span class="v"><span class="readout">{time(position)}</span> <span class="readout dim">−{time(duration - position)}</span></span>
+          <span class="eyebrow">Čas</span>
+        </div>
+      </div>
 
       <div class="volume" onwheel={onVolumeWheel}>
         <button
-          class="btn icon"
+          class="vol-btn"
           onclick={() => (muted && fader === 0 ? setFader(0.7) : (muted = !muted))}
           aria-label={muted ? "Zapnout zvuk" : "Ztlumit"}
           title={muted ? "Zapnout zvuk" : "Ztlumit"}
         >
-          {#if muted || fader === 0}<VolumeX size={14} />{:else if fader < 0.5}<Volume1 size={14} />{:else}<Volume2 size={14} />{/if}
+          {#if muted || fader === 0}<VolumeX size={15} />{:else if fader < 0.5}<Volume1 size={15} />{:else}<Volume2 size={15} />{/if}
         </button>
         <input
           type="range"
@@ -258,74 +361,78 @@
         />
       </div>
 
-      <div class="tools">
-        <button
-          class="btn small smart"
-          class:on={app.smartOpen}
-          onclick={() => (app.smartOpen ? (app.smartOpen = false) : app.loadSmart())}
-          title="Smart Cue: najde dropy, breaky a další místa pro cue"
-        >
-          <Sparkles size={13} /> Smart Cue
+      {#if !collapsed}
+        <button class="corner" onclick={() => (big = !big)} aria-label={big ? "Zmenšit deck" : "Zvětšit deck"} title={big ? "Zmenšit deck" : "Zvětšit deck: větší waveform, memory cue a soubor"}>
+          {#if big}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}
         </button>
-        <button
-          class="btn small smart"
-          class:on={app.gridOpen}
-          onclick={() => (app.gridOpen = !app.gridOpen)}
-          title="Úprava beatgridu: tempo, posun, první doba taktu, metronom"
-        >
-          <Grid3x3 size={13} /> Grid
-        </button>
-        {#if styles.length > 1}
-          <div class="seg" role="radiogroup" aria-label="Styl waveformu">
-            {#each styles as s}
-              <button role="radio" aria-checked={activeStyle === s} class:on={activeStyle === s} onclick={() => (style = s)}>
-                {STYLE_LABELS[s]}
+      {/if}
+      <button
+        class="corner"
+        onclick={() => (collapsed = !collapsed)}
+        aria-label={collapsed ? "Rozbalit deck" : "Sbalit deck"}
+        title={collapsed ? "Rozbalit deck" : "Sbalit deck"}
+      >
+        {#if collapsed}<ChevronUp size={16} />{:else}<ChevronDown size={16} />{/if}
+      </button>
+    </div>
+
+    <!-- Hidden, not removed, when collapsed: the pads keep their keyboard shortcuts. -->
+    <div class="body" hidden={collapsed}>
+      {#if !collapsed}
+        <div class="waves">
+          <div class="detail">
+            <WaveDetail
+              wave={detailWave}
+              beats={detail?.beats ?? []}
+              {cues}
+              {ghosts}
+              {duration}
+              {span}
+              {playing}
+              {getTime}
+              {setTime}
+              onZoom={zoom}
+              onScrubStart={scrubStart}
+              onScrubEnd={scrubEnd}
+              gridMode={app.gridOpen && app.gridEditable}
+              onGridDrag={gridDrag}
+            />
+          </div>
+          <WaveOverview wave={overview.wave} isDetail={overview.isDetail} {cues} {ghosts} {duration} {position} {span} onSeek={setTime} />
+        </div>
+      {/if}
+
+      {#if app.gridOpen}
+        <GridPanel {getTime} />
+      {:else if detail}
+        <CuePads bind:this={pads} {getTime} {setTime} beats={detail.beats} bpm={track.bpm} />
+      {/if}
+
+      {#if big && !collapsed}
+        <div class="foot">
+          <span class="eyebrow">Memory</span>
+          <div class="mems">
+            {#each memories as c}
+              <button class="mem" onclick={() => setTime(c.timeMs / 1000)} title="Skok na {cueTime(c.timeMs)}">
+                <i style:border-top-color={c.color ? cssColor(c) : "var(--danger)"}></i>
+                <span class="readout">{cueTime(c.timeMs)}{c.loopEndMs ? ` – ${cueTime(c.loopEndMs)}` : ""}</span>
+                {#if c.comment || c.loopEndMs}
+                  <span class="lbl">{c.comment || `smyčka ${c.loopBeats?.[0] ?? ""}`.trim()}</span>
+                {/if}
               </button>
             {/each}
+            {#if pads}
+              <button class="mem add" onclick={() => pads?.addMemory()} aria-label="Přidat memory cue" title="Memory cue na aktuální pozici (M)">
+                <Plus size={13} />
+              </button>
+            {/if}
           </div>
-        {/if}
-        <div class="zoom">
-          <button class="btn icon" onclick={() => zoom(1.5)} aria-label="Oddálit" disabled={span >= MAX_SPAN}><Minus size={13} /></button>
-          <span class="readout zv">{span < 10 ? span.toFixed(1) : Math.round(span)} s</span>
-          <button class="btn icon" onclick={() => zoom(1 / 1.5)} aria-label="Přiblížit" disabled={span <= MIN_SPAN}><Plus size={13} /></button>
+          <span class="path" title={track.absPath}><FileAudio size={13} /> <span>{shortPath(track.absPath)}</span></span>
+          <button class="btn ghost finder" onclick={() => api.reveal(track.absPath)}><FolderOpen size={13} /> Ve Finderu</button>
         </div>
-      </div>
-
-      <div class="readouts">
-        <span class="readout big">{track.bpm.toFixed(2)}</span><span class="unit">BPM</span>
-        <i style:background={keyColor(track.key)}></i><span class="readout big">{track.key}</span><span class="unit">Tónina</span>
-        <span class="sep"></span>
-        <span class="readout mid">{time(position)}</span>
-        <span class="readout mid dim">-{time(duration - position)}</span>
-      </div>
+      {/if}
     </div>
 
-    <div class="detail">
-      <WaveDetail
-        wave={detailWave}
-        beats={detail?.beats ?? []}
-        {cues}
-        {ghosts}
-        {duration}
-        {span}
-        {playing}
-        {getTime}
-        {setTime}
-        onZoom={zoom}
-        onScrubStart={scrubStart}
-        onScrubEnd={scrubEnd}
-        gridMode={app.gridOpen && app.gridEditable}
-        onGridDrag={gridDrag}
-      />
-    </div>
-
-    <WaveOverview wave={overview.wave} isDetail={overview.isDetail} {cues} {ghosts} {duration} {position} {span} onSeek={setTime} />
-
-    {#if app.gridOpen}
-      <GridPanel {getTime} />
-    {:else if detail}
-      <CuePads {getTime} {setTime} beats={detail.beats} bpm={track.bpm} />
-    {/if}
     {#if app.smartOpen && app.smart}
       <SmartCuePanel {setTime} />
     {/if}
@@ -338,209 +445,359 @@
   .deck {
     position: relative;
     flex: none;
-    height: 278px;
-    padding: 12px 24px 6px;
-    border-top: 1px solid var(--line);
-    background: var(--panel);
+    margin: 0 28px 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--surface-2);
+    box-shadow:
+      0 -10px 30px rgb(0 0 0 / 0.28),
+      inset 0 1px 0 var(--hairline);
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-  .info {
-    display: flex;
-    align-items: center;
     gap: 12px;
   }
+  .deck.collapsed {
+    padding: 10px 16px;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
   .play {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    border: 1px solid var(--line);
-    background: var(--panel-2);
-    color: var(--text);
+    border: 0;
+    background: var(--accent);
+    color: var(--on-accent);
     display: flex;
     align-items: center;
     justify-content: center;
     flex: none;
+    box-shadow: 0 4px 14px rgb(242 163 58 / 0.25);
   }
-  .play.on {
-    background: var(--cue);
-    border-color: var(--cue);
-    color: var(--booth);
+  .play :global(svg) {
+    margin-left: 2px;
+  }
+  .play.on :global(svg) {
+    margin-left: 0;
+  }
+  .play:hover {
+    filter: brightness(1.08);
+  }
+  .art {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #4a3a22, var(--surface-3));
+    color: var(--text-2);
+  }
+  .art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   .names {
     min-width: 0;
-    max-width: 360px;
+    flex: 0 1 auto;
   }
   .t {
+    font-size: 15px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .a {
+    margin-top: 2px;
     font-size: 12px;
-    color: var(--text-2);
+    color: var(--text-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .pill {
+  .flags {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+  }
+  .chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 22px;
+    height: 24px;
     padding: 0 10px;
-    border-radius: 11px;
-    border: 1px solid rgb(229 72 77 / 0.4);
-    background: rgb(229 72 77 / 0.1);
-    color: #f2a3a5;
-    font-size: 12px;
-    white-space: nowrap;
-  }
-  .from {
-    height: 22px;
-    padding: 0 10px;
-    border-radius: 11px;
-    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-3);
     color: var(--text-2);
     font-size: 12px;
-    line-height: 20px;
     white-space: nowrap;
+    flex: none;
+  }
+  .chip.fault {
+    background: var(--danger-soft);
+    color: #f2a3a5;
+  }
+  .chip.edited {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .chip.edited button {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text);
+    text-decoration: underline;
+    font-size: 12px;
+  }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+    flex: none;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--surface-1);
+  }
+  .tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .tool:hover {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .tool.on {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .tool.icon {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+  .tool:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .styles {
+    display: flex;
+    gap: 2px;
+    margin: 0 4px;
+    padding-left: 6px;
+    border-left: 1px solid var(--hairline);
+  }
+  .styles button {
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .styles button.on {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+  .readouts {
+    display: flex;
+    align-items: flex-end;
+    gap: 22px;
+    flex: none;
+    margin-left: 6px;
+  }
+  .ro {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .ro .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+  .ro:not(.time) {
+    align-items: center;
+  }
+  .v,
+  .v .readout {
+    font-size: 26px;
+    line-height: 1;
+  }
+  .dim {
+    color: var(--text-3);
   }
   .volume {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    flex: none;
   }
-  .volume .btn.icon {
-    width: 26px;
-    height: 26px;
+  .vol-btn {
+    border: 0;
+    background: none;
+    padding: 2px;
+    color: var(--text-2);
+    display: flex;
+  }
+  .vol-btn:hover {
+    color: var(--text);
   }
   .volume input {
-    width: 92px;
+    width: 72px;
     height: 4px;
     padding: 0;
     border: 0;
     border-radius: 2px;
     appearance: none;
-    background: linear-gradient(to right, var(--cue) var(--fill), var(--line) var(--fill));
+    background: linear-gradient(to right, var(--text) var(--fill), var(--surface-3) var(--fill));
     cursor: pointer;
   }
   .volume input::-webkit-slider-thumb {
     appearance: none;
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--text);
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
   }
-  .tools {
+  .corner {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border: 0;
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .corner + .corner {
+    margin-left: -8px;
+  }
+  .corner:hover {
+    color: var(--text);
+    background: var(--surface-3);
+  }
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .body[hidden] {
+    display: none;
+  }
+  .waves {
+    border-radius: 10px;
+    overflow: hidden;
+    background: #0a0b0d;
+  }
+  .detail {
+    height: 64px;
+  }
+  .big .detail {
+    height: 236px;
+  }
+  .foot {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-left: auto;
+    min-width: 0;
   }
-  .btn.small {
-    height: 26px;
-    padding: 0 10px;
-    font-size: 12px;
+  .foot .eyebrow {
+    flex: none;
   }
-  .btn.smart.on {
-    border-color: var(--cue);
-    color: var(--cue);
-  }
-  .seg {
-    display: flex;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 2px;
-    background: var(--booth);
-  }
-  .seg button {
-    border: 0;
-    background: none;
-    height: 22px;
-    padding: 0 9px;
-    border-radius: 4px;
-    color: var(--text-2);
-    font-size: 12px;
-  }
-  .seg button.on {
-    background: var(--panel-2);
-    color: var(--text);
-  }
-  .zoom {
+  .mems {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex: none;
+    max-width: 55%;
+    overflow-x: auto;
   }
-  .zoom .btn.icon {
-    width: 24px;
-    height: 24px;
-  }
-  .zv {
-    min-width: 38px;
-    text-align: center;
-    font-size: 15px;
-  }
-  .readouts {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    margin-left: 14px;
-  }
-  .big {
-    font-size: 28px;
-    line-height: 1;
-  }
-  .mid {
-    font-size: 22px;
-    line-height: 1;
-  }
-  .dim {
-    color: var(--text-2);
-  }
-  .unit {
-    font-size: 11px;
-    color: var(--text-2);
-    margin-right: 10px;
-  }
-  .readouts i {
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
-    align-self: center;
-  }
-  .sep {
-    width: 1px;
-    height: 22px;
-    background: var(--line);
-    align-self: center;
-    margin: 0 6px;
-  }
-  .edited {
+  .mem {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 13px;
+    background: var(--surface-1);
+    white-space: nowrap;
+    flex: none;
+  }
+  .mem:hover {
+    background: var(--surface-3);
+  }
+  .mem i {
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid;
+  }
+  .mem .readout {
+    font-size: 14px;
+  }
+  .mem .lbl {
     font-size: 12px;
-    color: var(--cue);
+    color: var(--text-3);
+  }
+  .mem.add {
+    width: 26px;
+    padding: 0;
+    justify-content: center;
+    color: var(--text-2);
+    background: none;
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .path {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .path span {
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .edited button {
-    border: 0;
-    background: none;
-    padding: 0;
-    color: var(--text-2);
-    text-decoration: underline;
-    font-size: 12px;
-  }
-  .detail {
-    flex: 1;
-    min-height: 0;
+  .finder {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12.5px;
+    flex: none;
+    background: var(--surface-1);
   }
   .idle {
-    margin: auto;
+    margin: 10px auto;
     color: var(--text-2);
   }
 </style>

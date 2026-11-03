@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { ArrowDown, ArrowRight, ArrowUp, Check, LoaderCircle, Play, Sparkles, Square, TriangleAlert, X } from "@lucide/svelte";
+  import { Check, Headphones, LoaderCircle, Play, Route, Sparkles, Square, TrendingUp, TriangleAlert, Undo2, X } from "@lucide/svelte";
   import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
-  import { cueTime, keyColor, time } from "./format";
+  import { cueTime, keyColor, plural, time } from "./format";
   import { app } from "./state.svelte";
 
   interface PlannedTrack {
@@ -47,7 +47,7 @@
   ] as const;
   const CURVES = [
     ["warmup", "Warm-up"],
-    ["peak", "Peak time"],
+    ["peak", "Peak"],
     ["journey", "Cesta"],
     ["closing", "Closing"],
   ] as const;
@@ -163,8 +163,11 @@
     }
   }
 
+
   // ---- transition preview: both tracks over each other as planned ----
   let playingIdx = $state<number | null>(null);
+  /** Playing all transitions one after another. */
+  let chain = $state(false);
   let audioA: HTMLAudioElement | null = null;
   let audioB: HTMLAudioElement | null = null;
   let raf = 0;
@@ -179,10 +182,25 @@
   onDestroy(stopPreview);
 
   function preview(i: number) {
+    chain = false;
     if (playingIdx === i) return stopPreview();
+    play(i);
+  }
+
+  function previewAll() {
+    if (chain) {
+      chain = false;
+      return stopPreview();
+    }
+    play(0);
+    chain = playingIdx != null;
+  }
+
+  function play(i: number) {
     stopPreview();
     if (!plan) return;
     const tr = plan.transitions[i];
+    if (!tr) return;
     const A = app.trackById.get(tr.from);
     const B = app.trackById.get(tr.to);
     const pa = plan.tracks[i];
@@ -235,7 +253,14 @@
       }
       audioA.volume = Math.max(0, Math.min(1, va));
       audioB.volume = Math.max(0, Math.min(1, vb));
-      if (a >= end) return stopPreview();
+      if (a >= end) {
+        stopPreview();
+        if (chain && plan && i + 1 < plan.transitions.length) {
+          open = i + 1;
+          play(i + 1);
+        } else chain = false;
+        return;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -249,65 +274,71 @@
     "echo-out": "var(--hc-h)",
   };
 
-  // Chart geometry.
-  const W = 1000;
-  const H = 120;
-  const total = $derived(Math.max(1, plan?.totalSeconds ?? 1));
-  const x = (s: number) => (s / total) * W;
-  const y = (e: number) => H - ((e - 1) / 9) * (H - 8) - 4;
-  function energyColor(e: number) {
-    const t = (e - 1) / 9;
-    return `hsl(${220 - t * 200} 70% ${45 + t * 10}%)`;
-  }
-  function relationClass(t: Transition) {
-    if (!t.keyOk || !t.tempoOk) return "bad";
-    return ["same", "relative", "+1", "-1"].includes(t.keyRelation) ? "good" : "ok";
+  /** ok = harmonic and in tempo, boost = a deliberate energy key jump, warn = key or tempo off. */
+  function kind(t: Transition): "ok" | "boost" | "warn" {
+    if (!t.keyOk || !t.tempoOk) return "warn";
+    return t.keyRelation === "+2" || t.keyRelation === "+7" ? "boost" : "ok";
   }
   const RELATION: Record<string, string> = {
     same: "stejná tónina",
     relative: "relativní",
     "+1": "+1 Camelot",
     "-1": "−1 Camelot",
-    "+2": "+2 energy boost",
+    "+2": "energy boost",
     "+7": "+7 boost",
     diagonal: "diagonála",
-    clash: "tónina se tluče",
+    clash: "tónina nesedí",
     "?": "tónina neznámá",
   };
+  function warnText(t: Transition) {
+    if (!t.keyOk) return RELATION[t.keyRelation] ?? "tónina nesedí";
+    return "tempo moc daleko";
+  }
+  function bpmStep(i: number) {
+    if (!plan) return "";
+    const d = Math.round((plan.tracks[i + 1].bpm - plan.tracks[i].bpm) * 10) / 10;
+    return `${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d)} BPM`;
+  }
+
+  const counts = $derived.by(() => {
+    const c = { ok: 0, boost: 0, warn: 0 };
+    for (const t of plan?.transitions ?? []) c[kind(t)]++;
+    return c;
+  });
+  /** 0–100: clean transitions count fully, boosts nearly, warnings not at all. */
+  const score = $derived.by(() => {
+    const n = plan?.transitions.length ?? 0;
+    return n ? Math.round((100 * (counts.ok + 0.85 * counts.boost)) / n) : 100;
+  });
+  const maxPitch = $derived(Math.max(0, ...(plan?.transitions ?? []).map((t) => Math.abs(t.pitchPercent))));
+  const lenMax = $derived(Math.max(60, Math.ceil(poolMinutes / 5) * 5, minutes));
 </script>
 
 <section class="planner">
-  <div class="bar">
-    <div class="titles">
-      <h2><Sparkles size={15} /> Plán setu: {set?.name}</h2>
-      <span class="sub">{pool} skladeb k výběru, zhruba {poolMinutes} min hudby</span>
+  <aside class="settings">
+    <div class="shead">
+      <h2><Route size={17} /> Plánovač</h2>
+      <button class="btn icon ghost" onclick={() => (app.view = "tracks")} aria-label="Zavřít plánovač" title="Zavřít plánovač"><X size={15} /></button>
     </div>
-    <button class="x" onclick={() => (app.view = "tracks")} aria-label="Zavřít plánovač"><X size={15} /></button>
-  </div>
+    <p class="sub pool">{set?.name} · {pool} skladeb k výběru, zhruba {poolMinutes} min hudby</p>
 
-  <div class="params">
     <div class="group">
-      <span class="lbl">Pořadí</span>
+      <span class="eyebrow">Pořadí</span>
       <div class="seg">
-        <button class:on={keepOrder} onclick={() => (keepOrder = true)} title="Skladby zůstanou, jak jsi je seřadil; naplánují se jen přechody">Moje pořadí</button>
-        <button class:on={!keepOrder} onclick={() => (keepOrder = false)} title="Plánovač vybere a seřadí skladby podle tóniny, tempa a energie">Navrhnout pořadí</button>
+        <button class:on={keepOrder} onclick={() => (keepOrder = true)} title="Skladby zůstanou, jak jsi je seřadil; naplánují se jen přechody">Moje</button>
+        <button class:on={!keepOrder} onclick={() => (keepOrder = false)} title="Plánovač vybere a seřadí skladby podle tóniny, tempa a energie">Navrhnout</button>
       </div>
     </div>
     <div class="group">
-      <span class="lbl">Cue přechodů</span>
+      <span class="eyebrow">Energie</span>
       <div class="seg">
-        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title="Na padech zůstanou jen cue přechodů (start, swap, drop, mix out) v pořadí A, B, …; ostatní hot cue se zazálohují a smažou, memory cue zůstanou">Jen cue přechodů</button>
-        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title="Tvoje hot cue zůstanou, cue přechodů přibudou na nejvyšší volné pady (H, G, …)">Přidat na volné pady</button>
-        <button class:on={cueMode === "memory"} onclick={() => (cueMode = "memory")} title="Jako memory cue, pady zůstanou, jak jsou">Memory cue</button>
+        {#each CURVES as [v, label]}
+          <button class:on={curve === v} onclick={() => (curve = v)}>{label}</button>
+        {/each}
       </div>
     </div>
-    <label class="len" class:off={keepOrder}>
-      <span class="lbl">Délka</span>
-      <input type="number" min="0" max="600" step="5" bind:value={minutes} disabled={keepOrder} />
-      <span class="sub">min {minutes === 0 ? "(vše)" : ""}</span>
-    </label>
     <div class="group">
-      <span class="lbl">Úroveň</span>
+      <span class="eyebrow">Úroveň</span>
       <div class="seg">
         {#each LEVELS as [v, label, hint]}
           <button class:on={level === v} onclick={() => (level = v)} title={hint}>{label}</button>
@@ -315,303 +346,363 @@
       </div>
     </div>
     <div class="group">
-      <span class="lbl">Energie</span>
+      <span class="eyebrow">Cue přechodů</span>
       <div class="seg">
-        {#each CURVES as [v, label]}
-          <button class:on={curve === v} onclick={() => (curve = v)}>{label}</button>
-        {/each}
+        <button class:on={cueMode === "only"} onclick={() => (cueMode = "only")} title="Na padech zůstanou jen cue přechodů (start, swap, drop, mix out) v pořadí A, B, …; ostatní hot cue se zazálohují a smažou, memory cue zůstanou">Jen přechody</button>
+        <button class:on={cueMode === "hot"} onclick={() => (cueMode = "hot")} title="Tvoje hot cue zůstanou, cue přechodů přibudou na nejvyšší volné pady (H, G, …)">Na volné pady</button>
+        <button class:on={cueMode === "memory"} onclick={() => (cueMode = "memory")} title="Jako memory cue, pady zůstanou, jak jsou">Memory</button>
       </div>
     </div>
-    <button class="btn primary" onclick={run} disabled={busy || pool < 2}>
-      {#if busy && !plan}<LoaderCircle size={14} class="spin" /> Počítám…{:else}<Sparkles size={14} /> {plan ? "Naplánovat znovu" : "Naplánovat"}{/if}
-    </button>
-  </div>
-  <p class="hint">
-    {keepOrder ? "Tvoje pořadí zůstane, plánovač jen zkontroluje a naplánuje přechody. " : "Plánovač vybere skladby a najde nejlepší pořadí. "}{LEVELS.find((l) => l[0] === level)?.[2]}
-  </p>
+    <label class="group len" class:off={keepOrder} title={keepOrder ? "Délka platí jen pro navržené pořadí" : "0 = všechny skladby"}>
+      <span class="eyebrow">Délka</span>
+      <span class="slider">
+        <input type="range" min="0" max={lenMax} step="5" bind:value={minutes} disabled={keepOrder} style:--p="{(minutes / lenMax) * 100}%" />
+        <span class="readout">{minutes === 0 ? "vše" : `${minutes} min`}</span>
+      </span>
+    </label>
 
-  {#if !plan}
-    <div class="empty">
-      {#if pool < 2}
-        Do setu nejdřív vlož skladby, ze kterých má plánovač vybírat: v Celé knihovně je označ a pravým tlačítkem dej Vložit do setu.
-      {:else}
-        Plánovač projde {pool} skladeb (tempo, tóninu, energii a místa pro Mix in a Mix out ze Smart Cue), najde pořadí podle
-        zvolené křivky energie a ke každému přechodu napíše, jak ho zahrát. Skladby s AI analýzou mají přesnější body.
-      {/if}
-    </div>
-  {:else}
-    <div class="summary">
-      <span><span class="readout big">{plan.tracks.length}</span> skladeb</span>
-      <span><span class="readout big">{time(plan.totalSeconds)}</span> délka</span>
-      <span><span class="readout big good">{plan.transitions.filter((t) => relationClass(t) === "good").length}</span> čistých přechodů</span>
-      <span><span class="readout big bad">{plan.transitions.filter((t) => relationClass(t) === "bad").length}</span> náročných</span>
-      {#if plan.leftOut.length}<span class="sub">{plan.leftOut.length} se nevešlo, zůstanou na konci setu</span>{/if}
-      {#if keepOrder}<span class="sub">tvoje pořadí</span>{/if}
+    <p class="hint">
+      {keepOrder ? "Tvoje pořadí zůstane, plánovač jen zkontroluje a naplánuje přechody. " : "Plánovač vybere skladby a najde nejlepší pořadí. "}{LEVELS.find((l) => l[0] === level)?.[2]}
+    </p>
+
+    <div class="sfoot">
       {#if backups > 0}
-        <button class="btn restore" onclick={restore} title="Vrátí hot cue, které skladby měly před prvním použitím plánu">Obnovit původní cue ({backups})</button>
+        <button class="btn ghost" onclick={restore} title="Vrátí hot cue, které skladby měly před prvním použitím plánu"><Undo2 size={14} /> Obnovit původní cue ({backups})</button>
       {/if}
-      <button class="btn primary apply" onclick={apply} disabled={busy || applied}>
-        {#if applied}<Check size={14} /> Uloženo{:else}{keepOrder ? "Uložit cue přechodů" : "Použít pořadí a cue"}{/if}
+      <button class="btn primary lg run" onclick={run} disabled={busy || pool < 2}>
+        {#if busy && !plan}<LoaderCircle size={15} class="spin" /> Počítám…{:else}<Sparkles size={15} /> {plan ? "Naplánovat znovu" : "Naplánovat"}{/if}
       </button>
     </div>
+  </aside>
 
-    <svg class="chart" viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="Energie v průběhu setu">
-      {#each [3, 5, 7, 9] as e}<line x1="0" x2={W} y1={y(e)} y2={y(e)} class="grid" />{/each}
-      {#each plan.tracks as t, i}
-        {@const end = i + 1 < plan.tracks.length ? plan.tracks[i + 1].start : plan.totalSeconds}
-        <rect
-          x={x(t.start) + 0.5}
-          y={y(t.energy)}
-          width={Math.max(1, x(end) - x(t.start) - 1)}
-          height={H - y(t.energy)}
-          fill={energyColor(t.energy)}
-          opacity={app.selectedTrack === t.trackId ? 1 : 0.75}
-          class="block"
-          role="button"
-          tabindex="-1"
-          onclick={() => app.selectTrack(t.trackId)}
-          onkeydown={() => {}}
-        ><title>{title(t.trackId)} — energie {t.energy}</title></rect>
-      {/each}
-      <polyline
-        class="target"
-        points={plan.tracks.map((t) => `${x(t.start)},${y(t.target)}`).join(" ") + ` ${W},${y(plan.tracks.at(-1)?.target ?? 5)}`}
-      />
-    </svg>
-    <div class="legend"><span class="tl"></span> cílová křivka energie <span class="sub">· výška sloupce = energie skladby (1–10), šířka = jak dlouho hraje</span></div>
-
-    <div class="list">
-      {#each plan.tracks as t, i (t.trackId)}
-        <div class="track" class:sel={app.selectedTrack === t.trackId}>
-          <span class="readout pos">{i + 1}</span>
-          <span class="readout at">{time(t.start)}</span>
-          <button class="name" onclick={() => app.selectTrack(t.trackId)}>
-            <span class="tt">{title(t.trackId)}</span><span class="ar">{artist(t.trackId)}</span>
-          </button>
-          <span class="readout bpm">{t.bpm.toFixed(1)}</span>
-          <span class="key"><i style:background={keyColor(t.key)}></i><span class="readout">{t.key || "?"}</span></span>
-          <span class="en" style:color={energyColor(t.energy)}><span class="readout">{t.energy.toFixed(1)}</span></span>
-        </div>
-        {#if plan.transitions[i]}
-          {@const tr = plan.transitions[i]}
-          <div class="trans-row">
-          <button class="prev" class:on={playingIdx === i} onclick={() => preview(i)} title="Přehrát přechod: obě skladby přes sebe podle plánu">
-            {#if playingIdx === i}<Square size={11} fill="currentColor" />{:else}<Play size={11} fill="currentColor" />{/if}
-          </button>
-          <button class="trans {relationClass(tr)}" onclick={() => (open = open === i ? null : i)}>
-            <span class="tech" style:color={TECH_COLOR[tr.technique]} style:border-color={TECH_COLOR[tr.technique]}>{tr.techniqueName}</span>
-            <span class="rel">{RELATION[tr.keyRelation] ?? tr.keyRelation}</span>
-            <span>{tr.pitchPercent > 0 ? "+" : ""}{tr.pitchPercent.toFixed(1)} %</span>
-            <span>{tr.bars} taktů od {cueTime(tr.startAtMs)}</span>
-            <span class="step">
-              {#if tr.energyStep > 0.4}<ArrowUp size={12} />{:else if tr.energyStep < -0.4}<ArrowDown size={12} />{:else}<ArrowRight size={12} />{/if}
-              {tr.energyStep > 0 ? "+" : ""}{tr.energyStep.toFixed(1)}
-            </span>
-            {#if relationClass(tr) === "bad"}<TriangleAlert size={12} />{/if}
-          </button>
-          </div>
-          {#if open === i}
-            <ul class="tips">
-              {#each tr.tips as tip}<li>{tip}</li>{/each}
-              <li class="marks">
-                <span>V „{title(tr.from)}“:</span>
-                {#each tr.aMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
-              </li>
-              <li class="marks">
-                <span>V „{title(tr.to)}“:</span>
-                {#each tr.bMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
-              </li>
-            </ul>
-          {/if}
+  <div class="result">
+    {#if !plan}
+      <div class="empty">
+        <Route size={28} />
+        {#if pool < 2}
+          <p>Do setu nejdřív vlož skladby, ze kterých má plánovač vybírat: v Celé knihovně je označ a pravým tlačítkem dej Vložit do setu.</p>
+        {:else}
+          <p>
+            Plánovač projde {pool} skladeb (tempo, tóninu, energii a místa pro Mix in a Mix out ze Smart Cue), najde pořadí podle
+            zvolené křivky energie a ke každému přechodu napíše, jak ho zahrát. Skladby s AI analýzou mají přesnější body.
+          </p>
         {/if}
-      {/each}
-    </div>
-  {/if}
+      </div>
+    {:else}
+      <div class="rhead">
+        <span class="score readout" class:warn={score < 70} style:--p="{score}%">{score}</span>
+        <div class="rtitle">
+          <h3>
+            {keepOrder ? "Tvoje pořadí" : "Návrh pořadí"}
+            <span class="sub">{plan.tracks.length} skladeb · {time(plan.totalSeconds)}{#if plan.leftOut.length} · {plan.leftOut.length} se nevešlo, zůstanou na konci setu{/if}</span>
+          </h3>
+          <span class="sub">
+            {counts.ok} z {plan.transitions.length} přechodů v harmonii · tempo ±{maxPitch.toFixed(0)} %{#if counts.boost} · {counts.boost} energy {plural(counts.boost, "boost", "boosty", "boostů")}{/if}{#if counts.warn} · {counts.warn} {plural(counts.warn, "náročný", "náročné", "náročných")}{/if}
+          </span>
+        </div>
+        <button class="btn" onclick={previewAll} disabled={!plan.transitions.length} title="Přehraje přechody jeden po druhém: obě skladby přes sebe podle plánu">
+          {#if chain}<Square size={13} fill="currentColor" /> Zastavit{:else}<Headphones size={15} /> Poslechnout přechody{/if}
+        </button>
+        <button class="btn primary" onclick={apply} disabled={busy || applied}>
+          {#if applied}<Check size={15} /> Uloženo{:else}<Check size={15} /> {keepOrder ? "Uložit cue přechodů" : "Použít pořadí a cue"}{/if}
+        </button>
+      </div>
+
+      <div class="bars" role="img" aria-label="Energie v průběhu setu, barva podle tóniny">
+        {#each plan.tracks as t, i (t.trackId)}
+          {@const end = i + 1 < plan.tracks.length ? plan.tracks[i + 1].start : plan.totalSeconds}
+          <button
+            class="bar"
+            class:sel={app.selectedTrack === t.trackId}
+            style:flex-grow={Math.max(1, end - t.start)}
+            style:--k={keyColor(t.key)}
+            style:--h="{(t.energy / 10) * 100}%"
+            style:--t="{(t.target / 10) * 100}%"
+            title="{title(t.trackId)} · {t.key || '?'} · energie {t.energy.toFixed(1)} (cíl {t.target.toFixed(1)})"
+            onclick={() => app.selectTrack(t.trackId)}
+          ><span class="fill"></span><i></i></button>
+        {/each}
+      </div>
+
+      <div class="list">
+        {#each plan.tracks as t, i (t.trackId)}
+          <div class="track" class:sel={app.selectedTrack === t.trackId}>
+            <span class="readout pos">{i + 1}</span>
+            <button class="name" onclick={() => app.selectTrack(t.trackId)}>
+              <span class="tt">{title(t.trackId)}</span><span class="ar">{artist(t.trackId)}</span>
+            </button>
+            <span class="readout at" title="Začátek v setu">{time(t.start)}</span>
+            <span class="readout en" title="Energie">E {t.energy.toFixed(1)}</span>
+            <span class="readout bpm">{t.bpm.toFixed(2)}</span>
+            <span class="keypill" style:--k={keyColor(t.key)}>{t.key || "?"}</span>
+          </div>
+          {#if plan.transitions[i]}
+            {@const tr = plan.transitions[i]}
+            {@const k = kind(tr)}
+            <div class="trans {k}">
+              <button class="chip" onclick={() => (open = open === i ? null : i)} aria-expanded={open === i} title="{RELATION[tr.keyRelation] ?? tr.keyRelation} · pitch {tr.pitchPercent > 0 ? '+' : ''}{tr.pitchPercent.toFixed(1)} % · energie {tr.energyStep > 0 ? '+' : ''}{tr.energyStep.toFixed(1)}">
+                {#if k === "ok"}<Check size={13} />{:else if k === "boost"}<TrendingUp size={13} />{:else}<TriangleAlert size={13} />{/if}
+                <span>{t.key || "?"} → {plan.tracks[i + 1].key || "?"}</span>
+                <span>·</span><span>{bpmStep(i)}</span>
+                <span>·</span><span>{k === "boost" ? "energy boost" : k === "warn" ? warnText(tr) : `${tr.bars} taktů`}</span>
+              </button>
+              <span class="tech" style:--c={TECH_COLOR[tr.technique] ?? "var(--text-2)"}>{tr.techniqueName}</span>
+              <span class="from">od {cueTime(tr.startAtMs)}</span>
+              <button class="prev" class:on={playingIdx === i} onclick={() => preview(i)} title="Přehrát přechod: obě skladby přes sebe podle plánu" aria-label="Přehrát přechod">
+                {#if playingIdx === i}<Square size={10} fill="currentColor" />{:else}<Play size={10} fill="currentColor" />{/if}
+              </button>
+            </div>
+            {#if open === i}
+              <ul class="tips">
+                {#each tr.tips as tip}<li>{tip}</li>{/each}
+                <li class="marks">
+                  <span>V „{title(tr.from)}“:</span>
+                  {#each tr.aMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
+                </li>
+                <li class="marks">
+                  <span>V „{title(tr.to)}“:</span>
+                  {#each tr.bMarks as [ms, label]}<span class="mk">{cueTime(ms)} {label}</span>{/each}
+                </li>
+              </ul>
+            {/if}
+          {/if}
+        {/each}
+      </div>
+    {/if}
+  </div>
 </section>
 
 <style>
   .planner {
     flex: 1;
     min-width: 0;
+    min-height: 0;
+    display: flex;
+    gap: 16px;
+    padding: 4px 28px 16px;
+  }
+  .settings {
+    flex: none;
+    width: 330px;
     display: flex;
     flex-direction: column;
-    padding: 14px 20px 0;
+    gap: 16px;
+    padding: 18px 18px 18px;
+    background: var(--surface-2);
+    border-radius: 14px;
     overflow-y: auto;
   }
-  .bar {
+  .shead {
     display: flex;
-    align-items: flex-start;
-  }
-  .titles {
-    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    margin: -4px -6px -10px 0;
   }
   h2 {
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 0;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
   }
   h2 :global(svg) {
-    color: var(--cue);
+    color: var(--accent);
   }
   .sub {
     font-size: 12px;
-    color: var(--text-2);
+    color: var(--text-3);
   }
-  .x {
-    border: 0;
-    background: none;
-    color: var(--text-2);
-    padding: 4px;
+  .pool {
+    margin: 0;
   }
-  .params {
+  .group {
     display: flex;
-    align-items: flex-end;
-    gap: 18px;
-    margin-top: 14px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 8px;
   }
-  .lbl {
-    display: block;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-2);
-    margin-bottom: 4px;
+  .group .seg {
+    display: flex;
+  }
+  .group .seg > button {
+    flex: 1;
+    padding: 0 4px;
+    height: 30px;
+    font-size: 12px;
+    white-space: nowrap;
   }
   .len.off {
     opacity: 0.4;
   }
-  .len input {
-    width: 70px;
-    height: 28px;
-    border: 1px solid var(--line);
-    background: var(--booth);
-    color: var(--text);
-    border-radius: 6px;
-    padding: 0 8px;
-    font: inherit;
-  }
-  .seg {
+  .slider {
     display: flex;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 2px;
-    background: var(--booth);
+    align-items: center;
+    gap: 12px;
   }
-  .seg button {
-    border: 0;
-    background: none;
-    height: 24px;
-    padding: 0 10px;
-    border-radius: 4px;
-    color: var(--text-2);
-    font-size: 12px;
+  .slider .readout {
+    min-width: 52px;
+    text-align: right;
+    font-size: 15px;
   }
-  .seg button.on {
-    background: var(--panel-2);
-    color: var(--text);
+  input[type="range"] {
+    flex: 1;
+    height: 4px;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 2px;
+    background: linear-gradient(to right, var(--accent) var(--p), var(--surface-3) var(--p));
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
   }
   .hint {
-    margin: 8px 0 0;
+    margin: 0;
     font-size: 12px;
-    color: var(--text-2);
+    line-height: 1.5;
+    color: var(--text-3);
+  }
+  .sfoot {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .run {
+    justify-content: center;
+    width: 100%;
+  }
+  .result {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
   }
   .empty {
-    margin: 40px auto;
-    max-width: 560px;
+    margin: auto;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
     color: var(--text-2);
     line-height: 1.5;
     text-align: center;
   }
-  .summary {
-    display: flex;
-    align-items: baseline;
-    gap: 18px;
-    margin: 16px 0 10px;
-    font-size: 12px;
-    color: var(--text-2);
+  .empty :global(svg) {
+    color: var(--text-3);
   }
-  .big {
-    font-size: 18px;
-    color: var(--text);
+  .empty p {
+    margin: 0;
   }
-  .big.good {
-    color: var(--play);
-  }
-  .big.bad {
-    color: var(--warn);
-  }
-  .apply {
-    align-self: center;
-  }
-  .restore {
-    margin-left: auto;
-    align-self: center;
-  }
-  .restore + .apply {
-    margin-left: 0;
-  }
-  .summary > .apply:first-of-type {
-    margin-left: auto;
-  }
-  .chart {
-    width: 100%;
-    height: 120px;
-    background: var(--booth);
-    border-radius: 6px;
-    flex: none;
-  }
-  .grid {
-    stroke: var(--line);
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
-  }
-  .block {
-    cursor: pointer;
-  }
-  .target {
-    fill: none;
-    stroke: var(--cue);
-    stroke-width: 2;
-    stroke-dasharray: 6 4;
-    vector-effect: non-scaling-stroke;
-  }
-  .legend {
-    margin: 6px 0 12px;
-    font-size: 11px;
-    color: var(--text-2);
+  .rhead {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 14px;
+    flex: none;
   }
-  .tl {
-    width: 18px;
-    border-top: 2px dashed var(--cue);
+  .score {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    font-size: 19px;
+    color: var(--success);
+    --ring: var(--success);
+    background:
+      radial-gradient(closest-side, var(--surface-1) calc(100% - 3px), transparent calc(100% - 2px)),
+      conic-gradient(var(--ring) var(--p), var(--surface-3) var(--p));
+  }
+  .score.warn {
+    color: var(--warning);
+    --ring: var(--warning);
+  }
+  .rtitle {
+    flex: 1;
+    min-width: 0;
+  }
+  h3 {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 2px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  h3 .sub {
+    font-weight: 400;
+  }
+  .rtitle > .sub {
+    color: var(--text-2);
+  }
+  .bars {
+    flex: none;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 60px;
+  }
+  .bar {
+    position: relative;
+    flex-basis: 0;
+    min-width: 4px;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    display: flex;
+    align-items: flex-end;
+  }
+  .fill {
+    width: 100%;
+    height: var(--h);
+    border-radius: 3px 3px 1px 1px;
+    background: color-mix(in srgb, var(--k) 62%, var(--surface-1));
+  }
+  .bar:hover .fill,
+  .bar.sel .fill {
+    background: var(--k);
+  }
+  /* Target energy of the curve at this track. */
+  .bar i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--t);
+    border-top: 2px dotted rgb(255 255 255 / 0.3);
+    pointer-events: none;
   }
   .list {
-    padding-bottom: 16px;
+    background: var(--surface-2);
+    border-radius: 14px;
+    padding: 10px 14px 12px;
   }
   .track {
     display: grid;
-    grid-template-columns: 26px 52px 1fr 54px 60px 44px;
-    gap: 10px;
+    grid-template-columns: 22px minmax(0, 1fr) auto 46px 58px 42px;
+    gap: 12px;
     align-items: center;
-    height: 34px;
-    padding: 0 8px;
-    border-radius: 6px;
+    height: 44px;
+    padding: 0 8px 0 0;
+    border-radius: 8px;
   }
   .track.sel {
-    background: var(--panel-2);
+    background: var(--surface-3);
   }
   .pos {
-    color: var(--text-2);
+    color: var(--text-3);
     text-align: right;
-  }
-  .at {
-    color: var(--text-2);
-    font-size: 14px;
+    font-size: 13px;
   }
   .name {
     display: flex;
@@ -624,6 +715,7 @@
     text-align: left;
   }
   .tt {
+    font-size: 13.5px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
@@ -631,41 +723,80 @@
     max-width: 100%;
   }
   .ar {
-    font-size: 11px;
-    color: var(--text-2);
+    font-size: 12px;
+    color: var(--text-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
   }
-  .bpm,
+  .at,
   .en {
+    color: var(--text-3);
+    font-size: 13px;
+    text-align: right;
+  }
+  .bpm {
     text-align: right;
     font-size: 15px;
   }
-  .key {
+  .trans {
+    --c: var(--success);
     display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 0 34px;
+    padding: 2px 0 2px 12px;
+    border-left: 2px solid var(--c);
+    font-size: 12px;
+  }
+  .trans.boost {
+    --c: var(--accent);
+  }
+  .trans.warn {
+    --c: var(--warning);
+  }
+  .chip {
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 15px;
+    height: 22px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+    color: var(--c);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
   }
-  .key i {
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
+  .chip:hover {
+    background: color-mix(in srgb, var(--c) 20%, transparent);
   }
-  .trans-row {
-    display: flex;
+  .tech {
+    height: 22px;
+    display: inline-flex;
     align-items: center;
+    padding: 0 9px;
+    border-radius: 11px;
+    background: var(--surface-3);
+    color: var(--c);
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .from {
+    color: var(--text-3);
+    font-family: var(--font-readout);
+    font-size: 13px;
   }
   .prev {
     flex: none;
     width: 22px;
     height: 22px;
-    margin-left: 14px;
     border-radius: 50%;
-    border: 1px solid var(--line);
-    background: var(--panel);
+    border: 0;
+    background: var(--surface-3);
     color: var(--text-2);
     display: flex;
     align-items: center;
@@ -673,71 +804,30 @@
   }
   .prev:hover,
   .prev.on {
-    color: var(--cue);
-    border-color: var(--cue);
+    color: var(--on-accent);
+    background: var(--accent);
   }
-  .tech {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border: 1px solid;
-    border-radius: 4px;
-    min-width: 104px;
-    text-align: center;
+  .tips {
+    margin: 4px 0 8px 48px;
+    padding: 8px 12px;
+    list-style: none;
+    background: var(--surface-1);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-2);
   }
   .marks {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    color: var(--text-2);
   }
   .mk {
     font-family: var(--font-readout);
     font-size: 13px;
     color: var(--text);
-    background: var(--panel-2);
+    background: var(--surface-3);
     border-radius: 4px;
     padding: 0 6px;
-  }
-  .trans {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    width: 100%;
-    height: 24px;
-    padding: 0 8px 0 10px;
-    border: 0;
-    background: none;
-    font-size: 11px;
-    color: var(--text-2);
-    text-align: left;
-  }
-  .trans.good {
-    color: var(--play);
-  }
-  .trans.ok {
-    color: var(--warn);
-  }
-  .trans.bad {
-    color: var(--fault);
-  }
-  .trans .rel {
-    min-width: 110px;
-  }
-  .trans span:not(.rel):not(.tech) {
-    color: var(--text-2);
-  }
-  .step {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-  }
-  .tips {
-    margin: 2px 0 8px 70px;
-    padding: 8px 12px;
-    list-style: none;
-    border-left: 2px solid var(--line);
-    font-size: 12px;
-    line-height: 1.6;
   }
 </style>

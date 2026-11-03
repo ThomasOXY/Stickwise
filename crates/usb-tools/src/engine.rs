@@ -68,8 +68,16 @@ pub fn library(req: &SyncRequest, plan: &SyncPlan) -> (Library, usize) {
         req.tracks.iter().map(|t| (t.key, t)).collect();
     let mut lib = Library::default();
     let mut index = std::collections::HashMap::new();
+    let mut by_path = std::collections::HashMap::new();
     let mut dropped = 0;
     for pt in &plan.tracks {
+        // The same song twice in the library (from two folders) shares one
+        // file on the stick; Engine takes a file once, so both are it.
+        if let Some(&i) = by_path.get(&pt.device_path.to_lowercase()) {
+            index.insert(pt.key, i);
+            continue;
+        }
+        by_path.insert(pt.device_path.to_lowercase(), lib.tracks.len());
         let t = by_key[&pt.key];
         let sr = if t.sample_rate > 0 {
             t.sample_rate as f64
@@ -77,11 +85,9 @@ pub fn library(req: &SyncRequest, plan: &SyncPlan) -> (Library, usize) {
             44100.0
         };
         let samples = (t.duration.max(0.0) * sr).round() as i64;
-        let dat = t.anlz_dat.as_deref().and_then(read_anlz);
-        let two = t
-            .anlz_dat
-            .as_ref()
-            .and_then(|p| read_anlz(&p.with_extension("2EX")));
+        let src = crate::sync::anlz_source(t, pt, &req.stick);
+        let dat = src.as_deref().and_then(read_anlz);
+        let two = src.as_ref().and_then(|p| read_anlz(&p.with_extension("2EX")));
         let grid = match &t.grid {
             Some(beats) => convert::beat_grid(beats, sr, samples),
             None => dat
@@ -146,11 +152,14 @@ pub fn library(req: &SyncRequest, plan: &SyncPlan) -> (Library, usize) {
             parent: p.parent,
             title: p.name.clone(),
             sort: p.sort,
-            tracks: p
-                .tracks
-                .iter()
-                .filter_map(|k| index.get(k).copied())
-                .collect(),
+            tracks: {
+                let mut seen = std::collections::HashSet::new();
+                p.tracks
+                    .iter()
+                    .filter_map(|k| index.get(k).copied())
+                    .filter(|&i| seen.insert(i))
+                    .collect()
+            },
         })
         .collect();
     (lib, dropped)
