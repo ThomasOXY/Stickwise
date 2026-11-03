@@ -137,8 +137,23 @@ pub struct ApplyReport {
     pub cues_updated: usize,
     pub playlists_added: usize,
     pub playlists_updated: usize,
+    #[serde(default)]
+    pub playlists_deleted: usize,
     /// Tracks that did not arrive: "Artist – Title".
     pub skipped: Vec<String>,
+}
+
+/// A playlist deleted on one Mac that the other still has.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Deletion {
+    pub uid: String,
+    pub name: String,
+    pub is_folder: bool,
+    pub is_set: bool,
+    pub tracks: usize,
+    /// When it was deleted, unix ms.
+    pub deleted: i64,
 }
 
 const TAG_COLUMNS: &str = "title = ?2, artist = ?3, album = ?4, genre = ?5, label = ?6, remixer = ?7, key = ?8, \
@@ -258,6 +273,92 @@ impl Library {
     /// fingerprinted.
     pub fn offer(&self, playlist_ids: &[i64], track_ids: &[i64]) -> Result<Offer> {
         let (lists, tracks) = self.selection(playlist_ids, track_ids)?;
+        self.offer_of(&lists, tracks)
+    }
+
+    /// The whole library, for mirroring. Tracks not fingerprinted yet (their
+    /// file missing) are left out, and so are the playlists holding them,
+    /// lest the other Mac take them in without those tracks; their names
+    /// come back second.
+    pub fn full_offer(&self) -> Result<(Offer, Vec<String>)> {
+        let mut st = self.conn.prepare("SELECT id FROM tracks WHERE fingerprint != '' ORDER BY id")?;
+        let tracks: Vec<i64> = st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        let ready: HashSet<i64> = tracks.iter().copied().collect();
+        let mut lists = Vec::new();
+        let mut left_out = Vec::new();
+        for p in self.playlists()? {
+            if p.track_ids.iter().all(|t| ready.contains(t)) {
+                lists.push(p.id);
+            } else {
+                left_out.push(p.name);
+            }
+        }
+        Ok((self.offer_of(&lists, tracks)?, left_out))
+    }
+
+    /// Playlists that were deleted here (with a tombstone) and that the
+    /// other Mac's `offer` still has, unchanged since.
+    pub fn deleted_here(&self, offer: &Offer) -> Result<Vec<Deletion>> {
+        let mut st = self.conn.prepare("SELECT uid, deleted FROM sync_tombstones WHERE kind = 'playlist'")?;
+        let gone: HashMap<String, i64> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        Ok(offer
+            .playlists
+            .iter()
+            .filter_map(|p| {
+                let deleted = *gone.get(&p.uid)?;
+                (p.modified <= deleted).then(|| Deletion {
+                    uid: p.uid.clone(),
+                    name: p.name.clone(),
+                    is_folder: p.is_folder,
+                    is_set: p.is_set,
+                    tracks: p.tracks.len(),
+                    deleted,
+                })
+            })
+            .collect())
+    }
+
+    /// Playlists here that the other Mac deleted (its `tombstones`) and
+    /// that were not changed here since.
+    pub fn deleted_there(&self, tombstones: &[crate::peer::Tombstone]) -> Result<Vec<Deletion>> {
+        let gone: HashMap<&str, i64> =
+            tombstones.iter().filter(|t| t.kind == "playlist").map(|t| (t.uid.as_str(), t.deleted)).collect();
+        let mut st = self.conn.prepare("SELECT id, uid, modified FROM playlists")?;
+        let stamps: HashMap<i64, (String, i64)> =
+            st.query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?.collect::<rusqlite::Result<_>>()?;
+        Ok(self
+            .playlists()?
+            .into_iter()
+            .filter_map(|p| {
+                let (uid, modified) = stamps.get(&p.id)?;
+                let deleted = *gone.get(uid.as_str())?;
+                (*modified <= deleted).then(|| Deletion {
+                    uid: uid.clone(),
+                    name: p.name,
+                    is_folder: p.is_folder,
+                    is_set: p.is_set,
+                    tracks: p.track_ids.len(),
+                    deleted,
+                })
+            })
+            .collect())
+    }
+
+    /// Delete playlists (folders with all inside) by uid; how many there were.
+    pub fn delete_playlists_by_uid(&self, uids: &[String]) -> Result<usize> {
+        let mut n = 0;
+        for uid in uids {
+            let id: Option<i64> =
+                self.conn.query_row("SELECT id FROM playlists WHERE uid = ?1", [uid], |r| r.get(0)).optional()?;
+            if let Some(id) = id {
+                self.delete_playlist(id)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    fn offer_of(&self, lists: &[i64], tracks: Vec<i64>) -> Result<Offer> {
         let mut fingerprints: HashMap<i64, String> = HashMap::new();
         let mut out_tracks = Vec::new();
         let mut sent = HashSet::new();
@@ -357,14 +458,38 @@ impl Library {
 
     /// Take in an offer whose files arrived as `received` (by fingerprint).
     pub fn apply_offer(&mut self, offer: &Offer, received: &HashMap<String, Received>) -> Result<ApplyReport> {
-        let mut report = ApplyReport::default();
         let tx = self.conn.transaction()?;
+        let report = Self::apply_on(&tx, offer, received)?;
+        tx.commit()?;
+        Ok(report)
+    }
+
+    /// What taking in `offer` would change, if every file in `want` came.
+    /// Nothing is written.
+    pub fn preview(&mut self, offer: &Offer, want: &[Want]) -> Result<ApplyReport> {
+        let received: HashMap<String, Received> = want
+            .iter()
+            .map(|w| {
+                let got = Received {
+                    audio: w.audio.then(|| (format!("stickwise-preview:{}", w.fingerprint), 0, 0)),
+                    anlz: w.anlz.then(|| format!("stickwise-preview:{}.DAT", w.fingerprint)),
+                };
+                (w.fingerprint.clone(), got)
+            })
+            .collect();
+        let tx = self.conn.transaction()?;
+        Self::apply_on(&tx, offer, &received)
+        // Dropping `tx` rolls it all back.
+    }
+
+    fn apply_on(tx: &Transaction, offer: &Offer, received: &HashMap<String, Received>) -> Result<ApplyReport> {
+        let mut report = ApplyReport::default();
         let mut ids: HashMap<&str, i64> = HashMap::new();
 
         for t in &offer.tracks {
             let e = &t.entry;
             let got = received.get(&e.fingerprint);
-            let id = match local_by_fingerprint(&tx, &e.fingerprint)? {
+            let id = match local_by_fingerprint(tx, &e.fingerprint)? {
                 None => {
                     let Some((path, size, mtime)) = got.and_then(|r| r.audio.clone()) else {
                         report.skipped.push(label(t));
@@ -384,8 +509,8 @@ impl Library {
                         ],
                     )?;
                     let id = tx.last_insert_rowid();
-                    Library::write_cues(&tx, id, &t.cues.iter().map(CuePoint::from).collect::<Vec<_>>())?;
-                    write_grid(&tx, id, t.grid)?;
+                    Library::write_cues(tx, id, &t.cues.iter().map(CuePoint::from).collect::<Vec<_>>())?;
+                    write_grid(tx, id, t.grid)?;
                     if let Some(dat) = got.and_then(|r| r.anlz.as_ref()) {
                         tx.execute("UPDATE tracks SET anlz = ?2 WHERE id = ?1", params![id, dat])?;
                     }
@@ -396,7 +521,7 @@ impl Library {
                         ("grid_modified", e.grid_modified),
                         ("anlz_modified", e.anlz_modified),
                     ] {
-                        set_stamp(&tx, id, c, v)?;
+                        set_stamp(tx, id, c, v)?;
                     }
                     id
                 }
@@ -411,25 +536,25 @@ impl Library {
                                 g.color, g.comment, g.year, g.track_number
                             ],
                         )?;
-                        set_stamp(&tx, l.id, "meta_modified", e.meta_modified)?;
+                        set_stamp(tx, l.id, "meta_modified", e.meta_modified)?;
                         updated = true;
                     }
                     if e.cues_modified > l.cues {
-                        Library::backup_cues_on(&tx, l.id)?;
-                        Library::write_cues(&tx, l.id, &t.cues.iter().map(CuePoint::from).collect::<Vec<_>>())?;
+                        Library::backup_cues_on(tx, l.id)?;
+                        Library::write_cues(tx, l.id, &t.cues.iter().map(CuePoint::from).collect::<Vec<_>>())?;
                         tx.execute("UPDATE tracks SET cues_source = 'local' WHERE id = ?1", [l.id])?;
-                        set_stamp(&tx, l.id, "cues_modified", e.cues_modified)?;
+                        set_stamp(tx, l.id, "cues_modified", e.cues_modified)?;
                         report.cues_updated += 1;
                         updated = true;
                     }
                     if e.grid_modified > l.grid {
-                        write_grid(&tx, l.id, t.grid)?;
-                        set_stamp(&tx, l.id, "grid_modified", e.grid_modified)?;
+                        write_grid(tx, l.id, t.grid)?;
+                        set_stamp(tx, l.id, "grid_modified", e.grid_modified)?;
                         updated = true;
                     }
                     if let Some(dat) = got.and_then(|r| r.anlz.as_ref()) {
                         tx.execute("UPDATE tracks SET anlz = ?2 WHERE id = ?1", params![l.id, dat])?;
-                        set_stamp(&tx, l.id, "anlz_modified", e.anlz_modified.max(l.anlz))?;
+                        set_stamp(tx, l.id, "anlz_modified", e.anlz_modified.max(l.anlz))?;
                         updated = true;
                     }
                     if updated {
@@ -452,12 +577,11 @@ impl Library {
             // A cycle cannot come from a real library; take the rest as they are.
             let (ready, wait) = if ready.is_empty() { (wait, Vec::new()) } else { (ready, wait) };
             for p in ready {
-                Self::apply_playlist(&tx, p, &ids, &mut report)?;
+                Self::apply_playlist(tx, p, &ids, &mut report)?;
                 done.insert(&p.uid);
             }
             left = wait;
         }
-        tx.commit()?;
         Ok(report)
     }
 
@@ -626,6 +750,64 @@ mod tests {
         let r = b.apply_offer(&a.offer(&[p], &[]).unwrap(), &arrived(&["f2"])).unwrap();
         assert_eq!(r.skipped, vec!["DJ – T1"]);
         assert_eq!(b.playlists().unwrap()[0].track_ids.len(), 1);
+    }
+
+    #[test]
+    fn full_offer_leaves_out_playlists_with_missing_tracks() {
+        let mut lib = library(2);
+        lib.conn().execute("INSERT INTO tracks(path, title) VALUES ('/off/x.mp3', 'X')", []).unwrap();
+        let ok = lib.create_playlist(0, "OK", false, false).unwrap();
+        let partial = lib.create_playlist(0, "Napůl", false, false).unwrap();
+        lib.set_playlist_tracks(ok, &[1, 2]).unwrap();
+        lib.set_playlist_tracks(partial, &[1, 3]).unwrap();
+        let (offer, left_out) = lib.full_offer().unwrap();
+        assert_eq!(offer.tracks.len(), 2);
+        assert_eq!(offer.playlists.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["OK"]);
+        assert_eq!(left_out, ["Napůl"]);
+    }
+
+    #[test]
+    fn preview_counts_without_writing() {
+        let mut a = library(2);
+        let p = a.create_playlist(0, "P", false, false).unwrap();
+        a.set_playlist_tracks(p, &[1, 2]).unwrap();
+        a.set_cues(1, &[CuePoint::hot(1, 500)]).unwrap();
+        let offer = a.offer(&[p], &[]).unwrap();
+        let mut b = library(1);
+        let want = b.wants(&offer).unwrap();
+        let r = b.preview(&offer, &want).unwrap();
+        assert_eq!((r.tracks_added, r.cues_updated, r.playlists_added), (1, 1, 1));
+        assert_eq!(b.tracks().unwrap().len(), 1);
+        assert!(b.playlists().unwrap().is_empty());
+        assert!(b.cues(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deletions_are_found_both_ways_unless_edited_since() {
+        let mut a = library(1);
+        let gone = a.create_playlist(0, "Smazaný", false, false).unwrap();
+        let edited = a.create_playlist(0, "Upravený", false, false).unwrap();
+        a.set_playlist_tracks(gone, &[1]).unwrap();
+        let mut b = library(1);
+        b.apply_offer(&a.offer(&[gone, edited], &[]).unwrap(), &HashMap::new()).unwrap();
+        assert_eq!(b.playlists().unwrap().len(), 2);
+
+        a.delete_playlist(gone).unwrap();
+        a.delete_playlist(edited).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        // B changed one of them after A deleted it: that one is not offered for deletion.
+        let on_b = b.playlists().unwrap().into_iter().find(|p| p.name == "Upravený").unwrap().id;
+        b.rename_playlist(on_b, "Upravený později").unwrap();
+
+        let (b_offer, _) = b.full_offer().unwrap();
+        let here = a.deleted_here(&b_offer).unwrap();
+        assert_eq!(here.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Smazaný"]);
+        assert_eq!(here[0].tracks, 1);
+        let there = b.deleted_there(&a.tombstones().unwrap()).unwrap();
+        assert_eq!(there.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Smazaný"]);
+
+        assert_eq!(b.delete_playlists_by_uid(&[there[0].uid.clone()]).unwrap(), 1);
+        assert_eq!(b.playlists().unwrap().len(), 1);
     }
 
     #[test]

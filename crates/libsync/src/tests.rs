@@ -28,20 +28,26 @@ impl Host for TestHost {
         self.asked.lock().unwrap().push(s.clone());
         self.accept
     }
+    fn started(&self, _: &str, _: bool) {}
     fn progress(&self, _: &str, _: &Progress) -> bool {
         true
     }
     fn finished(&self, _: &str, r: &std::result::Result<ApplyReport, String>) {
         let _ = self.done.send(r.clone());
     }
+    fn cancelled(&self, _: &str) {
+        let _ = self.done.send(Err("cancelled".into()));
+    }
 }
 
 struct World {
     a: Node,
-    a_lib: Mutex<Library>,
-    a_music: PathBuf,
     b: Node,
+    /// A's side (it starts sends and mirrors).
+    ah: Arc<TestHost>,
+    /// B's side (serving).
     host: Arc<TestHost>,
+    a_src: PathBuf,
     done: mpsc::Receiver<std::result::Result<ApplyReport, String>>,
     _dir: tempfile::TempDir,
 }
@@ -69,48 +75,59 @@ fn wait(rx: &mpsc::Receiver<Event>, want: impl Fn(&Event) -> bool) -> Event {
     }
 }
 
+/// A library holding the audio files of folder `src` as a playlist.
+fn library_of(src: &Path) -> Library {
+    let mut lib = Library::in_memory().unwrap();
+    lib.add_scan(&library::folders::scan(&[src.to_path_buf()]), 0).unwrap();
+    lib
+}
+
+fn host(lib: Library, root: &Path, side: &str, accept: bool) -> (Arc<TestHost>, mpsc::Receiver<std::result::Result<ApplyReport, String>>) {
+    let (tx, rx) = mpsc::channel();
+    let h = Arc::new(TestHost {
+        lib: Mutex::new(lib),
+        music: root.join(format!("{side}-music")),
+        anlz: root.join(format!("{side}-anlz")),
+        accept,
+        asked: Mutex::new(Vec::new()),
+        done: tx,
+    });
+    (h, rx)
+}
+
 /// Mac A with a playlist "Sobota" of two tracks (one with cues and an
-/// analysis), Mac B empty, paired; B already has a different file where
-/// A's first track would go.
+/// analysis), Mac B with a playlist "Doma" of one track, paired; B already
+/// has a different file where A's first track would go.
 fn world(accept: bool) -> World {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let a_music = root.join("a-music");
-    let set = a_music.join("Sobota");
-    std::fs::create_dir_all(&set).unwrap();
-    std::fs::write(set.join("DJ A - Jedna.mp3"), vec![1u8; 700_000]).unwrap();
-    std::fs::write(set.join("DJ B - Dva.mp3"), b"second track").unwrap();
+    let a_src = root.join("a-src/Sobota");
+    std::fs::create_dir_all(&a_src).unwrap();
+    std::fs::write(a_src.join("DJ A - Jedna.mp3"), vec![1u8; 700_000]).unwrap();
+    std::fs::write(a_src.join("DJ B - Dva.mp3"), b"second track").unwrap();
+    let b_src = root.join("b-src/Doma");
+    std::fs::create_dir_all(&b_src).unwrap();
+    std::fs::write(b_src.join("DJ C - Tři.mp3"), b"b's own track").unwrap();
 
-    let mut a_lib = Library::in_memory().unwrap();
-    a_lib.add_scan(&library::folders::scan(std::slice::from_ref(&set)), 0).unwrap();
-    for s in a_lib.file_stamps().unwrap() {
-        let fp = library::peer::fingerprint_file(Path::new(&s.path)).unwrap();
-        let size = std::fs::metadata(&s.path).unwrap().len();
-        a_lib.set_fingerprint(s.id, &fp, size, 1).unwrap();
-    }
+    let mut a_lib = library_of(&a_src);
     let one = a_lib.tracks().unwrap().into_iter().find(|t| t.title == "Jedna").unwrap().id;
     a_lib.set_cues(one, &[CuePoint { comment: "Drop".into(), ..CuePoint::hot(1, 64_000) }]).unwrap();
-    let anlz = root.join("a-anlz");
+    let anlz = root.join("a-anlz-own");
     std::fs::create_dir_all(&anlz).unwrap();
     std::fs::write(anlz.join("ANLZ0000.DAT"), b"dat").unwrap();
     std::fs::write(anlz.join("ANLZ0000.EXT"), b"ext").unwrap();
     a_lib.set_analysis(one, &anlz.join("ANLZ0000.DAT").display().to_string(), None, None, 0.0).unwrap();
 
-    let b_music = root.join("b-music");
-    let taken = b_music.join("DJ A").join("Neznámé album");
+    let (ah, _) = host(a_lib, root, "a", true);
+    let (bh, done) = host(library_of(&b_src), root, "b", accept);
+    let taken = bh.music.join("DJ A").join("Neznámé album");
     std::fs::create_dir_all(&taken).unwrap();
     std::fs::write(taken.join("DJ A - Jedna.mp3"), b"the DJ's own, other file").unwrap();
+    for h in [&ah, &bh] {
+        fingerprint(&h.lib, None, |_, _| true).unwrap();
+    }
 
-    let (done_tx, done) = mpsc::channel();
-    let host = Arc::new(TestHost {
-        lib: Mutex::new(Library::in_memory().unwrap()),
-        music: b_music,
-        anlz: root.join("b-anlz"),
-        accept,
-        asked: Mutex::new(Vec::new()),
-        done: done_tx,
-    });
-    let serving = host.clone();
+    let serving = bh.clone();
     let (ae_tx, ae) = mpsc::channel();
     let (be_tx, be) = mpsc::channel();
     let a = node(&root.join("a-peer"), "A", ae_tx, None);
@@ -122,17 +139,41 @@ fn world(accept: bool) -> World {
     b.answer_pair(request, true);
     wait(&ae, |e| matches!(e, Event::PairResult { .. }));
 
-    World { a, a_lib: Mutex::new(a_lib), a_music, b, host, done, _dir: dir }
+    World { a, b, ah, host: bh, a_src, done, _dir: dir }
 }
 
 fn send_all(w: &World) -> Outcome {
     let offer = {
-        let l = w.a_lib.lock().unwrap();
+        let l = w.ah.lib.lock().unwrap();
         let p = l.playlists().unwrap()[0].id;
         l.offer(&[p], &[]).unwrap()
     };
     let mut s = w.a.connect(w.b.id()).unwrap();
-    send(&mut s, &w.a_lib, offer, |_| true).unwrap()
+    send(&mut s, &w.ah.lib, offer, |_| true).unwrap()
+}
+
+/// Mirror from A; `choose` sees the preview and gives the go.
+fn mirror_with(w: &World, choose: impl FnOnce(&MirrorPreview) -> Option<MirrorChoice>) -> (MirrorOutcome, MirrorPreview) {
+    let mut s = w.a.connect(w.b.id()).unwrap();
+    let mut seen = None;
+    let out = mirror(&mut s, w.ah.as_ref(), |p| {
+        seen = Some(p.clone());
+        choose(p)
+    })
+    .unwrap();
+    (out, seen.unwrap())
+}
+
+fn names(lib: &Mutex<Library>) -> Vec<String> {
+    let mut n: Vec<String> = lib.lock().unwrap().playlists().unwrap().into_iter().map(|p| p.name).collect();
+    n.sort();
+    n
+}
+
+fn titles(lib: &Mutex<Library>) -> Vec<String> {
+    let mut t: Vec<String> = lib.lock().unwrap().tracks().unwrap().into_iter().map(|t| t.title).collect();
+    t.sort();
+    t
 }
 
 #[test]
@@ -160,13 +201,12 @@ fn sends_a_playlist_with_files_cues_and_analysis() {
     let two = tracks.iter().find(|t| t.title == "Dva").unwrap();
     assert_eq!(std::fs::read(&two.path).unwrap(), b"second track");
     assert!(two.anlz.is_empty());
-    let p = &b.playlists().unwrap()[0];
-    assert_eq!(p.name, "Sobota");
+    let p = b.playlists().unwrap().into_iter().find(|p| p.name == "Sobota").unwrap();
     assert_eq!(p.track_ids.len(), 2);
     // Received files count as fingerprinted.
-    assert_eq!(b.fingerprint_progress().unwrap(), (2, 2));
+    assert_eq!(b.fingerprint_progress().unwrap(), (3, 3));
     // Nothing of A's was touched.
-    assert!(w.a_music.join("Sobota/DJ A - Jedna.mp3").is_file());
+    assert!(w.a_src.join("DJ A - Jedna.mp3").is_file());
 }
 
 #[test]
@@ -177,14 +217,14 @@ fn sending_again_moves_no_files() {
     assert_eq!(r, ApplyReport::default());
     let asked = w.host.asked.lock().unwrap()[1].clone();
     assert_eq!(asked.new_tracks, 0);
-    assert_eq!(w.host.lib.lock().unwrap().tracks().unwrap().len(), 2);
+    assert_eq!(w.host.lib.lock().unwrap().tracks().unwrap().len(), 3);
 }
 
 #[test]
 fn a_declined_offer_changes_nothing() {
     let w = world(false);
     assert!(matches!(send_all(&w), Outcome::Declined(_)));
-    assert!(w.host.lib.lock().unwrap().tracks().unwrap().is_empty());
+    assert_eq!(titles(&w.host.lib), ["Tři"]);
     assert!(!w.host.music.join("DJ B").exists());
 }
 
@@ -192,19 +232,15 @@ fn a_declined_offer_changes_nothing() {
 fn stopping_midway_keeps_no_part_files() {
     let w = world(true);
     let offer = {
-        let l = w.a_lib.lock().unwrap();
+        let l = w.ah.lib.lock().unwrap();
         l.offer(&[l.playlists().unwrap()[0].id], &[]).unwrap()
     };
     let mut s = w.a.connect(w.b.id()).unwrap();
-    let mut calls = 0;
-    let r = send(&mut s, &w.a_lib, offer, |p| {
-        calls += 1;
-        p.bytes_done < 300_000
-    });
+    let r = send(&mut s, &w.ah.lib, offer, |p| p.bytes_done < 300_000);
     assert!(r.is_err());
     drop(s);
     assert!(w.done.recv_timeout(Duration::from_secs(5)).unwrap().is_err());
-    assert!(w.host.lib.lock().unwrap().tracks().unwrap().is_empty());
+    assert_eq!(titles(&w.host.lib), ["Tři"]);
     let left: Vec<_> = walk(&w.host.music).into_iter().filter(|p| p.to_string_lossy().contains("stickwise-part")).collect();
     assert!(left.is_empty(), "{left:?}");
 }
@@ -223,9 +259,99 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
+fn mirror_makes_both_libraries_the_same() {
+    let w = world(true);
+    let (out, preview) = mirror_with(&w, |_| Some(MirrorChoice::default()));
+    assert_eq!((preview.here.report.tracks_added, preview.here.new_bytes), (1, 13));
+    assert_eq!((preview.there.report.tracks_added, preview.there.new_bytes), (2, 700_012));
+    assert_eq!(preview.there.report.playlists_added, 1);
+    assert!(preview.delete_here.is_empty() && preview.delete_there.is_empty());
+    let MirrorOutcome::Done { here, there } = out else { panic!("cancelled") };
+    assert_eq!((here.tracks_added, there.tracks_added), (1, 2));
+    assert!(w.done.recv_timeout(Duration::from_secs(5)).unwrap().is_ok());
+
+    for h in [&w.ah, &w.host] {
+        assert_eq!(names(&h.lib), ["Doma", "Sobota"]);
+        assert_eq!(titles(&h.lib), ["Dva", "Jedna", "Tři"]);
+    }
+    {
+        let a = w.ah.lib.lock().unwrap();
+        let tri = a.tracks().unwrap().into_iter().find(|t| t.title == "Tři").unwrap();
+        assert!(tri.path.starts_with(w.ah.music.to_str().unwrap()));
+        assert_eq!(std::fs::read(&tri.path).unwrap(), b"b's own track");
+    }
+
+    // Nothing changed since: a second mirror moves nothing.
+    let (out, preview) = mirror_with(&w, |_| Some(MirrorChoice::default()));
+    assert_eq!(preview.here, Changes::default());
+    assert_eq!(preview.there, Changes::default());
+    assert_eq!(out, MirrorOutcome::Done { here: ApplyReport::default(), there: ApplyReport::default() });
+}
+
+#[test]
+fn mirror_carries_newer_cues_from_the_other_side() {
+    let w = world(true);
+    mirror_with(&w, |_| Some(MirrorChoice::default()));
+    std::thread::sleep(Duration::from_millis(5));
+    {
+        let mut b = w.host.lib.lock().unwrap();
+        let id = b.tracks().unwrap().into_iter().find(|t| t.title == "Jedna").unwrap().id;
+        b.set_cues(id, &[CuePoint { comment: "Break".into(), ..CuePoint::hot(2, 90_000) }]).unwrap();
+    }
+    let (_, preview) = mirror_with(&w, |_| Some(MirrorChoice::default()));
+    assert_eq!(preview.here.report.cues_updated, 1);
+    let a = w.ah.lib.lock().unwrap();
+    let id = a.tracks().unwrap().into_iter().find(|t| t.title == "Jedna").unwrap().id;
+    assert_eq!(a.cues(id).unwrap()[0].comment, "Break");
+    assert!(a.has_cue_backup(id).unwrap(), "A's own cues are kept to restore");
+}
+
+#[test]
+fn a_confirmed_deletion_goes_across_and_an_unconfirmed_one_comes_back() {
+    let w = world(true);
+    mirror_with(&w, |_| Some(MirrorChoice::default()));
+    // B deletes "Doma", A deletes "Sobota".
+    for (h, name) in [(&w.host, "Doma"), (&w.ah, "Sobota")] {
+        let l = h.lib.lock().unwrap();
+        let id = l.playlists().unwrap().into_iter().find(|p| p.name == name).unwrap().id;
+        l.delete_playlist(id).unwrap();
+    }
+    // The DJ confirms deleting "Doma" here too, but keeps "Sobota" on B.
+    let (out, preview) = mirror_with(&w, |p| {
+        Some(MirrorChoice { delete_here: p.delete_here.iter().map(|d| d.uid.clone()).collect(), delete_there: Vec::new() })
+    });
+    assert_eq!(preview.delete_here.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Doma"]);
+    assert_eq!(preview.delete_there.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Sobota"]);
+    let MirrorOutcome::Done { here, .. } = out else { panic!("cancelled") };
+    assert_eq!(here.playlists_deleted, 1);
+    for h in [&w.ah, &w.host] {
+        assert_eq!(names(&h.lib), ["Sobota"]);
+        // Tracks stay whatever happens to playlists.
+        assert_eq!(titles(&h.lib).len(), 3);
+    }
+}
+
+#[test]
+fn a_cancelled_mirror_changes_nothing() {
+    let w = world(true);
+    let (out, _) = mirror_with(&w, |_| None);
+    assert_eq!(out, MirrorOutcome::Cancelled);
+    assert_eq!(w.done.recv_timeout(Duration::from_secs(5)).unwrap(), Err("cancelled".into()));
+    assert_eq!(names(&w.ah.lib), ["Sobota"]);
+    assert_eq!(names(&w.host.lib), ["Doma"]);
+}
+
+#[test]
 fn pings_still_answered() {
     let w = world(true);
     assert!(w.a.ping(w.b.id()).is_ok());
+}
+
+#[test]
+fn failures_explained_once_even_with_brackets_in_the_title() {
+    let mut r = ApplyReport { skipped: vec!["DJ – Track (Original Mix)".into()], ..Default::default() };
+    explain(&mut r, vec![("DJ – Track (Original Mix)".into(), "soubor chybí".into())]);
+    assert_eq!(r.skipped, ["DJ – Track (Original Mix) (soubor chybí)"]);
 }
 
 #[test]

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
-use libsync::{Host, Outcome, Progress, Summary};
+use libsync::{Host, MirrorChoice, MirrorOutcome, MirrorPreview, Outcome, Progress, Summary};
 use library::transfer::ApplyReport;
 use peerlink::{Event, Node, Peer};
 use serde::Serialize;
@@ -100,22 +100,6 @@ pub fn start_fingerprints(app: AppHandle) {
         });
 }
 
-/// Fingerprint now the tracks of `ids` that have none or an outdated one
-/// (sending cannot wait for the background pass).
-fn fingerprint_now(app: &AppHandle, ids: &[i64]) -> CmdResult<()> {
-    let want: std::collections::HashSet<i64> = ids.iter().copied().collect();
-    let stamps = lib(app, |l| l.file_stamps())?;
-    for s in stamps.iter().filter(|s| want.contains(&s.id)) {
-        let Ok(m) = std::fs::metadata(&s.path) else { continue };
-        if !s.stale(m.len(), mtime(&m)) {
-            continue;
-        }
-        let fp = library::peer::fingerprint_file(Path::new(&s.path)).map_err(err)?;
-        lib(app, |l| l.set_fingerprint(s.id, &fp, m.len(), mtime(&m)))?;
-    }
-    Ok(())
-}
-
 fn mtime(m: &std::fs::Metadata) -> i64 {
     m.modified()
         .ok()
@@ -203,7 +187,7 @@ struct PairResultDto {
 pub fn start_node(app: &AppHandle, dir: PathBuf) -> PeerNode {
     let serving = app.clone();
     let on_session: peerlink::OnSession = Arc::new(move |s| {
-        libsync::serve(s, &AppHost { app: serving.clone(), job: Mutex::new(None) });
+        libsync::serve(s, &AppHost::new(&serving, None, String::new()));
     });
     let handle = app.clone();
     let on_event = Arc::new(move |e: Event| {
@@ -314,6 +298,9 @@ fn report_text(r: &ApplyReport) -> String {
     if r.cues_updated > 0 {
         parts.push(format!("nové cue u {}", plural(r.cues_updated, "skladby", "skladeb", "skladeb")));
     }
+    if r.playlists_deleted > 0 {
+        parts.push(format!("smazáno: {}", plural(r.playlists_deleted, "playlist", "playlisty", "playlistů")));
+    }
     let mut text = if parts.is_empty() { "všechno už tu bylo".to_string() } else { parts.join(", ") };
     if !r.skipped.is_empty() {
         text.push_str(&format!(". Nepřišlo: {}", r.skipped.join("; ")));
@@ -321,19 +308,24 @@ fn report_text(r: &ApplyReport) -> String {
     text
 }
 
-/// This app as the receiving side of [`libsync`]: one per connection.
+/// This app as a side of [`libsync`]: one per connection.
 struct AppHost {
     app: AppHandle,
     /// The job showing this transfer, with its cancel flag.
     job: Mutex<Option<(u32, Arc<AtomicBool>)>>,
+    label: Mutex<String>,
 }
 
 impl AppHost {
-    fn event(&self, from: &str, state: &'static str, p: &Progress, message: String) -> Option<(JobEvent, Arc<AtomicBool>)> {
+    fn new(app: &AppHandle, job: Option<(u32, Arc<AtomicBool>)>, label: String) -> Self {
+        AppHost { app: app.clone(), job: Mutex::new(job), label: Mutex::new(label) }
+    }
+
+    fn event(&self, state: &'static str, p: &Progress, message: String) -> Option<(JobEvent, Arc<AtomicBool>)> {
         let (id, cancel) = self.job.lock().unwrap().clone()?;
         let ev = JobEvent {
             id,
-            label: format!("Příjem z {from}"),
+            label: self.label.lock().unwrap().clone(),
             state,
             files_done: p.files_done,
             files_total: p.files_total,
@@ -378,14 +370,26 @@ impl Host for AppHost {
         if answer.is_none() {
             let _ = self.app.emit("peer-offer-gone", request);
         }
-        if answer == Some(true) {
-            *self.job.lock().unwrap() = Some(self.app.state::<Jobs>().start());
-        }
         answer == Some(true)
     }
 
-    fn progress(&self, from: &str, p: &Progress) -> bool {
-        let Some((ev, cancel)) = self.event(from, "running", p, String::new()) else { return true };
+    fn started(&self, from: &str, mirror: bool) {
+        *self.label.lock().unwrap() = if mirror { format!("Zrcadlení s {from}") } else { format!("Příjem z {from}") };
+        let mut job = self.job.lock().unwrap();
+        if job.is_none() {
+            *job = Some(self.app.state::<Jobs>().start());
+        }
+    }
+
+    fn cancelled(&self, from: &str) {
+        if let Some((ev, _)) = self.event("cancelled", &Progress::default(), format!("{from} zrcadlení nepotvrdil.")) {
+            emit_job(&self.app, &ev);
+            self.app.state::<Jobs>().finish(ev.id);
+        }
+    }
+
+    fn progress(&self, _: &str, p: &Progress) -> bool {
+        let Some((ev, cancel)) = self.event("running", p, String::new()) else { return true };
         emit_job(&self.app, &ev);
         !cancel.load(Ordering::Relaxed)
     }
@@ -396,7 +400,7 @@ impl Host for AppHost {
             Ok(r) => ("done", format!("Z {from}: {}", report_text(r))),
             Err(e) => ("error", format!("Příjem z {from} se nepovedl: {e}")),
         };
-        if let Some((mut ev, _)) = self.event(from, state, &p, message) {
+        if let Some((mut ev, _)) = self.event(state, &p, message) {
             ev.files_done = ev.files_total;
             emit_job(&self.app, &ev);
             self.app.state::<Jobs>().finish(ev.id);
@@ -442,10 +446,11 @@ pub fn peer_send(
         emit_job(&app, &ev);
         let result = (|| -> CmdResult<Outcome> {
             let (_, tracks) = lib(&app, |l| l.selection(&playlist_ids, &track_ids))?;
-            fingerprint_now(&app, &tracks)?;
+            let state = app.state::<LibState>();
+            libsync::fingerprint(&state.0, Some(&tracks.into_iter().collect()), |_, _| !cancel.load(Ordering::Relaxed))
+                .map_err(err)?;
             let offer = lib(&app, |l| l.offer(&playlist_ids, &track_ids))?;
             let mut session = app.state::<PeerNode>().get()?.connect(&id).map_err(err)?;
-            let state = app.state::<LibState>();
             libsync::send(&mut session, &state.0, offer, |p| {
                 let mut e = ev.clone();
                 e.files_done = p.files_done;
@@ -470,4 +475,82 @@ pub fn peer_send(
         app.state::<Jobs>().finish(job);
     });
     Ok(job)
+}
+
+/// The mirror preview waiting for the DJ (one at a time).
+#[derive(Default)]
+pub struct MirrorAsk {
+    pending: Mutex<Option<(u64, mpsc::Sender<Option<MirrorChoice>>)>>,
+    next: AtomicU64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MirrorPreviewDto {
+    request: u64,
+    peer: String,
+    preview: MirrorPreview,
+}
+
+/// Mirror the library with a paired Mac, as a background job; the DJ
+/// confirms the changes in between. Returns the job id.
+#[tauri::command]
+pub fn peer_mirror(app: AppHandle, jobs: State<'_, Jobs>, id: String) -> CmdResult<u32> {
+    let node = app.state::<PeerNode>();
+    let name = node.get()?.peers().into_iter().find(|p| p.id == id).map(|p| p.name).unwrap_or_else(|| "Mac".into());
+    if app.state::<MirrorAsk>().pending.lock().unwrap().is_some() {
+        return Err("Jedno zrcadlení už čeká na potvrzení.".into());
+    }
+    let (job, cancel) = jobs.start();
+    std::thread::spawn(move || {
+        let label = format!("Zrcadlení s {name}");
+        let host = AppHost::new(&app, Some((job, cancel.clone())), label.clone());
+        let mut ev = JobEvent { id: job, label, state: "running", bytes_total: 1, ..Default::default() };
+        ev.current = "Porovnávám knihovny…".into();
+        emit_job(&app, &ev);
+        let result = (|| -> CmdResult<MirrorOutcome> {
+            let mut session = app.state::<PeerNode>().get()?.connect(&id).map_err(err)?;
+            libsync::mirror(&mut session, &host, |preview| {
+                let mut wait = ev.clone();
+                wait.current = "Čekám na potvrzení změn…".into();
+                emit_job(&app, &wait);
+                let asks = app.state::<MirrorAsk>();
+                let request = asks.next.fetch_add(1, Ordering::Relaxed) + 1;
+                let (tx, rx) = mpsc::channel();
+                *asks.pending.lock().unwrap() = Some((request, tx));
+                let _ = app.emit("peer-mirror-preview", MirrorPreviewDto { request, peer: name.clone(), preview: preview.clone() });
+                let answer = rx.recv_timeout(libsync::CONFIRM_TIMEOUT).ok().flatten();
+                *asks.pending.lock().unwrap() = None;
+                let _ = app.emit("peer-mirror-gone", request);
+                answer
+            })
+            .map_err(err)
+        })();
+        ev.current.clear();
+        ev.bytes_done = ev.bytes_total;
+        (ev.state, ev.message) = match &result {
+            Ok(MirrorOutcome::Done { here, there }) => {
+                ("done", format!("Tady: {}. Na {name}: {}.", report_text(here), report_text(there)))
+            }
+            Ok(MirrorOutcome::Cancelled) => ("cancelled", "Zrcadlení zrušeno, nic se nezměnilo.".into()),
+            Err(_) if cancel.load(Ordering::Relaxed) => ("cancelled", "Zrcadlení zastaveno.".into()),
+            Err(e) => ("error", format!("Zrcadlení s {name} se nepovedlo: {e}")),
+        };
+        emit_job(&app, &ev);
+        app.state::<Jobs>().finish(job);
+        if matches!(result, Ok(MirrorOutcome::Done { .. })) {
+            let _ = app.emit("library-changed", ());
+        }
+    });
+    Ok(job)
+}
+
+/// The DJ's go for a mirror (`None` calls it off).
+#[tauri::command]
+pub fn peer_mirror_answer(asks: State<'_, MirrorAsk>, request: u64, choice: Option<MirrorChoice>) {
+    if let Some((r, tx)) = asks.pending.lock().unwrap().as_ref()
+        && *r == request
+    {
+        let _ = tx.send(choice);
+    }
 }

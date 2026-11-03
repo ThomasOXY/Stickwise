@@ -233,6 +233,22 @@ impl Library {
         )?)
     }
 
+    pub fn tombstones(&self) -> Result<Vec<Tombstone>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT kind, uid, deleted FROM sync_tombstones ORDER BY deleted")?;
+        let rows = st
+            .query_map([], |r| {
+                Ok(Tombstone {
+                    kind: r.get(0)?,
+                    uid: r.get(1)?,
+                    deleted: r.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
     pub fn track_by_fingerprint(&self, fingerprint: &str) -> Result<Option<i64>> {
         Ok(self
             .conn
@@ -301,18 +317,7 @@ impl Library {
             })
             .collect();
 
-        let mut st = self
-            .conn
-            .prepare("SELECT kind, uid, deleted FROM sync_tombstones ORDER BY deleted")?;
-        let tombstones = st
-            .query_map([], |r| {
-                Ok(Tombstone {
-                    kind: r.get(0)?,
-                    uid: r.get(1)?,
-                    deleted: r.get(2)?,
-                })
-            })?
-            .collect::<rusqlite::Result<_>>()?;
+        let tombstones = self.tombstones()?;
 
         Ok(Manifest {
             library_uid: self.library_uid()?,

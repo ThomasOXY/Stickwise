@@ -19,6 +19,7 @@
   import PeerSheet from "./lib/PeerSheet.svelte";
   import PairPrompt from "./lib/PairPrompt.svelte";
   import OfferPrompt from "./lib/OfferPrompt.svelte";
+  import MirrorSheet from "./lib/MirrorSheet.svelte";
   import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
   import { updates } from "./lib/updates.svelte";
@@ -54,7 +55,7 @@
         return;
       }
     }
-    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || app.offerRequest || updates.open || app.settingsFor !== undefined) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || app.offerRequest || app.mirrorRequest || updates.open || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -127,6 +128,8 @@
   <PairPrompt />
 {:else if app.offerRequest}
   <OfferPrompt />
+{:else if app.mirrorRequest}
+  <MirrorSheet />
 {/if}
 
 <style>

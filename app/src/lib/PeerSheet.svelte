@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CircleCheck, Folder, Laptop, Link2Off, ListMusic, LoaderCircle, Send, Wifi, WifiOff } from "@lucide/svelte";
+  import { ArrowLeftRight, CircleCheck, Folder, Laptop, Link2Off, ListMusic, LoaderCircle, Send, Wifi, WifiOff } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
@@ -82,6 +82,17 @@
     for (const id of sendIds) n += sizes.get(id) ?? 0;
     return n;
   });
+
+  async function mirror(p: Peer) {
+    error = "";
+    try {
+      await peerApi.mirror(p.id);
+      app.notice = `Porovnávám knihovnu s ${p.name}. Než se cokoli změní, ukážu, co se stane.`;
+      app.peerOpen = false;
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   async function startSend() {
     if (!sendTo) return;
@@ -266,7 +277,10 @@
                 </div>
                 {#if p.paired}
                   {#if p.online}
-                    <button class="btn" onclick={() => check(p.id)} disabled={checks[p.id] === "…"}><Wifi size={14} />Ověřit</button>
+                    <button class="btn icon ghost" title="Ověřit spojení" aria-label="Ověřit spojení" onclick={() => check(p.id)} disabled={checks[p.id] === "…"}>
+                      <Wifi size={15} />
+                    </button>
+                    <button class="btn" title="Obě knihovny budou stejné" onclick={() => mirror(p)}><ArrowLeftRight size={14} />Zrcadlit</button>
                     <button class="btn primary" onclick={() => ((sendTo = p), (picked = new Set()))}><Send size={14} />Poslat…</button>
                   {/if}
                   <button class="btn icon ghost" title="Zrušit spárování" aria-label="Zrušit spárování" onclick={() => unpair(p.id, p.name)}>

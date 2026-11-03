@@ -6,10 +6,15 @@
 //! receiver checks each against its fingerprint, files it under the music
 //! folder and takes the offer into its library.
 //!
+//! Mirroring ([`mirror`]) does it both ways at once for whole libraries:
+//! each side offers everything, the DJ who started looks over what would
+//! change on both Macs (and confirms playlists deleted on one of them),
+//! then the files go one way, then the other.
+//!
 //! Music already on the receiving Mac is never overwritten: a new file
 //! whose name is taken gets " (2)" instead.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,12 +22,17 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use library::Library;
-use library::transfer::{ApplyReport, Offer, Received, TrackData, Want};
+use library::peer::Tombstone;
+use library::transfer::{ApplyReport, Deletion, Offer, Received, TrackData, Want};
 use peerlink::Session;
 use serde::{Deserialize, Serialize};
 
 /// How long the sender waits for the other DJ to accept.
 pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long a mirror waits for the DJ to look over the changes.
+pub const CONFIRM_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+/// The other side fingerprinting and comparing whole libraries.
+const PREPARE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const IO_TIMEOUT: Duration = Duration::from_secs(60);
 /// Taking the offer into the library after the last file.
 const APPLY_TIMEOUT: Duration = Duration::from_secs(300);
@@ -65,6 +75,21 @@ enum Wire {
     Finished,
     Applied { report: ApplyReport },
     Failed { message: String },
+    /// Mirroring: the whole library of the side that started.
+    MirrorOffer { offer: Offer },
+    /// The other side's whole library, what it lacks of the first, and
+    /// what taking it in would change there.
+    MirrorState {
+        offer: Offer,
+        tombstones: Vec<Tombstone>,
+        want: Vec<Want>,
+        changes: Changes,
+    },
+    /// The DJ confirmed: what the starting side lacks, playlists to
+    /// delete on the other side, and playlists of the offer it must not
+    /// take (deleted on the starting side).
+    MirrorGo { want: Vec<Want>, delete: Vec<String>, skip: Vec<String> },
+    MirrorCancel,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
@@ -97,6 +122,47 @@ pub enum Outcome {
     Declined(String),
 }
 
+/// What mirroring would do to one Mac's library.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Changes {
+    pub report: ApplyReport,
+    /// Size of the music coming to this Mac.
+    pub new_bytes: u64,
+    /// Playlists that cannot go along: some of their tracks are missing.
+    pub left_out: Vec<String>,
+}
+
+/// What the DJ looks over before mirroring.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MirrorPreview {
+    pub here: Changes,
+    pub there: Changes,
+    /// Playlists here that the other Mac deleted.
+    pub delete_here: Vec<Deletion>,
+    /// Playlists the other Mac has that were deleted here.
+    pub delete_there: Vec<Deletion>,
+    /// The music coming here fits on the disk.
+    pub room_here: bool,
+}
+
+/// The DJ's go: uids of the deletions to carry out on each side. A
+/// deletion not chosen brings the playlist back to the Mac it was
+/// deleted on.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MirrorChoice {
+    pub delete_here: Vec<String>,
+    pub delete_there: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MirrorOutcome {
+    Done { here: ApplyReport, there: ApplyReport },
+    Cancelled,
+}
+
 fn label(t: &TrackData) -> String {
     match (t.entry.artist.as_str(), t.entry.title.as_str()) {
         ("", title) => title.to_string(),
@@ -104,25 +170,60 @@ fn label(t: &TrackData) -> String {
     }
 }
 
-// ---- Sending ------------------------------------------------------------
+// ---- Fingerprints -------------------------------------------------------
 
-/// Offer to the Mac at the other end of `session` and send it what it
-/// asks for. `progress` follows the files; returning false stops.
-pub fn send(session: &mut Session, lib: &Mutex<Library>, offer: Offer, mut progress: impl FnMut(&Progress) -> bool) -> Result<Outcome> {
-    session.set_timeout(Some(ANSWER_TIMEOUT + Duration::from_secs(30)))?;
-    session.send(&Wire::Offer { offer: offer.clone() })?;
-    let want = match session.recv::<Wire>()? {
-        Wire::Want { want } => want,
-        Wire::Declined { reason } => return Ok(Outcome::Declined(reason)),
-        Wire::Failed { message } => return other(message),
-        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
-    };
-    session.set_timeout(Some(IO_TIMEOUT))?;
+fn mtime(m: &std::fs::Metadata) -> i64 {
+    m.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// Fingerprint the tracks (of `ids`, or all) whose file is there but has
+/// no fingerprint or an outdated one. `each(done, total)` before each
+/// file; false stops. Unreadable files are passed over.
+pub fn fingerprint(lib: &Mutex<Library>, ids: Option<&HashSet<i64>>, mut each: impl FnMut(usize, usize) -> bool) -> Result<()> {
+    let stamps = lib.lock().unwrap().file_stamps()?;
+    let todo: Vec<_> = stamps
+        .into_iter()
+        .filter(|s| ids.is_none_or(|ids| ids.contains(&s.id)))
+        .filter_map(|s| {
+            let m = std::fs::metadata(&s.path).ok()?;
+            s.stale(m.len(), mtime(&m)).then_some((s, m.len(), mtime(&m)))
+        })
+        .collect();
+    for (i, (s, size, mtime)) in todo.iter().enumerate() {
+        if !each(i, todo.len()) {
+            return other(STOPPED);
+        }
+        let Ok(fp) = library::peer::fingerprint_file(Path::new(&s.path)) else { continue };
+        lib.lock().unwrap().set_fingerprint(s.id, &fp, *size, *mtime)?;
+    }
+    Ok(())
+}
+
+// ---- Files both ways ----------------------------------------------------
+
+/// Size of the music in `want` (what will come).
+fn bytes_of(offer: &Offer, want: &[Want]) -> u64 {
+    let sizes: HashMap<&str, u64> = offer.tracks.iter().map(|t| (t.entry.fingerprint.as_str(), t.entry.size)).collect();
+    want.iter().filter(|w| w.audio).map(|w| sizes.get(w.fingerprint.as_str()).copied().unwrap_or(0)).sum()
+}
+
+/// Stream the files of `want` (tracks of `offer` in this library) to the
+/// other side, then [`Wire::Finished`].
+fn push_files(
+    session: &mut Session,
+    lib: &Mutex<Library>,
+    offer: &Offer,
+    want: &[Want],
+    progress: &mut dyn FnMut(&Progress) -> bool,
+) -> Result<()> {
     let tracks: HashMap<&str, &TrackData> = offer.tracks.iter().map(|t| (t.entry.fingerprint.as_str(), t)).collect();
 
     // Where the files are here, and how much will go.
     let mut plan = Vec::new();
-    for w in &want {
+    for w in want {
         let Some(t) = tracks.get(w.fingerprint.as_str()) else { continue };
         let local = {
             let l = lib.lock().unwrap();
@@ -145,11 +246,7 @@ pub fn send(session: &mut Session, lib: &Mutex<Library>, offer: Offer, mut progr
         } else {
             Vec::new()
         };
-        if w.audio && audio.is_none() {
-            plan.push((w, *t, None, Vec::new()));
-        } else {
-            plan.push((w, *t, audio, anlz));
-        }
+        plan.push((w, *t, audio, anlz));
     }
     let size = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
     let mut p = Progress {
@@ -204,6 +301,101 @@ pub fn send(session: &mut Session, lib: &Mutex<Library>, offer: Offer, mut progr
         progress(&p);
     }
     session.send(&Wire::Finished)?;
+    Ok(())
+}
+
+/// What arrived (by fingerprint), and the tracks that did not with why.
+type Pulled = (HashMap<String, Received>, Vec<(String, String)>);
+
+/// Take the files of `want` (tracks of `offer`) the other side streams,
+/// until [`Wire::Finished`]: music into `music`, analysis into `anlz_dir`.
+/// Returns what arrived, and the tracks that did not with why.
+fn pull_files(
+    session: &mut Session,
+    offer: &Offer,
+    want: &[Want],
+    music: &Path,
+    anlz_dir: &Path,
+    progress: &mut dyn FnMut(&Progress) -> bool,
+) -> Result<Pulled> {
+    let tracks: HashMap<&str, &TrackData> = offer.tracks.iter().map(|t| (t.entry.fingerprint.as_str(), t)).collect();
+    let mut p = Progress { files_total: want.len(), bytes_total: bytes_of(offer, want), ..Default::default() };
+    progress(&p);
+    let mut received: HashMap<String, Received> = HashMap::new();
+    let mut failed = Vec::new();
+    loop {
+        match session.recv::<Wire>()? {
+            Wire::File { fingerprint, audio, anlz } => {
+                let Some(t) = tracks.get(fingerprint.as_str()) else {
+                    return other("Druhý Mac poslal skladbu, kterou nenabídl.");
+                };
+                p.current = label(t);
+                if !progress(&p) {
+                    return other(STOPPED);
+                }
+                let mut got = Received::default();
+                if audio > 0 {
+                    match take_audio(session, t, audio, music, |k| {
+                        p.bytes_done += k;
+                        progress(&p)
+                    })? {
+                        Ok(a) => got.audio = Some(a),
+                        Err(why) => failed.push((label(t), why)),
+                    }
+                }
+                if !anlz.is_empty() {
+                    got.anlz = Some(take_anlz(session, anlz_dir, &fingerprint, &anlz)?);
+                }
+                received.insert(fingerprint, got);
+                p.files_done += 1;
+                progress(&p);
+            }
+            Wire::Skip { fingerprint, reason } => {
+                if let Some(t) = tracks.get(fingerprint.as_str()) {
+                    failed.push((label(t), reason));
+                }
+                p.files_done += 1;
+                progress(&p);
+            }
+            Wire::Finished => return Ok((received, failed)),
+            _ => return other("Druhý Mac poslal nesrozumitelnou zprávu."),
+        }
+    }
+}
+
+/// Tracks whose file failed are among the skipped; say why.
+fn explain(report: &mut ApplyReport, failed: Vec<(String, String)>) {
+    for (name, why) in failed {
+        match report.skipped.iter_mut().find(|s| **s == name) {
+            Some(s) => *s = format!("{name} ({why})"),
+            None => report.skipped.push(format!("{name} ({why})")),
+        }
+    }
+}
+
+fn enough_room(music: &Path, bytes: u64) -> Result<bool> {
+    if bytes == 0 {
+        return Ok(true);
+    }
+    std::fs::create_dir_all(music)?;
+    Ok(free_space(music).is_none_or(|free| free >= bytes + SPARE))
+}
+
+// ---- Sending ------------------------------------------------------------
+
+/// Offer to the Mac at the other end of `session` and send it what it
+/// asks for. `progress` follows the files; returning false stops.
+pub fn send(session: &mut Session, lib: &Mutex<Library>, offer: Offer, mut progress: impl FnMut(&Progress) -> bool) -> Result<Outcome> {
+    session.set_timeout(Some(ANSWER_TIMEOUT + Duration::from_secs(30)))?;
+    session.send(&Wire::Offer { offer: offer.clone() })?;
+    let want = match session.recv::<Wire>()? {
+        Wire::Want { want } => want,
+        Wire::Declined { reason } => return Ok(Outcome::Declined(reason)),
+        Wire::Failed { message } => return other(message),
+        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+    };
+    session.set_timeout(Some(IO_TIMEOUT))?;
+    push_files(session, lib, &offer, &want, &mut progress)?;
     session.set_timeout(Some(APPLY_TIMEOUT))?;
     match session.recv::<Wire>()? {
         Wire::Applied { report } => Ok(Outcome::Sent(report)),
@@ -234,7 +426,7 @@ fn copy_exact(mut r: impl Read, w: &mut impl Write, n: u64, mut done: impl FnMut
 
 // ---- Receiving ----------------------------------------------------------
 
-/// The receiving app: its library, where things go, and the DJ.
+/// The app on this side: its library, where things go, and the DJ.
 pub trait Host: Send + Sync {
     fn library(&self) -> &Mutex<Library>;
     /// Where music from other Macs is filed.
@@ -243,46 +435,51 @@ pub trait Host: Send + Sync {
     fn anlz_dir(&self) -> PathBuf;
     /// Ask the DJ whether to take this from `from`; blocks until answered.
     fn ask(&self, from: &str, summary: &Summary) -> bool;
-    /// Returning false stops receiving.
+    /// A transfer from `from` begins: an accepted offer, or a mirror the
+    /// other Mac started.
+    fn started(&self, from: &str, mirror: bool);
+    /// Returning false stops.
     fn progress(&self, from: &str, p: &Progress) -> bool;
     fn finished(&self, from: &str, result: &std::result::Result<ApplyReport, String>);
+    /// The other Mac called it off (a mirror its DJ did not confirm).
+    fn cancelled(&self, from: &str);
 }
 
-/// Serve a paired Mac that connected: pings, and an offer if it makes one.
+/// Serve a paired Mac that connected: pings, and an offer or a mirror if
+/// it starts one.
 pub fn serve(mut session: Session, host: &dyn Host) {
     loop {
-        match session.recv::<Wire>() {
+        let from = session.peer_name.clone();
+        let result = match session.recv::<Wire>() {
             Ok(Wire::Ping) => {
                 if session.send(&Wire::Pong).is_err() {
                     return;
                 }
+                continue;
             }
-            Ok(Wire::Offer { offer }) => {
-                let from = session.peer_name.clone();
-                match receive(&mut session, host, &offer) {
-                    Ok(Some(report)) => host.finished(&from, &Ok(report)),
-                    Ok(None) => {}
-                    Err(e) => {
-                        let _ = session.send(&Wire::Failed { message: e.to_string() });
-                        host.finished(&from, &Err(e.to_string()));
-                    }
-                }
-                return;
-            }
+            Ok(Wire::Offer { offer }) => receive(&mut session, host, &offer),
+            Ok(Wire::MirrorOffer { offer }) => mirror_respond(&mut session, host, offer),
             _ => return,
+        };
+        match result {
+            Ok(Some(report)) => host.finished(&from, &Ok(report)),
+            Ok(None) => {}
+            Err(e) => {
+                let _ = session.send(&Wire::Failed { message: e.to_string() });
+                host.finished(&from, &Err(e.to_string()));
+            }
         }
+        return;
     }
 }
 
 pub fn summary(offer: &Offer, want: &[Want]) -> Summary {
-    let sizes: HashMap<&str, u64> = offer.tracks.iter().map(|t| (t.entry.fingerprint.as_str(), t.entry.size)).collect();
-    let new: Vec<&Want> = want.iter().filter(|w| w.audio).collect();
     Summary {
         playlists: offer.playlists.iter().filter(|p| !p.is_folder).map(|p| p.name.clone()).collect(),
         sets: offer.playlists.iter().filter(|p| p.is_set).count(),
         tracks: offer.tracks.len(),
-        new_tracks: new.len(),
-        new_bytes: new.iter().map(|w| sizes.get(w.fingerprint.as_str()).copied().unwrap_or(0)).sum(),
+        new_tracks: want.iter().filter(|w| w.audio).count(),
+        new_bytes: bytes_of(offer, want),
     }
 }
 
@@ -292,74 +489,165 @@ fn receive(session: &mut Session, host: &dyn Host, offer: &Offer) -> Result<Opti
     let want = host.library().lock().unwrap().wants(offer)?;
     let sum = summary(offer, &want);
     let music = host.music_dir();
-    if sum.new_tracks > 0 {
-        std::fs::create_dir_all(&music)?;
-        if let Some(free) = free_space(&music)
-            && free < sum.new_bytes + SPARE
-        {
-            let reason = format!("Na disku s {} není dost místa.", music.display());
-            session.send(&Wire::Declined { reason })?;
-            return other(format!("Z {from} nepřišlo nic: na disku s hudbou není dost místa."));
-        }
+    if !enough_room(&music, sum.new_bytes)? {
+        let reason = format!("Na disku s {} není dost místa.", music.display());
+        session.send(&Wire::Declined { reason })?;
+        return other(format!("Z {from} nepřišlo nic: na disku s hudbou není dost místa."));
     }
     if !host.ask(&from, &sum) {
         session.send(&Wire::Declined { reason: "Druhý Mac to odmítl.".into() })?;
         return Ok(None);
     }
+    host.started(&from, false);
     session.send(&Wire::Want { want: want.clone() })?;
     session.set_timeout(Some(IO_TIMEOUT))?;
-
-    let tracks: HashMap<&str, &TrackData> = offer.tracks.iter().map(|t| (t.entry.fingerprint.as_str(), t)).collect();
-    let mut p = Progress { files_total: want.len(), bytes_total: sum.new_bytes, ..Default::default() };
-    host.progress(&from, &p);
-    let mut received: HashMap<String, Received> = HashMap::new();
-    let mut failed: Vec<String> = Vec::new();
-    loop {
-        match session.recv::<Wire>()? {
-            Wire::File { fingerprint, audio, anlz } => {
-                let Some(t) = tracks.get(fingerprint.as_str()) else {
-                    return other("Druhý Mac poslal skladbu, kterou nenabídl.");
-                };
-                p.current = label(t);
-                host.progress(&from, &p);
-                let mut got = Received::default();
-                if audio > 0 {
-                    match take_audio(session, t, audio, &music, |k| {
-                        p.bytes_done += k;
-                        host.progress(&from, &p)
-                    })? {
-                        Ok(a) => got.audio = Some(a),
-                        Err(why) => failed.push(format!("{} ({why})", label(t))),
-                    }
-                }
-                if !anlz.is_empty() {
-                    got.anlz = Some(take_anlz(session, &host.anlz_dir(), &fingerprint, &anlz)?);
-                }
-                received.insert(fingerprint, got);
-                p.files_done += 1;
-                host.progress(&from, &p);
-            }
-            Wire::Skip { fingerprint, reason } => {
-                if let Some(t) = tracks.get(fingerprint.as_str()) {
-                    failed.push(format!("{} ({reason})", label(t)));
-                }
-                p.files_done += 1;
-                host.progress(&from, &p);
-            }
-            Wire::Finished => break,
-            _ => return other("Druhý Mac poslal nesrozumitelnou zprávu."),
-        }
-    }
-
+    let (received, failed) = pull_files(session, offer, &want, &music, &host.anlz_dir(), &mut |p| host.progress(&from, p))?;
     let mut report = host.library().lock().unwrap().apply_offer(offer, &received)?;
-    // Tracks whose file failed are among the skipped; say why.
-    for f in failed {
-        let name = f.split(" (").next().unwrap_or_default().to_string();
-        report.skipped.retain(|s| *s != name);
-        report.skipped.push(f);
-    }
+    explain(&mut report, failed);
     session.send(&Wire::Applied { report: report.clone() })?;
     Ok(Some(report))
+}
+
+// ---- Mirroring ----------------------------------------------------------
+
+/// Fingerprint everything, then the whole library (with the playlists
+/// left out) and its tombstones.
+fn whole_library(host: &dyn Host, from: &str) -> Result<(Offer, Vec<String>, Vec<Tombstone>)> {
+    let mut p = Progress { current: "Připravuji knihovnu (otisky skladeb)…".into(), ..Default::default() };
+    fingerprint(host.library(), None, |done, total| {
+        p.files_done = done;
+        p.files_total = total;
+        host.progress(from, &p)
+    })?;
+    let l = host.library().lock().unwrap();
+    let (offer, left_out) = l.full_offer()?;
+    Ok((offer, left_out, l.tombstones()?))
+}
+
+/// Make this library and the one at the other end of `session` the same,
+/// both ways. `confirm` shows the DJ what would change and returns the go
+/// (with the deletions chosen), or `None` to call it off. `host` gives the
+/// library, folders and progress; its `ask`, `started` and `finished` are
+/// not used here.
+pub fn mirror(
+    session: &mut Session,
+    host: &dyn Host,
+    confirm: impl FnOnce(&MirrorPreview) -> Option<MirrorChoice>,
+) -> Result<MirrorOutcome> {
+    let from = session.peer_name.clone();
+    let lib = host.library();
+    let (mine, mine_left, _) = whole_library(host, &from)?;
+    session.set_timeout(Some(PREPARE_TIMEOUT))?;
+    session.send(&Wire::MirrorOffer { offer: mine.clone() })?;
+    let (theirs, their_tombstones, their_want, there) = match session.recv::<Wire>()? {
+        Wire::MirrorState { offer, tombstones, want, changes } => (offer, tombstones, want, changes),
+        Wire::Failed { message } => return other(message),
+        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+    };
+
+    let (want, preview) = {
+        let mut l = lib.lock().unwrap();
+        let want = l.wants(&theirs)?;
+        let new_bytes = bytes_of(&theirs, &want);
+        let here = Changes { report: l.preview(&theirs, &want)?, new_bytes, left_out: mine_left };
+        let preview = MirrorPreview {
+            room_here: enough_room(&host.music_dir(), new_bytes)?,
+            here,
+            there,
+            delete_here: l.deleted_there(&their_tombstones)?,
+            delete_there: l.deleted_here(&theirs)?,
+        };
+        (want, preview)
+    };
+    let choice = if preview.room_here { confirm(&preview) } else { None };
+    let Some(mut choice) = choice else {
+        session.send(&Wire::MirrorCancel)?;
+        return Ok(MirrorOutcome::Cancelled);
+    };
+    // Only what was offered for deletion.
+    let offered = |list: &[Deletion], uid: &String| list.iter().any(|d| d.uid == *uid);
+    choice.delete_here.retain(|u| offered(&preview.delete_here, u));
+    choice.delete_there.retain(|u| offered(&preview.delete_there, u));
+
+    session.send(&Wire::MirrorGo {
+        want: want.clone(),
+        delete: choice.delete_there.clone(),
+        skip: choice.delete_here.clone(),
+    })?;
+    let mut progress = |p: &Progress| host.progress(&from, p);
+
+    // Ours to them, then theirs to us.
+    session.set_timeout(Some(IO_TIMEOUT))?;
+    push_files(session, lib, &mine, &their_want, &mut progress)?;
+    session.set_timeout(Some(APPLY_TIMEOUT))?;
+    let there = match session.recv::<Wire>()? {
+        Wire::Applied { report } => report,
+        Wire::Failed { message } => return other(message),
+        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+    };
+    session.set_timeout(Some(IO_TIMEOUT))?;
+    let (received, failed) = pull_files(session, &theirs, &want, &host.music_dir(), &host.anlz_dir(), &mut progress)?;
+    let mut theirs = theirs;
+    theirs.playlists.retain(|p| !choice.delete_there.contains(&p.uid));
+    let here = {
+        let mut l = lib.lock().unwrap();
+        let mut r = l.apply_offer(&theirs, &received)?;
+        r.playlists_deleted = l.delete_playlists_by_uid(&choice.delete_here)?;
+        explain(&mut r, failed);
+        r
+    };
+    session.send(&Wire::Applied { report: here.clone() })?;
+    Ok(MirrorOutcome::Done { here, there })
+}
+
+/// The other side of [`mirror`]. `None` when its DJ called it off.
+fn mirror_respond(session: &mut Session, host: &dyn Host, mut theirs: Offer) -> Result<Option<ApplyReport>> {
+    let from = session.peer_name.clone();
+    host.started(&from, true);
+    let lib = host.library();
+    let (mine, mine_left, tombstones) = whole_library(host, &from)?;
+    let (want, changes) = {
+        let mut l = lib.lock().unwrap();
+        let want = l.wants(&theirs)?;
+        let new_bytes = bytes_of(&theirs, &want);
+        (want.clone(), Changes { report: l.preview(&theirs, &want)?, new_bytes, left_out: mine_left })
+    };
+    let music = host.music_dir();
+    if !enough_room(&music, changes.new_bytes)? {
+        return other(format!("Na {} není dost místa pro hudbu z {from}.", music.display()));
+    }
+    session.send(&Wire::MirrorState { offer: mine.clone(), tombstones, want: want.clone(), changes })?;
+
+    session.set_timeout(Some(CONFIRM_TIMEOUT + Duration::from_secs(60)))?;
+    let (their_want, delete, skip) = match session.recv::<Wire>()? {
+        Wire::MirrorGo { want, delete, skip } => (want, delete, skip),
+        Wire::MirrorCancel => {
+            host.cancelled(&from);
+            return Ok(None);
+        }
+        _ => return other("Druhý Mac odpověděl nesrozumitelně."),
+    };
+    let mut progress = |p: &Progress| host.progress(&from, p);
+
+    // Theirs to us, then ours to them.
+    session.set_timeout(Some(IO_TIMEOUT))?;
+    let (received, failed) = pull_files(session, &theirs, &want, &music, &host.anlz_dir(), &mut progress)?;
+    theirs.playlists.retain(|p| !skip.contains(&p.uid));
+    let report = {
+        let mut l = lib.lock().unwrap();
+        let mut r = l.apply_offer(&theirs, &received)?;
+        r.playlists_deleted = l.delete_playlists_by_uid(&delete)?;
+        explain(&mut r, failed);
+        r
+    };
+    session.send(&Wire::Applied { report: report.clone() })?;
+    push_files(session, lib, &mine, &their_want, &mut progress)?;
+    session.set_timeout(Some(APPLY_TIMEOUT))?;
+    match session.recv::<Wire>()? {
+        Wire::Applied { .. } => Ok(Some(report)),
+        Wire::Failed { message } => other(message),
+        _ => other("Druhý Mac odpověděl nesrozumitelně."),
+    }
 }
 
 /// Read one audio file off the session into the music folder. The outer

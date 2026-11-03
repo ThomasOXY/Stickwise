@@ -7,6 +7,7 @@ import {
   type CueSummary,
   type JobEvent,
   type LibraryData,
+  type MirrorRequest,
   type OfferRequest,
   type PairRequest,
   type PaletteColor,
@@ -76,6 +77,8 @@ class AppState {
   pairRequest = $state<PairRequest | null>(null);
   /** Another Mac offers playlists, waiting for the DJ's answer. */
   offerRequest = $state<OfferRequest | null>(null);
+  /** A mirror this Mac started, waiting for the DJ to look over the changes. */
+  mirrorRequest = $state<MirrorRequest | null>(null);
   /** Full-screen tool launcher. */
   toolsOpen = $state(false);
   importing = $state(false);
@@ -182,6 +185,10 @@ class AppState {
     await listen<OfferRequest>("peer-offer", (e) => (this.offerRequest = e.payload));
     await listen<number>("peer-offer-gone", (e) => {
       if (this.offerRequest?.request === e.payload) this.offerRequest = null;
+    });
+    await listen<MirrorRequest>("peer-mirror-preview", (e) => (this.mirrorRequest = e.payload));
+    await listen<number>("peer-mirror-gone", (e) => {
+      if (this.mirrorRequest?.request === e.payload) this.mirrorRequest = null;
     });
     await listen("library-changed", () => this.reloadLibrary());
     this.palette = await api.cuePalette();
