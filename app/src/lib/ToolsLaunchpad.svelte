@@ -114,7 +114,7 @@
       icon: AudioWaveform,
       tone: "#59c98a",
       group: "Knihovna",
-      blocked: app.analyzeJob != null ? "Už běží" : notAnalyzed.length === 0 ? "Všechno je analyzované" : "",
+      blocked: notAnalyzed.length === 0 ? "Všechno je analyzované" : "",
       run: async () => {
         await onLibrary();
         app.analyzeTracks(notAnalyzed);

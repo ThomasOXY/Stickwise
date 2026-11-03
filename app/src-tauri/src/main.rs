@@ -20,6 +20,7 @@ fn main() {
         .manage(peer::MirrorAsk::default())
         .manage(peer::AutoMirror::default())
         .manage(peer::FingerprintGaps::default())
+        .manage(library_cmds::AnalyzeQueue::default())
         .menu(prefs::menu)
         .on_menu_event(|app, e| prefs::on_menu(app, e.id().as_ref()))
         .setup(|app| {

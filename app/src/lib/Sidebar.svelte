@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Download, Eject, Laptop, Usb } from "@lucide/svelte";
+  import JobsPanel from "./JobsPanel.svelte";
   import PlaylistTree from "./PlaylistTree.svelte";
   import { api } from "./api";
   import { gb } from "./format";
@@ -27,6 +28,9 @@
 <aside class="sidebar">
   <div class="drag" data-tauri-drag-region></div>
 
+  {#if app.jobsOpen}
+    <JobsPanel />
+  {:else}
   <div class="head" data-tauri-drag-region>
     <h1>{app.isLibrary ? "Knihovna" : app.data?.info.name ?? "Flashka"}</h1>
     <button class="fmt" title="Smazat a připravit flashku pro přehrávače" onclick={() => (app.formatOpen = true)}>
@@ -81,7 +85,7 @@
   {#if running.length > 0}
     <section class="jobs">
       {#each running as j (j.id)}
-        <div class="job">
+        <button class="job" onclick={() => (app.jobsOpen = true)} title="Ukázat úlohy">
           <div class="row">
             <Download size={13} />
             <span class="label">{j.label}</span>
@@ -90,9 +94,10 @@
           <div class="bar">
             <div style:width="{(j.fraction ?? j.bytesDone / Math.max(1, j.bytesTotal)) * 100}%"></div>
           </div>
-        </div>
+        </button>
       {/each}
     </section>
+  {/if}
   {/if}
 </aside>
 
@@ -216,6 +221,17 @@
   .jobs {
     padding: 12px 10px 0;
     border-top: 1px solid var(--hairline);
+  }
+  .job {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
   .job + .job {
     margin-top: 10px;

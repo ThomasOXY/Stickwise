@@ -63,7 +63,7 @@
       <span class="pip"></span>
     </button>
   {/if}
-  <button class="jobs" class:busy={running > 0} title={running ? `Běží ${running} úloh` : "Nic neběží"} onclick={() => (app.toolsOpen = true)}>
+  <button class="jobs" class:busy={running > 0} class:on={app.jobsOpen} title={running ? `Běží ${running} úloh` : "Úlohy"} onclick={() => (app.jobsOpen = !app.jobsOpen)}>
     <Activity size={18} />
     {#if running}<span class="badge readout">{running}</span>{/if}
   </button>

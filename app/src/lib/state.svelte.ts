@@ -85,6 +85,8 @@ class AppState {
   mirrorRequest = $state<MirrorRequest | null>(null);
   /** Full-screen tool launcher. */
   toolsOpen = $state(false);
+  /** The jobs panel from the rail. */
+  jobsOpen = $state(false);
   importing = $state(false);
   /** Folders dropped from Finder being read into the library. */
   addingFolders = $state(false);
@@ -110,7 +112,6 @@ class AppState {
   aiJob = $state<number | null>(null);
   /** Own analysis running, and tracks waiting for the next round. */
   analyzeJob = $state<number | null>(null);
-  private analyzeQueue: { ids: number[]; again: boolean }[] = [];
   notice = $state<string | null>(null);
   private undoStack: { trackId: number; cues: Cue[] }[] = [];
 
@@ -668,13 +669,11 @@ class AppState {
   async analyzeTracks(ids: number[], again = false) {
     const todo = this.unanalyzed(ids, again);
     if (todo.length === 0) return;
-    if (this.analyzeJob != null) {
-      this.analyzeQueue.push({ ids: todo, again });
-      this.notice = `Ve frontě na analýzu: ${todo.length} skladeb`;
-      return;
-    }
     try {
+      // A running analysis takes them in: one job over all of them.
+      const running = this.analyzeJob;
       this.analyzeJob = await libApi.analyze(todo, again);
+      if (running === this.analyzeJob) this.notice = `Přidáno do běžící analýzy: ${todo.length} skladeb`;
     } catch (e) {
       this.error = String(e);
     }
@@ -689,7 +688,6 @@ class AppState {
     }
     if (job.state === "error") this.error = job.message;
     else if (job.state === "done") this.notice = `${job.message}. Na flashku půjdou s waveformem i gridem.`;
-    for (const q of this.analyzeQueue.splice(0)) await this.analyzeTracks(q.ids, q.again);
   }
 
   private async aiFinished(job: JobEvent) {

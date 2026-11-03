@@ -470,11 +470,21 @@ fn analyze_all(
     cancel: &std::sync::atomic::AtomicBool,
     progress: impl Fn(usize, &str) + Sync,
 ) -> (usize, Vec<String>, bool) {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    analyze_from(app, || todo.get(next.fetch_add(1, Ordering::Relaxed)).cloned(), cancel, progress)
+}
+
+/// [`analyze_all`] over tracks `next` hands out until it has none.
+fn analyze_from(
+    app: &AppHandle,
+    next: impl Fn() -> Option<library::Track> + Sync,
+    cancel: &std::sync::atomic::AtomicBool,
+    progress: impl Fn(usize, &str) + Sync,
+) -> (usize, Vec<String>, bool) {
     let Ok(dir) = analysis_dir(app) else {
         return (0, vec!["chybí složka dat aplikace".into()], false);
     };
     let tracker = beat_tracker(app);
-    let next = std::sync::atomic::AtomicUsize::new(0);
     let done = std::sync::atomic::AtomicUsize::new(0);
     let errors = Mutex::new(Vec::new());
     // Decoding, waveforms and key in parallel; the beat model (which uses
@@ -483,11 +493,10 @@ fn analyze_all(
     std::thread::scope(|s| {
         for _ in 0..workers {
             s.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                if i >= todo.len() || cancel.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Relaxed) {
                     break;
                 }
-                let t = &todo[i];
+                let Some(t) = next() else { break };
                 let name = Path::new(&t.path)
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
@@ -515,38 +524,91 @@ fn analyze_all(
     (done.into_inner(), errors.into_inner().unwrap(), tracker.is_some())
 }
 
+/// The running analysis job, which tracks asked for later join.
+#[derive(Default)]
+pub struct AnalyzeQueue(Mutex<Option<Analysis>>);
+
+struct Analysis {
+    id: u32,
+    todo: std::collections::VecDeque<library::Track>,
+    /// Every track this job has had, so one asked for twice runs once.
+    ids: HashSet<i64>,
+    done: usize,
+    event: dto::JobEvent,
+}
+
+impl Analysis {
+    fn add(&mut self, tracks: Vec<library::Track>) {
+        for t in tracks {
+            if self.ids.insert(t.id) {
+                self.todo.push_back(t);
+            }
+        }
+        self.event.files_total = self.ids.len();
+        self.event.bytes_total = self.ids.len().max(1) as u64;
+    }
+}
+
 /// Analyse tracks that have no analysis (waveforms, beat grid, key), a few
 /// at a time, as a background job. The files go to the app's data folder.
+/// While a job runs, more tracks join it: one job, one progress over all.
 #[tauri::command]
 pub fn library_analyze(
     app: AppHandle,
     jobs: State<'_, Jobs>,
+    queue: State<'_, AnalyzeQueue>,
     track_ids: Vec<i64>,
     again: bool,
 ) -> CmdResult<u32> {
     let todo = needs_analysis(&app, track_ids, again)?;
+    let mut running = queue.0.lock().unwrap();
+    if let Some(a) = running.as_mut() {
+        a.add(todo);
+        emit_job(&app, &a.event);
+        return Ok(a.id);
+    }
     let (id, cancel) = jobs.start();
-    let total = todo.len();
+    let mut a = Analysis {
+        id,
+        todo: Default::default(),
+        ids: HashSet::new(),
+        done: 0,
+        event: dto::JobEvent { id, label: "Analýza skladeb".into(), state: "running", ..Default::default() },
+    };
+    a.add(todo);
+    emit_job(&app, &a.event);
+    *running = Some(a);
+    drop(running);
     std::thread::spawn(move || {
-        let mut ev = dto::JobEvent {
-            id,
-            label: "Analýza skladeb".into(),
-            state: "running",
-            files_total: total,
-            bytes_total: total.max(1) as u64,
-            ..Default::default()
+        let queue = app.state::<AnalyzeQueue>();
+        let (mut errors, mut model) = (Vec::new(), false);
+        let finished = loop {
+            let (_, e, m) = analyze_from(
+                &app,
+                || queue.0.lock().unwrap().as_mut()?.todo.pop_front(),
+                &cancel,
+                |_, name| {
+                    if let Some(a) = queue.0.lock().unwrap().as_mut() {
+                        a.done += 1;
+                        a.event.files_done = a.done;
+                        a.event.bytes_done = a.done as u64;
+                        a.event.current = name.to_string();
+                        emit_job(&app, &a.event);
+                    }
+                },
+            );
+            errors.extend(e);
+            model |= m;
+            // Tracks that joined after the workers ran dry: another round.
+            let mut running = queue.0.lock().unwrap();
+            if cancel.load(Ordering::Relaxed) || running.as_ref().is_none_or(|a| a.todo.is_empty()) {
+                break running.take();
+            }
         };
-        emit_job(&app, &ev);
-        let (n, errors, model) = analyze_all(&app, &todo, &cancel, |n, name| {
-            let mut e = ev.clone();
-            e.files_done = n;
-            e.bytes_done = n as u64;
-            e.current = name.to_string();
-            emit_job(&app, &e);
-        });
-        ev.files_done = n;
-        ev.bytes_done = total as u64;
-        (ev.state, ev.message) = if cancel.load(Ordering::Relaxed) {
+        let Some(Analysis { done: n, mut event, .. }) = finished else { return };
+        event.files_done = n;
+        event.bytes_done = event.bytes_total;
+        (event.state, event.message) = if cancel.load(Ordering::Relaxed) {
             ("cancelled", format!("Analýza zastavena po {n} skladbách"))
         } else if errors.is_empty() {
             (
@@ -559,7 +621,7 @@ pub fn library_analyze(
         } else {
             ("error", format!("{} skladeb nešlo analyzovat: {}", errors.len(), errors.join("; ")))
         };
-        emit_job(&app, &ev);
+        emit_job(&app, &event);
         app.state::<Jobs>().finish(id);
     });
     Ok(id)

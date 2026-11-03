@@ -345,9 +345,10 @@
       {#if app.isLibrary && toAnalyze > 0}
         <button
           class="btn ghost"
-          disabled={app.analyzeJob != null}
           onclick={() => app.analyzeTracks(app.currentTrackIds)}
-          title="Waveform, beatgrid (Beat This!) a tónina pro skladby bez analýzy"
+          title={app.analyzeJob != null
+            ? "Přidat skladby tohoto seznamu do běžící analýzy"
+            : "Waveform, beatgrid (Beat This!) a tónina pro skladby bez analýzy"}
         >
           <AudioWaveform size={14} />
           {#if app.analyzeJob != null && job}Analyzuju {job.filesDone}/{job.filesTotal}{:else}Analyzovat ({toAnalyze}){/if}
