@@ -27,4 +27,4 @@ else
     git tag -a "v$v" -m "v$v"
 fi
 git push -q origin HEAD "v$v"
-echo "v$v pushed; the build runs at https://github.com/ThomasOXY/RB-EXPORT/actions"
+echo "v$v pushed; the build runs at https://github.com/ThomasOXY/Stickwise/actions"
