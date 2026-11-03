@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { Activity, Command, Disc3, LibraryBig, Route, ShieldCheck, Usb, WandSparkles } from "@lucide/svelte";
+  import { Activity, ArrowDownToLine, Command, Disc3, LibraryBig, Route, ShieldCheck, Usb, WandSparkles } from "@lucide/svelte";
   import { app } from "./state.svelte";
+  import { updates } from "./updates.svelte";
 
   const firstStick = $derived(app.stickPath ?? app.sticks[0]?.path ?? null);
   const running = $derived(app.jobs.filter((j) => j.state === "running").length);
@@ -53,6 +54,12 @@
   <button class:on={onStick} onclick={() => stick(false)} title="Flashka" disabled={!firstStick}><Usb size={18} /></button>
   <button class:on={onHealth} onclick={() => stick(true)} title="Kontrola flashky" disabled={!firstStick}><ShieldCheck size={18} /></button>
   <div class="spacer" data-tauri-drag-region></div>
+  {#if updates.available}
+    <button class="update" onclick={() => (updates.open = true)} title="Nová verze {updates.update?.version}">
+      <ArrowDownToLine size={18} />
+      <span class="pip"></span>
+    </button>
+  {/if}
   <button class="jobs" class:busy={running > 0} title={running ? `Běží ${running} úloh` : "Nic neběží"} onclick={() => (app.toolsOpen = true)}>
     <Activity size={18} />
     {#if running}<span class="badge readout">{running}</span>{/if}
@@ -125,6 +132,26 @@
     color: var(--on-accent);
     font-size: 11px;
     line-height: 16px;
+  }
+  .update {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .pip {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
   }
   .cmdk {
     border: 1px solid var(--border);

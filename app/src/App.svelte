@@ -15,13 +15,16 @@
   import TrackDetail from "./lib/TrackDetail.svelte";
   import ToolsLaunchpad from "./lib/ToolsLaunchpad.svelte";
   import TrackTable from "./lib/TrackTable.svelte";
+  import UpdateSheet from "./lib/UpdateSheet.svelte";
   import WriteCuesSheet from "./lib/WriteCuesSheet.svelte";
   import { app } from "./lib/state.svelte";
+  import { updates } from "./lib/updates.svelte";
 
   let deck = $state<ReturnType<typeof Deck>>();
 
   onMount(() => {
     app.init();
+    updates.init();
   });
 
   function onKey(e: KeyboardEvent) {
@@ -48,7 +51,7 @@
         return;
       }
     }
-    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.settingsFor !== undefined) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || updates.open || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -110,6 +113,9 @@
 {/if}
 {#if app.toolsOpen}
   <ToolsLaunchpad />
+{/if}
+{#if updates.open}
+  <UpdateSheet />
 {/if}
 
 <style>

@@ -20,22 +20,41 @@
         "minHeight": 680,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 20, "y": 26 },
+        "trafficLightPosition": {
+          "x": 20,
+          "y": 26
+        },
         "transparent": true,
         "theme": "Dark",
-        "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
+        "windowEffects": {
+          "effects": [
+            "sidebar"
+          ],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {
       "csp": null,
-      "assetProtocol": { "enable": true, "scope": ["/Volumes/**", "$HOME/**"] }
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "/Volumes/**",
+          "$HOME/**"
+        ]
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "Music",
-    "externalBin": ["binaries/uv"],
+    "externalBin": [
+      "binaries/uv"
+    ],
     "resources": {
       "../../sidecar/pyproject.toml": "sidecar/pyproject.toml",
       "../../sidecar/uv.lock": "sidecar/uv.lock",
@@ -44,7 +63,25 @@
       "models/mel_spectrogram.onnx": "models/mel_spectrogram.onnx",
       "models/beat_this.onnx": "models/beat_this.onnx"
     },
-    "macOS": { "signingIdentity": "-", "minimumSystemVersion": "11.0" },
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"]
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlEQzRDMDM3RUUyQUUzRkUKUldUKzR5cnVOOERFblhPamNpR0UrbmI0WWFxT2Y4VXNjVktVVnE4ZWJjN3JzWUNNTTFlenZDUjEK",
+      "endpoints": [
+        "https://github.com/ThomasOXY/RB-EXPORT/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    ArrowDownToLine,
     AudioWaveform,
     BrainCircuit,
     CornerDownLeft,
@@ -17,8 +18,9 @@
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import { app } from "./state.svelte";
+  import { updates } from "./updates.svelte";
 
-  type Group = "Knihovna" | "Flashka";
+  type Group = "Knihovna" | "Flashka" | "Aplikace";
 
   interface Tool {
     name: string;
@@ -206,6 +208,18 @@
         app.formatOpen = true;
       },
     },
+    {
+      name: "Aktualizace",
+      hint: updates.available ? `Nová verze ${updates.update?.version} je připravená` : `Máš ${updates.current}, zkontrolovat novou verzi`,
+      icon: ArrowDownToLine,
+      tone: "#3fcf8e",
+      group: "Aplikace",
+      blocked: "",
+      run: () => {
+        updates.open = true;
+        if (!updates.available) updates.check();
+      },
+    },
   ]);
 
   const matches = (t: Tool, q: string) => !q || `${t.name} ${t.hint}`.toLowerCase().includes(q);
@@ -219,6 +233,7 @@
       { title: "Naposledy", items: recents },
       { title: "Knihovna", items: rest.filter((t) => t.group === "Knihovna") },
       { title: "Flashka", items: rest.filter((t) => t.group === "Flashka") },
+      { title: "Aplikace", items: rest.filter((t) => t.group === "Aplikace") },
     ].filter((s) => s.items.length);
   });
   /** Rows in the order the arrows walk them. */

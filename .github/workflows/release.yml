@@ -1,0 +1,83 @@
+# Push a tag vX.Y.Z (scripts/release.sh does it) and this builds the macOS app,
+# signs the update with TAURI_SIGNING_PRIVATE_KEY and publishes a GitHub release
+# with the DMG, the updater bundle and latest.json, which running apps poll.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-latest # Apple Silicon
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Release notes
+        id: notes
+        run: |
+          # Notes written into the tag win; else the feat/fix commits since the last tag.
+          msg=$(git tag -l --format='%(contents)' "$TAG" | sed '/-----BEGIN PGP/,$d')
+          if [ "$(git cat-file -t "$TAG")" = tag ] && [ "$(echo "$msg" | tr -d '[:space:]')" != "$TAG" ]; then
+            echo "$msg" > notes.md
+          else
+            prev=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+            range=${prev:+$prev..}$TAG
+            section() { # title, type regex
+              lines=$(git log "$range" --no-merges --pretty='%s' | grep -E "^($2)(\([^)]*\))?!?: " | sed -E 's/^[a-z]+(\([^)]*\))?!?: /- /' || true)
+              [ -z "$lines" ] || printf '## %s\n%s\n\n' "$1" "$lines"
+            }
+            { section "Novinky" "feat"; section "Opravy" "fix"; section "Rychlost" "perf"; } > notes.md
+            [ -s notes.md ] || echo "Drobné úpravy a vylepšení." > notes.md
+          fi
+          cat notes.md
+          { echo 'body<<EOF_NOTES'; cat notes.md; echo 'EOF_NOTES'; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      # The app ships uv (scripts/fetch-uv.sh copies it into the bundle).
+      - uses: astral-sh/setup-uv@v6
+
+      - run: npm ci
+        working-directory: app
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: ${{ env.TAG }}
+          releaseName: RB-EXPORT ${{ env.TAG }}
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
