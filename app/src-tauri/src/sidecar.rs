@@ -107,6 +107,57 @@ impl Sidecar {
                 && (self.bundled.is_some() || self.dir.join("pyproject.toml").is_file()))
     }
 
+    /// CUE-DETR's weights are in the model cache.
+    pub fn model_ready(&self) -> bool {
+        let snapshots = self.data.join("hf/hub/models--disco-eth--cue-detr/snapshots");
+        std::fs::read_dir(snapshots)
+            .is_ok_and(|d| d.flatten().any(|s| s.path().join("model.safetensors").exists()))
+    }
+
+    /// Delete the installed environment, so that [`Self::ensure`] installs it
+    /// anew. Only this app's own copy, never a project checkout.
+    fn remove_installed(&self) -> Result<(), String> {
+        if self.bundled.is_none() {
+            return Ok(());
+        }
+        let _guard = self.installing.lock().map_err(|e| e.to_string())?;
+        match std::fs::remove_dir_all(self.dir.join(".venv")) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Download the model and load it once, which also proves that the
+    /// environment works. `progress` gets the script's lines.
+    fn prefetch(&self, mut progress: impl FnMut(&str)) -> Result<(), String> {
+        let mut child = Command::new(self.python())
+            .arg(self.dir.join("cue_detr.py"))
+            .arg("--prefetch")
+            .env("HF_HOME", self.data.join("hf"))
+            .env("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| i18n::t!("app.ai.cantStart", error = e))?;
+        let mut last = String::new();
+        for line in BufReader::new(child.stderr.take().unwrap())
+            .lines()
+            .map_while(Result::ok)
+        {
+            let line = line.trim().to_string();
+            if !line.is_empty() {
+                progress(&line);
+                last = line;
+            }
+        }
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() || !self.model_ready() {
+            return Err(i18n::t!("app.sidecar.modelFailed", error = last));
+        }
+        Ok(())
+    }
+
     /// The shipped project differs from the installed one (app updated).
     fn outdated(&self) -> bool {
         let Some(src) = &self.bundled else {
@@ -220,10 +271,21 @@ impl Sidecar {
             .env("PYTHONDONTWRITEBYTECODE", "1")
             .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| i18n::t!("app.ai.cantStart", error = e))?;
         let stdout = child.stdout.take().unwrap();
+        // Read aside so a chatty script can't block on a full pipe; its last
+        // line says why it died.
+        let stderr = BufReader::new(child.stderr.take().unwrap());
+        let last_log = std::thread::spawn(move || {
+            stderr
+                .lines()
+                .map_while(Result::ok)
+                .filter(|l| !l.trim().is_empty())
+                .last()
+                .unwrap_or_default()
+        });
         let (mut done, mut errors) = (0, Vec::new());
         for line in BufReader::new(stdout).lines() {
             if cancel.load(Ordering::Relaxed) {
@@ -251,6 +313,10 @@ impl Sidecar {
             progress(done, &name);
         }
         let _ = child.wait();
+        let last_log = last_log.join().unwrap_or_default();
+        if done < jobs.len() && !cancel.load(Ordering::Relaxed) {
+            return Err(i18n::t!("app.ai.crashed", error = last_log));
+        }
         Ok((done, errors))
     }
 }
@@ -304,4 +370,92 @@ pub fn ensure_installed(app: &tauri::AppHandle) -> Result<(), String> {
     let _ = app.emit("job", ev);
     jobs.finish(id);
     result
+}
+
+/// What is installed, for Settings.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolsStatus {
+    /// The Python environment.
+    pub python: bool,
+    /// CUE-DETR's weights.
+    pub cue_model: bool,
+    /// Beat This!, shipped inside the app.
+    pub beat_model: bool,
+    pub installable: bool,
+    /// The running installation's job.
+    pub job: Option<u32>,
+}
+
+/// The running installation, so a second click doesn't start another.
+#[derive(Default)]
+pub struct ToolsInstall(Mutex<Option<u32>>);
+
+#[tauri::command]
+pub async fn tools_status(app: tauri::AppHandle) -> Result<ToolsStatus, String> {
+    use tauri::Manager;
+    crate::commands::blocking(move || {
+        let sc = app.state::<Sidecar>();
+        Ok(ToolsStatus {
+            python: sc.installed(),
+            cue_model: sc.model_ready(),
+            beat_model: crate::library_cmds::beat_tracker(&app).is_some(),
+            installable: sc.available(),
+            job: *app.state::<ToolsInstall>().0.lock().unwrap(),
+        })
+    })
+    .await
+}
+
+/// Install everything as one job: Python with its libraries, then the model.
+/// `again` first deletes the environment, to repair a broken one.
+#[tauri::command]
+pub fn tools_install(app: tauri::AppHandle, again: bool) -> Result<u32, String> {
+    use tauri::{Emitter, Manager};
+    let id = {
+        let install = app.state::<ToolsInstall>();
+        let mut running = install.0.lock().unwrap();
+        if let Some(id) = *running {
+            return Ok(id);
+        }
+        let (id, _) = app.state::<crate::jobs::Jobs>().start();
+        *running = Some(id);
+        id
+    };
+    let mut ev = crate::dto::JobEvent {
+        id,
+        label: i18n::t!("app.sidecar.label"),
+        state: "running",
+        files_total: 2,
+        bytes_total: 2,
+        current: i18n::t!("app.sidecar.downloading"),
+        phase: "tools".into(),
+        ..Default::default()
+    };
+    let _ = app.emit("job", ev.clone());
+    std::thread::spawn(move || {
+        let sc = app.state::<Sidecar>();
+        let line = |done: usize, ev: &crate::dto::JobEvent, text: &str| {
+            let mut e = ev.clone();
+            e.files_done = done;
+            e.bytes_done = done as u64;
+            e.current = text.to_string();
+            let _ = app.emit("job", e);
+        };
+        let result = (if again { sc.remove_installed() } else { Ok(()) })
+            .and_then(|()| sc.ensure(|l| line(0, &ev, l)))
+            .and_then(|()| {
+                line(1, &ev, &i18n::t!("app.sidecar.downloadingModel"));
+                sc.prefetch(|l| line(1, &ev, l))
+            });
+        *app.state::<ToolsInstall>().0.lock().unwrap() = None;
+        app.state::<crate::jobs::Jobs>().finish(id);
+        ev.state = if result.is_ok() { "done" } else { "error" };
+        ev.files_done = 2;
+        ev.bytes_done = 2;
+        ev.current = String::new();
+        ev.message = result.err().unwrap_or_else(|| i18n::t!("app.sidecar.ready"));
+        let _ = app.emit("job", ev);
+    });
+    Ok(id)
 }

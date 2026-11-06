@@ -221,6 +221,15 @@ export interface ExtractRequest {
   duplicates: "clone" | "copy" | "symlink";
 }
 
+export interface ToolsStatus {
+  python: boolean;
+  cueModel: boolean;
+  beatModel: boolean;
+  installable: boolean;
+  /** The running installation's job. */
+  job: number | null;
+}
+
 export interface JobEvent {
   id: number;
   label: string;
@@ -383,6 +392,11 @@ export interface MirrorRequest {
     roomHere: boolean;
   };
 }
+
+export const toolsApi = {
+  status: () => invoke<ToolsStatus>("tools_status"),
+  install: (again: boolean) => invoke<number>("tools_install", { again }),
+};
 
 export const peerApi = {
   settings: () => invoke<PeerSettings>("peer_settings"),

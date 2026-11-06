@@ -37,7 +37,8 @@
         "other": "AI analýza hotová u {count} skladeb"
       },
       "notInstalled": "AI analýza není nainstalovaná.",
-      "cantStart": "AI analýzu nejde spustit: {error}"
+      "cantStart": "AI analýzu nejde spustit: {error}",
+      "crashed": "AI analýza spadla: {error}"
     },
     "analysis": {
       "label": "Analýza skladeb",
@@ -141,6 +142,8 @@
       "failed": "Instalace pomocných nástrojů selhala: {error}",
       "label": "Instalace nástrojů (jednorázově, ~1 GB)",
       "downloading": "Stahuji Python a knihovny",
+      "downloadingModel": "Stahuji AI model",
+      "modelFailed": "AI model se nepodařilo stáhnout nebo spustit: {error}",
       "ready": "Pomocné nástroje jsou připravené."
     },
     "peer": {
@@ -225,7 +228,8 @@
         "other": "AI analysis done for {count} tracks"
       },
       "notInstalled": "AI analysis isn't installed.",
-      "cantStart": "Can't start the AI analysis: {error}"
+      "cantStart": "Can't start the AI analysis: {error}",
+      "crashed": "The AI analysis crashed: {error}"
     },
     "analysis": {
       "label": "Track analysis",
@@ -321,6 +325,8 @@
       "failed": "Installing the helpers failed: {error}",
       "label": "Installing helpers (one time, ~1 GB)",
       "downloading": "Downloading Python and libraries",
+      "downloadingModel": "Downloading the AI model",
+      "modelFailed": "Couldn't download or start the AI model: {error}",
       "ready": "The helpers are ready."
     },
     "peer": {
@@ -401,7 +407,8 @@
         "other": "KI-Analyse für {count} Tracks fertig"
       },
       "notInstalled": "Die KI-Analyse ist nicht installiert.",
-      "cantStart": "Die KI-Analyse lässt sich nicht starten: {error}"
+      "cantStart": "Die KI-Analyse lässt sich nicht starten: {error}",
+      "crashed": "Die KI-Analyse ist abgestürzt: {error}"
     },
     "analysis": {
       "label": "Track-Analyse",
@@ -497,6 +504,8 @@
       "failed": "Die Installation der Hilfswerkzeuge ist fehlgeschlagen: {error}",
       "label": "Hilfswerkzeuge installieren (einmalig, ~1 GB)",
       "downloading": "Python und Bibliotheken werden geladen",
+      "downloadingModel": "KI-Modell wird geladen",
+      "modelFailed": "Das KI-Modell konnte nicht geladen oder gestartet werden: {error}",
       "ready": "Die Hilfswerkzeuge sind bereit."
     },
     "peer": {

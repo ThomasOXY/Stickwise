@@ -9,6 +9,7 @@ and box centres become cue candidates.
 Usage: python cue_detr.py FILE...   -> one JSON object per line on stdout:
   {"path": ..., "duration": s, "candidates": [{"time": s, "score": 0..1}, ...]}
   or {"path": ..., "error": "..."}
+python cue_detr.py --prefetch downloads and loads the model, nothing else.
 Progress and logs go to stderr.
 """
 
@@ -133,6 +134,8 @@ def main():
     log(f"loading {CHECKPOINT} on {dev}")
     processor = DetrImageProcessor(do_resize=False, do_pad=False)
     model = DetrForObjectDetection.from_pretrained(CHECKPOINT, use_pretrained_backbone=False)
+    if paths == ["--prefetch"]:
+        return 0
     model.to(dev).eval()
     for i, path in enumerate(paths):
         log(f"[{i + 1}/{len(paths)}] {os.path.basename(path)}")

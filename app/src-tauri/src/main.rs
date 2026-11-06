@@ -28,6 +28,7 @@ fn main() {
         .manage(peer::AutoMirror::default())
         .manage(peer::FingerprintGaps::default())
         .manage(library_cmds::AnalyzeQueue::default())
+        .manage(sidecar::ToolsInstall::default())
         .menu(prefs::menu)
         .on_menu_event(|app, e| prefs::on_menu(app, e.id().as_ref()))
         .setup(|app| {
@@ -76,6 +77,8 @@ fn main() {
             library_cmds::library_delete_playlist,
             library_cmds::library_move_playlist,
             library_cmds::library_add_folders,
+            sidecar::tools_status,
+            sidecar::tools_install,
             library_cmds::library_set_grid,
             library_cmds::library_reset_grid,
             library_cmds::library_analyze,

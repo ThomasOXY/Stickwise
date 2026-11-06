@@ -2,10 +2,10 @@
   import { getVersion } from "@tauri-apps/api/app";
   import { emitTo, listen } from "@tauri-apps/api/event";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { CircleCheck, Download, FileOutput, Folder, Laptop, Route, Settings, ShieldAlert, SlidersHorizontal, Usb } from "@lucide/svelte";
+  import { CircleAlert, CircleCheck, Download, FileOutput, Folder, Laptop, Route, Settings, ShieldAlert, SlidersHorizontal, Usb } from "@lucide/svelte";
   import type { Component } from "svelte";
   import { onMount } from "svelte";
-  import { api, peerApi, type PeerSettings } from "./lib/api";
+  import { api, peerApi, toolsApi, type JobEvent, type PeerSettings, type ToolsStatus } from "./lib/api";
   import PlayerSettingsEditor from "./lib/PlayerSettingsEditor.svelte";
   import { i18n, t, type Key, type LangChoice } from "./lib/i18n.svelte";
   import { DUPLICATES, ENGINE, PLAN_CUES, PLAN_CURVES, PLAN_LEVELS, prefs, type Prefs } from "./lib/prefs.svelte";
@@ -32,7 +32,12 @@
   let fullDisk = $state<boolean | null>(null);
   let peer = $state<PeerSettings | null>(null);
   let error = $state("");
+  let tools = $state<ToolsStatus | null>(null);
+  /** The installation's last line, or why it failed. */
+  let toolsLine = $state("");
+  let toolsFailed = $state(false);
 
+  const toolsReady = $derived(!!tools && tools.python && tools.cueModel);
   const p = $derived(prefs.value);
   const set = <K extends keyof Prefs>(group: K, change: Partial<Prefs[K]>) => prefs.set(group, change).catch((e) => (error = String(e)));
   const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~");
@@ -46,9 +51,21 @@
     // Switched on in System Settings while this window is open.
     const poll = setInterval(checkDisk, 2000);
     const off = listen<string>("settings-section", (e) => (section = known(e.payload)));
+    refreshTools();
+    const offJob = listen<JobEvent>("job", (e) => {
+      if (e.payload.phase !== "tools") return;
+      if (e.payload.state === "running") {
+        toolsLine = e.payload.current;
+      } else {
+        toolsFailed = e.payload.state === "error";
+        toolsLine = e.payload.message;
+        refreshTools();
+      }
+    });
     return () => {
       clearInterval(poll);
       off.then((f) => f());
+      offJob.then((f) => f());
     };
   });
 
@@ -61,6 +78,22 @@
       i18n.apply(l);
     }
   });
+
+  function refreshTools() {
+    toolsApi.status().then((v) => (tools = v), (e) => (error = String(e)));
+  }
+
+  async function installTools() {
+    error = "";
+    toolsFailed = false;
+    try {
+      const again = toolsReady;
+      const job = await toolsApi.install(again);
+      if (tools) tools = { ...tools, job };
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   async function musicDir(path: string | null) {
     error = "";
@@ -133,6 +166,34 @@
             <button class="btn" onclick={() => emitTo("main", "open-updates")}><Download size={15} />{t("settings.checkUpdates")}</button>
           </div>
           <p class="hint">{t("settings.updatesHint")}</p>
+        </section>
+        <section>
+          <div class="eyebrow">{t("settings.tools")}</div>
+          {#snippet tool(label: string, ok: boolean)}
+            <div class="line tool">
+              <span>{label}</span>
+              <span class="grow"></span>
+              {#if ok}
+                <span class="ok"><CircleCheck size={16} />{t("settings.toolsReady")}</span>
+              {:else}
+                <span class="warn"><CircleAlert size={16} />{t("settings.toolsMissing")}</span>
+              {/if}
+            </div>
+          {/snippet}
+          {#if tools}
+            {@render tool(t("settings.toolsPython"), tools.python)}
+            {@render tool(t("settings.toolsCueModel"), tools.cueModel)}
+            {@render tool(t("settings.toolsBeatModel"), tools.beatModel)}
+            <div class="line">
+              <button class="btn" disabled={tools.job != null || !tools.installable} onclick={installTools}>
+                <Download size={15} />
+                {tools.job != null ? t("settings.toolsInstalling") : toolsReady ? t("settings.toolsReinstall") : t("settings.toolsInstall")}
+              </button>
+            </div>
+            {#if toolsLine}<p class="hint" class:failed={toolsFailed}>{toolsLine}</p>{/if}
+            {#if !tools.installable}<p class="hint failed">{t("settings.toolsNoUv")}</p>{/if}
+          {/if}
+          <p class="hint">{t("settings.toolsHint")}</p>
         </section>
         <section>
           <div class="eyebrow">{t("settings.diskAccess")}</div>
@@ -391,6 +452,13 @@
     color: var(--text-3);
     font-size: 12.5px;
     line-height: 1.5;
+  }
+  .hint.failed {
+    color: var(--danger);
+    overflow-wrap: anywhere;
+  }
+  .tool {
+    min-height: 24px;
   }
   .ok,
   .warn,
