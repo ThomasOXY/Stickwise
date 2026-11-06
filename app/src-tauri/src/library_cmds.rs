@@ -487,8 +487,9 @@ fn analyze_from(
     let tracker = beat_tracker(app);
     let done = std::sync::atomic::AtomicUsize::new(0);
     let errors = Mutex::new(Vec::new());
-    // Decoding, waveforms and key in parallel; the beat model (which uses
-    // every core itself) one track at a time.
+    let budget = AudioBudget::default();
+    // Decoding, waveforms and key in parallel; the beat models take turns
+    // when there are fewer of them than workers.
     let workers = std::thread::available_parallelism().map_or(2, |n| n.get().saturating_sub(2).clamp(1, 4));
     std::thread::scope(|s| {
         for _ in 0..workers {
@@ -501,6 +502,8 @@ fn analyze_from(
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
+                // The library's length; a track without one counts as an hour.
+                let held = budget.take(if t.duration > 0.0 { t.duration } else { 3600.0 });
                 let result = analyzer::analyze(Path::new(&t.path), (t.bpm > 0.0).then_some(t.bpm), tracker)
                     .and_then(|a| {
                         let dat = analyzer::write(&a, &t.path, &dir.join(format!("{:016x}", path_hash(&t.path))))?;
@@ -512,6 +515,7 @@ fn analyze_from(
                             l.set_analysis(t.id, &dat.display().to_string(), a.grid.map(|g| g.bpm), a.key, a.duration)
                         })
                     });
+                budget.give_back(held);
                 if let Err(e) = result {
                     // A sync does not try it again until the file changes.
                     let _ = lib(app, |l| l.set_analysis_failed(t.id, file_mtime(Path::new(&t.path))));
@@ -522,6 +526,37 @@ fn analyze_from(
         }
     });
     (done.into_inner(), errors.into_inner().unwrap(), tracker.is_some())
+}
+
+/// Decoded audio the analysis workers may hold at once, as seconds of audio
+/// (mono f32 at 44.1 kHz is 176 kB/s; 2 GB is about 3 hours).
+const AUDIO_BUDGET_SECS: f64 = 3.0 * 3600.0;
+
+/// Keeps long mixes from being decoded side by side and filling the memory.
+#[derive(Default)]
+struct AudioBudget {
+    used: Mutex<f64>,
+    freed: std::sync::Condvar,
+}
+
+impl AudioBudget {
+    /// Wait for room for `secs` of audio. A track over the whole budget runs
+    /// once nothing else does.
+    fn take(&self, secs: f64) -> f64 {
+        let secs = secs.max(0.0);
+        let mut used = self.used.lock().unwrap();
+        while *used > 0.0 && *used + secs > AUDIO_BUDGET_SECS {
+            used = self.freed.wait(used).unwrap();
+        }
+        *used += secs;
+        secs
+    }
+
+    fn give_back(&self, secs: f64) {
+        let mut used = self.used.lock().unwrap();
+        *used = (*used - secs).max(0.0);
+        self.freed.notify_all();
+    }
 }
 
 /// The running analysis job, which tracks asked for later join.
@@ -631,7 +666,7 @@ pub fn library_analyze(
 /// Beat This!, loaded on first use from the app's resources (in a dev
 /// build from `src-tauri/models`). `None` when the models are missing: the
 /// built-in detector takes over.
-fn beat_tracker(app: &AppHandle) -> Option<&'static analyzer::tracker::Tracker> {
+pub(crate) fn beat_tracker(app: &AppHandle) -> Option<&'static analyzer::tracker::Tracker> {
     static TRACKER: std::sync::OnceLock<Option<analyzer::tracker::Tracker>> = std::sync::OnceLock::new();
     TRACKER
         .get_or_init(|| {
@@ -640,7 +675,9 @@ fn beat_tracker(app: &AppHandle) -> Option<&'static analyzer::tracker::Tracker> 
                 Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models")),
             ];
             dirs.into_iter().flatten().find_map(|d| {
-                analyzer::tracker::Tracker::load(&d.join("mel_spectrogram.onnx"), &d.join("beat_this.onnx")).ok()
+                // Past two or three models they only get in each other's way.
+                let models = std::thread::available_parallelism().map_or(1, |n| (n.get() / 3).clamp(1, 3));
+                analyzer::tracker::Tracker::load_many(&d.join("mel_spectrogram.onnx"), &d.join("beat_this_small.onnx"), models).ok()
             })
         })
         .as_ref()

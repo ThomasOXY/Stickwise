@@ -19,6 +19,6 @@ fetch() { # name url sha256
 fetch mel_spectrogram.onnx \
     https://raw.githubusercontent.com/danigb/beat-this-rs/9ad271c3e1017cfc4d9b6b43bb691c2afd545383/models/mel_spectrogram.onnx \
     fdd59e65c515331308e4c8841edf99972deca646bdf6197744c2a5b7755e3de9
-fetch beat_this.onnx \
-    https://github.com/danigb/beat-this-rs/releases/download/model-large/beat_this.onnx \
-    5f810debe53459b559127fb55bbad40035bb47cc567b20e501670f968c770f02
+fetch beat_this_small.onnx \
+    https://raw.githubusercontent.com/danigb/beat-this-rs/e82b5de28962663be047adca84781edae566504f/models/beat_this_small.onnx \
+    a5f8d39d989f31859454ba27afe61c5317ca95e4d9373e6853e5361b8937172f

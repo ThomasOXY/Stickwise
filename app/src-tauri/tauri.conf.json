@@ -61,7 +61,7 @@
       "../../sidecar/cue_detr.py": "sidecar/cue_detr.py",
       "../../sidecar/rekordbox_dump.py": "sidecar/rekordbox_dump.py",
       "models/mel_spectrogram.onnx": "models/mel_spectrogram.onnx",
-      "models/beat_this.onnx": "models/beat_this.onnx",
+      "models/beat_this_small.onnx": "models/beat_this_small.onnx",
       "macos/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings",
       "macos/cs.lproj/InfoPlist.strings": "cs.lproj/InfoPlist.strings",
       "macos/de.lproj/InfoPlist.strings": "de.lproj/InfoPlist.strings"

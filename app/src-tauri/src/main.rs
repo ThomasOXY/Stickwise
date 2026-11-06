@@ -11,6 +11,13 @@ mod prefs;
 mod sidecar;
 
 fn main() {
+    // rten keeps to the performance cores by default: use the others too,
+    // leaving one so playback and the window stay smooth. Nothing runs yet
+    // that could read the environment at the same time.
+    if std::env::var_os("RTEN_NUM_THREADS").is_none() {
+        let threads = std::thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(1).max(1));
+        unsafe { std::env::set_var("RTEN_NUM_THREADS", threads.to_string()) };
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
