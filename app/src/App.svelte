@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import Deck from "./lib/Deck.svelte";
   import EmptyState from "./lib/EmptyState.svelte";
+  import CloudSheet from "./lib/CloudSheet.svelte";
   import ExportSheet from "./lib/ExportSheet.svelte";
   import FormatSheet from "./lib/FormatSheet.svelte";
   import HealthReport from "./lib/HealthReport.svelte";
@@ -85,7 +86,7 @@
         return;
       }
     }
-    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.pairRequest || app.offerRequest || app.mirrorRequest || updates.open || access.open || app.settingsFor !== undefined) return;
+    if (typing || app.toolsOpen || app.exportOpen || app.writeOpen || app.syncOpen || app.formatOpen || app.peerOpen || app.cloudFor != null || app.pairRequest || app.offerRequest || app.mirrorRequest || updates.open || access.open || app.settingsFor !== undefined) return;
     if (e.code === "Space") {
       e.preventDefault();
       deck?.toggle();
@@ -147,6 +148,9 @@
 {/if}
 {#if app.peerOpen}
   <PeerSheet />
+{/if}
+{#if app.cloudFor != null}
+  <CloudSheet />
 {/if}
 {#if app.toolsOpen}
   <ToolsLaunchpad />

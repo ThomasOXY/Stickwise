@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import cloud from "../locales/cloud.json";
 import common from "../locales/common.json";
 import deck from "../locales/deck.json";
 import exportOpts from "../locales/export.json";
@@ -21,7 +22,7 @@ import sync from "../locales/sync.json";
  * `{ "one": …, "few": …, "other": … }` picked by `{count}` (Czech has
  * one/few/other, English and German one/other).
  */
-const NAMESPACES = { common, deck, export: exportOpts, library, peer, planner, player, settings, shell, stick, sync };
+const NAMESPACES = { cloud, common, deck, export: exportOpts, library, peer, planner, player, settings, shell, stick, sync };
 
 export const LANGS = ["cs", "en", "de"] as const;
 export type Lang = (typeof LANGS)[number];

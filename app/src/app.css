@@ -192,6 +192,7 @@ button {
 }
 
 input[type="text"],
+input[type="password"],
 input[type="search"] {
   height: 32px;
   border: 1px solid transparent;

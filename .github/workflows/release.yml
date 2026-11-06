@@ -103,3 +103,11 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+
+      # The server side of playlist sharing, to upload to a PHP hosting.
+      - name: Attach Stickwise Cloud
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git archive "$TAG:cloud" --format=zip -o Stickwise-Cloud.zip
+          gh release upload "$TAG" Stickwise-Cloud.zip --clobber

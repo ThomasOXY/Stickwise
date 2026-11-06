@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cloud;
 mod commands;
 mod dto;
 mod edits;
@@ -117,6 +118,13 @@ fn main() {
             peer::peer_mirror,
             peer::peer_mirror_answer,
             peer::peer_set_auto_mirror,
+            cloud::cloud_status,
+            cloud::cloud_login,
+            cloud::cloud_logout,
+            cloud::cloud_playlist,
+            cloud::cloud_set_password,
+            cloud::cloud_unshare,
+            cloud::cloud_share,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stickwise");

@@ -1,3 +1,7 @@
 /target
 /research
 .DS_Store
+/cloud/config.php
+/cloud/storage/*
+!/cloud/storage/.htaccess
+!/cloud/storage/index.html

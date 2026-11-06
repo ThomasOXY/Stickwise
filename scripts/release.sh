@@ -79,6 +79,8 @@ if [ -z "$ci" ]; then
     cp "$b/dmg/Stickwise_${v}_aarch64.dmg" "$out/"
     cp "$b/macos/Stickwise.app.tar.gz" "$out/Stickwise_aarch64.app.tar.gz"
     cp "$b/macos/Stickwise.app.tar.gz.sig" "$out/Stickwise_aarch64.app.tar.gz.sig"
+    # The server side of playlist sharing, to upload to a PHP hosting.
+    git archive HEAD:cloud --format=zip -o "$out/Stickwise-Cloud.zip"
     V="$v" NOTES="$notes" OUT="$out" REPO="$REPO" node -e '
       const fs = require("fs");
       const { V, NOTES, OUT, REPO } = process.env;
@@ -108,5 +110,5 @@ fi
 
 gh release create "v$v" -R "$REPO" --title "Stickwise v$v" --notes-file "$notes" --verify-tag \
     "$out/Stickwise_${v}_aarch64.dmg" "$out/Stickwise_aarch64.app.tar.gz" \
-    "$out/Stickwise_aarch64.app.tar.gz.sig" "$out/latest.json"
+    "$out/Stickwise_aarch64.app.tar.gz.sig" "$out/latest.json" "$out/Stickwise-Cloud.zip"
 echo "v$v released: https://github.com/$REPO/releases/tag/v$v"

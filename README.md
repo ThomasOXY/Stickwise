@@ -27,6 +27,11 @@ knihovnu přes šifrované spojení: **Poslat** vybrané sety a playlisty, nebo 
 oběma směry s náhledem změn. Hudba, kterou Mac už má, se nepřepisuje; u cue, gridů a tagů vyhrává
 novější úprava; smazání playlistu se propíše jen po potvrzení. Podrobnosti v [PLAN.md](PLAN.md) (5b).
 
+## Sdílení playlistu k poslechu
+Pravý klik na playlist → **Sdílet k poslechu…** převede skladby na AAC 192 kb/s, nahraje je na tvůj
+PHP hosting a dá ti odkaz, případně s heslem. Serverová část je ve složce [cloud/](cloud/README.md)
+a každý release ji má jako `Stickwise-Cloud.zip`. Test: `scripts/test-cloud.sh` (potřebuje Docker).
+
 ## Vydání a aktualizace
 ```sh
 scripts/release.sh 0.3.2              # poznámky z feat/fix commitů od minulé verze

@@ -28,6 +28,7 @@ const FILES: &[(&str, &str)] = &[
     ("analysis", include_str!("../locales/analysis.json")),
     ("analyzer", include_str!("../locales/analyzer.json")),
     ("library", include_str!("../locales/library.json")),
+    ("cloud", include_str!("../locales/cloud.json")),
 ];
 
 static DICTS: LazyLock<Vec<(&'static str, Value)>> = LazyLock::new(|| {

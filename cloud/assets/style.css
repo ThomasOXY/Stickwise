@@ -1,0 +1,372 @@
+:root {
+  --night: #17131c;
+  --raised: #231d2a;
+  --edge: #3a3145;
+  --paper: #f4efe6;
+  --dust: #b0a7b8;
+  --amber: #f2a33a;
+  --amber-deep: #8f5618;
+  --amber-wash: rgb(242 163 58 / 0.14);
+  --on-amber: #21140a;
+  --wrong: #ff8f8a;
+  --right: #6fdca6;
+  --poster: "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --text: "Avenir Next", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--night);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--paper);
+  font: 400 16px/1.45 var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+  margin: 0;
+  font: 800 clamp(44px, 10vw, 104px) / 0.94 var(--poster);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* The listening page */
+
+.head {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: clamp(40px, 9vh, 96px) 20px 28px;
+}
+
+.meta {
+  margin: 14px 0 0;
+  color: var(--dust);
+}
+
+.tracks {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 8px 180px;
+  list-style: none;
+}
+
+/* The row fills with amber as the track plays. */
+.track {
+  --progress: 0%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 13px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.track:hover {
+  background: var(--raised);
+}
+
+.track.on {
+  background: linear-gradient(90deg, var(--amber-deep) var(--progress), var(--amber-wash) var(--progress));
+}
+
+.no,
+.time {
+  color: var(--dust);
+  font-variant-numeric: tabular-nums;
+}
+
+.names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.names .title {
+  font-weight: 600;
+}
+
+.names .artist {
+  color: var(--dust);
+  font-size: 15px;
+}
+
+.track.on .no,
+.track.on .time,
+.track.on .artist {
+  color: var(--paper);
+}
+
+.player {
+  position: fixed;
+  inset: auto 0 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "now controls seek" "error error error";
+  gap: 4px 20px;
+  align-items: center;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--edge);
+  background: var(--raised);
+}
+
+.now {
+  grid-area: now;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.now span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now .title {
+  font-weight: 600;
+}
+
+.now .artist {
+  color: var(--dust);
+  font-size: 14px;
+}
+
+.controls {
+  grid-area: controls;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.controls button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  fill: var(--paper);
+  cursor: pointer;
+}
+
+.controls button:hover {
+  background: var(--edge);
+}
+
+.controls svg {
+  width: 22px;
+  height: 22px;
+}
+
+.controls .main,
+.controls .main:hover {
+  width: 52px;
+  height: 52px;
+  background: var(--amber);
+  fill: var(--on-amber);
+}
+
+.seek {
+  grid-area: seek;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--dust);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.seek input {
+  --fill: 0%;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.seek input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--amber) var(--fill), var(--edge) var(--fill));
+}
+
+.seek input::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--amber) var(--fill), var(--edge) var(--fill));
+}
+
+.seek input::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--paper);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.seek input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--paper);
+}
+
+.player .error {
+  grid-area: error;
+  margin: 4px 0 0;
+}
+
+@media (max-width: 720px) {
+  .player {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "now controls" "seek seek" "error error";
+    gap: 6px 12px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .controls button {
+    width: 38px;
+    height: 38px;
+  }
+
+  .controls .main,
+  .controls .main:hover {
+    width: 46px;
+    height: 46px;
+  }
+
+  .names {
+    flex-direction: column;
+  }
+
+  .tracks {
+    padding-bottom: 200px;
+  }
+}
+
+/* Password, notices, install */
+
+.centered {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px;
+  place-items: center;
+}
+
+.card {
+  width: min(460px, 100%);
+}
+
+.card.wide {
+  width: min(600px, 100%);
+}
+
+.card h1 {
+  font-size: clamp(40px, 9vw, 72px);
+}
+
+.card > p {
+  color: var(--dust);
+}
+
+form {
+  display: grid;
+  gap: 6px;
+  margin-top: 28px;
+}
+
+label {
+  margin-top: 8px;
+  color: var(--dust);
+  font-size: 14px;
+}
+
+form input {
+  width: 100%;
+  height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--raised);
+}
+
+form button {
+  height: 46px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--amber);
+  color: var(--on-amber);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.error {
+  margin: 6px 0 0;
+  color: var(--wrong);
+}
+
+.card > p.ok {
+  color: var(--right);
+}
+
+.checks {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checks li {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 8px 22px;
+  border-bottom: 1px solid var(--edge);
+  background: no-repeat 2px 16px / 10px 10px radial-gradient(circle, var(--right) 60%, transparent 62%);
+}
+
+.checks li.miss {
+  background-image: radial-gradient(circle, var(--wrong) 60%, transparent 62%);
+}
+
+.checks small {
+  color: var(--dust);
+}

@@ -419,6 +419,30 @@ export const peerApi = {
     invoke<void>("peer_mirror_answer", { request, choice }),
 };
 
+/** Signed in to the DJ's own server (`cloud/`). */
+export interface CloudAccount {
+  url: string;
+  username: string;
+}
+
+export interface CloudPlaylist {
+  url: string;
+  hasPassword: boolean;
+  tracks: number;
+}
+
+export const cloudApi = {
+  status: () => invoke<CloudAccount | null>("cloud_status"),
+  login: (url: string, username: string, password: string) => invoke<CloudAccount>("cloud_login", { url, username, password }),
+  logout: () => invoke<void>("cloud_logout"),
+  playlist: (playlistId: number) => invoke<CloudPlaylist | null>("cloud_playlist", { playlistId }),
+  /** Starts a job. `password: null` keeps what the playlist has. */
+  share: (playlistId: number, password: string | null) => invoke<number>("cloud_share", { playlistId, password }),
+  /** `password: null` removes it. */
+  setPassword: (playlistId: number, password: string | null) => invoke<CloudPlaylist>("cloud_set_password", { playlistId, password }),
+  unshare: (playlistId: number) => invoke<void>("cloud_unshare", { playlistId }),
+};
+
 export const libApi = {
   data: () => invoke<LibraryData>("library_data"),
   import: (source: string) => invoke<ImportReport>("library_import", { source }),

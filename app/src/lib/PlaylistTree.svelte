@@ -438,6 +438,9 @@
     <button role="menuitem" onclick={() => ((app.peerSendPreset = [node.id]), (app.peerOpen = true))}>
       {t("library.tree.sendToMac")}<span class="hint">{t("library.tree.sendToMacHint")}</span>
     </button>
+    {#if !node.isFolder}
+      <button role="menuitem" onclick={() => (app.cloudFor = node.id)}>{t("library.tree.share")}</button>
+    {/if}
     <div class="sep"></div>
     {#if node.isFolder}
       <button role="menuitem" onclick={() => app.createPlaylist(node.id, "playlist")}>{t("library.tree.newPlaylistIn")}</button>
