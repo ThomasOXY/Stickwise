@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { num } from "./format";
 import { gridBeats, normalize, type Grid } from "./grid";
 import { t } from "./i18n.svelte";
@@ -90,6 +91,11 @@ class AppState {
   /** The jobs panel from the rail. */
   jobsOpen = $state(false);
   importing = $state(false);
+  /** Files dragged in from Finder: over the window, and the playlist they would join. */
+  fileDrag = $state(false);
+  fileTarget = $state<number | null>(null);
+  /** Drops waiting for the one being read. */
+  private dropQueue: [string[], number | null][] = [];
   /** Folders dropped from Finder being read into the library. */
   addingFolders = $state(false);
   /** Playlist being renamed in the tree. */
@@ -176,7 +182,39 @@ class AppState {
     return t("shell.notOnPlayer", { player: s.player });
   });
 
+  /**
+   * The playlist under a Finder drag (physical pixels from Tauri): a row of
+   * the tree, or the open playlist when over its tracks. Rows of a stick are
+   * not library playlists: then it all goes to the top.
+   */
+  private fileTargetAt(pos: { x: number; y: number }): number | null {
+    if (!this.isLibrary) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const el = document.elementFromPoint(pos.x / dpr, pos.y / dpr);
+    const row = el?.closest<HTMLElement>("[data-pid]")?.dataset.pid;
+    if (row) return Number(row);
+    return el?.closest("[data-tracks]") ? (this.currentPlaylist?.id ?? null) : null;
+  }
+
   async init() {
+    await getCurrentWebview().onDragDropEvent((e) => {
+      const p = e.payload;
+      // Drags inside the app carry no files and are left to the page.
+      if (p.type === "enter") {
+        this.fileDrag = p.paths.length > 0;
+        if (this.fileDrag) this.fileTarget = this.fileTargetAt(p.position);
+      } else if (p.type === "over") {
+        if (this.fileDrag) this.fileTarget = this.fileTargetAt(p.position);
+      } else if (p.type === "drop") {
+        const target = this.fileTargetAt(p.position);
+        this.fileDrag = false;
+        this.fileTarget = null;
+        if (p.paths.length) this.addFolders(p.paths, target);
+      } else {
+        this.fileDrag = false;
+        this.fileTarget = null;
+      }
+    });
     await listen<[number, number]>("verify-progress", (e) => (this.verifyProgress = e.payload));
     await listen<JobEvent>("job", (e) => {
       const i = this.jobs.findIndex((j) => j.id === e.payload.id);
@@ -338,7 +376,11 @@ class AppState {
    * files dropped on a playlist are added to it.
    */
   async addFolders(paths: string[], target: number | null) {
-    if (paths.length === 0 || this.addingFolders) return;
+    if (paths.length === 0) return;
+    if (this.addingFolders) {
+      this.dropQueue.push([paths, target]);
+      return;
+    }
     this.addingFolders = true;
     try {
       if (!this.isLibrary) await this.openLibrary();
@@ -375,6 +417,8 @@ class AppState {
       this.error = String(e);
     } finally {
       this.addingFolders = false;
+      const next = this.dropQueue.shift();
+      if (next) this.addFolders(...next);
     }
   }
 

@@ -432,6 +432,8 @@
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="rows"
+    class:filedrop={app.fileDrag && app.fileTarget != null && app.fileTarget === app.currentPlaylist?.id}
+    data-tracks
     tabindex="0"
     role="listbox"
     aria-label={t("library.table.tracksAria")}
@@ -827,6 +829,11 @@
   }
   .row.missing .names {
     opacity: 0.45;
+  }
+  .rows.filedrop {
+    outline: 2px dashed rgb(242 163 58 / 0.6);
+    outline-offset: -6px;
+    background: rgb(242 163 58 / 0.04);
   }
   .row.drop-before {
     box-shadow: inset 0 2px 0 var(--accent);

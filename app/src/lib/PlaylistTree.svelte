@@ -1,7 +1,5 @@
 <script lang="ts">
   import { ArrowDown, ArrowDownUp, ArrowUp, Check, ChevronDown, ChevronRight, Clock, FolderPlus, Library, ListMusic, ListPlus, Search, Sparkles } from "@lucide/svelte";
-  import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { onMount } from "svelte";
   import { libApi, type Playlist } from "./api";
   import { collator } from "./format";
   import { t, type Key } from "./i18n.svelte";
@@ -15,44 +13,6 @@
   let moveTarget = $state<{ id: number; after: boolean } | null>(null);
   let renameValue = $state("");
   let nav = $state<HTMLElement>();
-  /** Files dragged in from Finder: over the window, and the row under them. */
-  let fileDrag = $state(false);
-  let fileTarget = $state<number | null>(null);
-
-  /** The playlist row at a window position (physical pixels from Tauri). */
-  function rowAt(pos: { x: number; y: number }): number | null {
-    const dpr = window.devicePixelRatio || 1;
-    const el = document.elementFromPoint(pos.x / dpr, pos.y / dpr) as HTMLElement | null;
-    // Rows of a stick are not library playlists: then it all goes to the top.
-    if (!el || !nav?.contains(el) || !app.isLibrary) return null;
-    const id = el.closest<HTMLElement>("[data-pid]")?.dataset.pid;
-    return id ? Number(id) : null;
-  }
-
-  onMount(() => {
-    const off = getCurrentWebview().onDragDropEvent((e) => {
-      const p = e.payload;
-      // Drags inside the app carry no files and are left to the page.
-      if (p.type === "enter") {
-        fileDrag = p.paths.length > 0;
-        if (fileDrag) fileTarget = rowAt(p.position);
-      } else if (p.type === "over") {
-        if (fileDrag) fileTarget = rowAt(p.position);
-      } else if (p.type === "drop") {
-        const target = rowAt(p.position);
-        fileDrag = false;
-        fileTarget = null;
-        if (p.paths.length) app.addFolders(p.paths, target);
-      } else {
-        fileDrag = false;
-        fileTarget = null;
-      }
-    });
-    return () => {
-      off.then((f) => f());
-    };
-  });
-
   const q = $derived(app.playlistFilter.trim().toLowerCase());
   const lib = $derived(app.isLibrary);
 
@@ -277,7 +237,7 @@
     <button
       data-pid={node.id}
       class="item folder"
-      class:drop={fileTarget === node.id}
+      class:drop={app.fileTarget === node.id}
       style:padding-left="{8 + depth * 18}px"
       class:before={moveTarget?.id === node.id && !moveTarget.after}
       class:after={moveTarget?.id === node.id && moveTarget.after}
@@ -299,7 +259,7 @@
       class="item"
       class:selected={selected("playlist", node.id)}
       data-pid={node.id}
-      class:drop={dropTarget === node.id || fileTarget === node.id}
+      class:drop={dropTarget === node.id || app.fileTarget === node.id}
       class:before={moveTarget?.id === node.id && !moveTarget.after}
       class:after={moveTarget?.id === node.id && moveTarget.after}
       class:lifted={dragging === node.id}
@@ -354,13 +314,13 @@
   ><ArrowDownUp size={13} /></button>
 {/snippet}
 
-<nav class="tree" class:filedrop={fileDrag} bind:this={nav}>
-  {#if fileDrag || app.addingFolders}
+<nav class="tree" class:filedrop={app.fileDrag} bind:this={nav}>
+  {#if app.fileDrag || app.addingFolders}
     <div class="dropnote">
       {#if app.addingFolders}
         {t("library.tree.loadingFolders")}
-      {:else if fileTarget != null}
-        {@const target = app.library?.playlists.find((p) => p.id === fileTarget)}
+      {:else if app.fileTarget != null}
+        {@const target = app.library?.playlists.find((p) => p.id === app.fileTarget)}
         {target?.isFolder ? t("library.tree.dropIntoFolder", { name: target.name }) : t("library.tree.dropIntoPlaylist", { name: target?.name ?? "" })}
       {:else}
         {t("library.tree.dropHere")}
