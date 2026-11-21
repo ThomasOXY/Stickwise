@@ -106,6 +106,7 @@ pub(crate) fn rekordbox_sources() -> Vec<String> {
 #[tauri::command]
 pub async fn library_data(app: AppHandle) -> CmdResult<LibraryData> {
     let own = app.path().app_data_dir().map_err(err)?.join("analysis");
+    crate::artwork::fill_in_background(&app);
     blocking(move || {
         let (tracks, playlists, last) = lib(&app, |l| {
             Ok((l.tracks()?, l.playlists()?, l.meta("last_import")?))
