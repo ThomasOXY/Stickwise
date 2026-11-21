@@ -7,6 +7,8 @@ https://github.com/M-Igashi/baken
 menu and sort tables) is copied from baken, and the `export.pdb` page/row layout
 rules in `crates/pioneer-formats/src/pdb/{writer,encode}.rs` follow its byte-level
 measurements of rekordbox 7 exports.
+The artwork layout on the stick (`crates/usb-tools/src/artwork.rs`: folders,
+file names, thumbnail sizes and encoding) follows baken's measurements too.
 
 ```
 MIT License

@@ -62,8 +62,14 @@ fn read_anlz(p: &Path) -> Option<AnlzFile> {
 }
 
 /// Turn the sync request into an Engine library, reading beat grids and
-/// waveforms from the tracks' analysis.
-pub fn library(req: &SyncRequest, plan: &SyncPlan) -> (Library, usize) {
+/// waveforms from the tracks' analysis. `art` is the artwork id the
+/// rekordbox library gave each track: its medium thumbnail, already on the
+/// stick, becomes the Engine cover.
+pub fn library(
+    req: &SyncRequest,
+    plan: &SyncPlan,
+    art: &std::collections::HashMap<i64, u32>,
+) -> (Library, usize) {
     let by_key: std::collections::HashMap<i64, &crate::sync::SyncTrack> =
         req.tracks.iter().map(|t| (t.key, t)).collect();
     let mut lib = Library::default();
@@ -141,6 +147,9 @@ pub fn library(req: &SyncRequest, plan: &SyncPlan) -> (Library, usize) {
             cues: cues.quick_cues,
             loops: cues.loops,
             overview,
+            album_art: art.get(&pt.key).and_then(|&id| {
+                std::fs::read(crate::sync::resolve(&req.stick, &crate::artwork::path(id, true))).ok()
+            }),
             ..Default::default()
         });
     }
@@ -186,6 +195,7 @@ pub fn install(
     plan: &SyncPlan,
     schema: Schema,
     backup_dir: &Path,
+    art: &std::collections::HashMap<i64, u32>,
 ) -> Result<EngineReport, String> {
     let stick = &req.stick;
     let dir = stick.join(DB_DIR);
@@ -202,7 +212,7 @@ pub fn install(
     report.replaced = old.as_ref().map(|o| o.0);
     let uuid = old.map(|o| o.1).filter(|u| !u.is_empty());
 
-    let (lib, dropped) = library(req, plan);
+    let (lib, dropped) = library(req, plan, art);
     report.dropped_cues = dropped;
     let tmp = std::env::temp_dir().join(format!(
         "rbx-engine-{}-{}",

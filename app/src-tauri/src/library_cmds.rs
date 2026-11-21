@@ -819,6 +819,7 @@ fn sync_request(
             track_number: t.track_number,
             date_added: t.date_added,
             anlz_dat: (!t.anlz.is_empty()).then(|| PathBuf::from(t.anlz)),
+            artwork: (!t.artwork.is_empty()).then(|| PathBuf::from(t.artwork)),
             cues,
         });
     }

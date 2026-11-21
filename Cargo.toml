@@ -19,3 +19,15 @@ libsync = { path = "crates/libsync" }
 thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+
+# Artwork scaling crawls without optimisation; keep dev builds usable.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.usb-tools]
+opt-level = 3

@@ -55,6 +55,12 @@ fn file_type(path: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Content key of a picture, for `AlbumArt.hash`.
+fn art_hash(bytes: &[u8]) -> String {
+    let h = bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
+    format!("{h:016x}")
+}
+
 fn opt(s: &str) -> Option<&str> {
     (!s.is_empty()).then_some(s)
 }
@@ -86,11 +92,34 @@ pub fn build(
          currentPlayedIndiciator, lastRekordBoxLibraryImportReadCounter) VALUES (?1, ?2, ?3, ?4, 0, NULL)",
         params![uuid, major, minor, patch],
     )?;
-    // Row 1 is Engine's "no artwork".
+    // Row 1 is Engine's "no artwork"; every other picture gets one row.
     tx.execute(
         "INSERT OR IGNORE INTO AlbumArt (id, hash, albumArt) VALUES (1, NULL, NULL)",
         [],
     )?;
+    let mut art_ids: Vec<i64> = Vec::with_capacity(lib.tracks.len());
+    {
+        let mut by_hash: HashMap<String, i64> = HashMap::new();
+        let mut ins = tx.prepare("INSERT INTO AlbumArt (hash, albumArt) VALUES (?1, ?2)")?;
+        for t in &lib.tracks {
+            let id = match t.album_art.as_deref().filter(|b| !b.is_empty()) {
+                None => 1,
+                Some(bytes) => {
+                    let hash = art_hash(bytes);
+                    match by_hash.get(&hash) {
+                        Some(&id) => id,
+                        None => {
+                            ins.execute(params![hash, bytes])?;
+                            let id = tx.last_insert_rowid();
+                            by_hash.insert(hash, id);
+                            id
+                        }
+                    }
+                }
+            };
+            art_ids.push(id);
+        }
+    }
 
     let stamp = now();
     let mut ids: Vec<i64> = Vec::with_capacity(lib.tracks.len());
@@ -126,7 +155,7 @@ pub fn build(
             None
         };
         let mut seen: HashSet<&str> = HashSet::new();
-        for t in &lib.tracks {
+        for (t, art_id) in lib.tracks.iter().zip(&art_ids) {
             if !seen.insert(&t.path) {
                 return Err(Error::Invalid(format!("track listed twice: {}", t.path)));
             }
@@ -153,7 +182,7 @@ pub fn build(
                 &filename,
                 &(t.bitrate > 0).then_some(t.bitrate),
                 &t.bpm,
-                &1i64,
+                art_id,
                 &(t.file_bytes as i64),
                 &t.title,
                 &opt(&t.artist),

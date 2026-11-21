@@ -129,6 +129,8 @@ pub struct Track {
     pub cues: QuickCues,
     pub loops: Loops,
     pub overview: Option<Overview>,
+    /// Cover picture (JPEG or PNG), stored in `AlbumArt` once per picture.
+    pub album_art: Option<Vec<u8>>,
 }
 
 /// A playlist or folder. Engine keeps folders as playlists with children.

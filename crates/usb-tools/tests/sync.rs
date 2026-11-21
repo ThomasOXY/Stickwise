@@ -477,3 +477,113 @@ fn analysis_already_on_the_stick_is_used_for_an_unanalysed_track() {
     let cues = read_cue_points(&dat, Some(&ext)).unwrap();
     assert_eq!((cues.len(), cues[0].time_ms), (1, 12_000));
 }
+
+#[test]
+fn puts_artwork_on_the_stick_once_per_picture() {
+    let mac = tempfile::tempdir().unwrap();
+    let stick = tempfile::tempdir().unwrap();
+    let backup = tempfile::tempdir().unwrap();
+    // A picture someone else left on the stick is not ours to overwrite.
+    let foreign = stick.path().join("PIONEER/Artwork/00001/a1.jpg");
+    std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+    std::fs::write(&foreign, b"foreign").unwrap();
+
+    // rekordbox's picture with its thumbnails, shared by two tracks, and a
+    // plain PNG that gets scaled.
+    let rb = mac.path().join("Artwork/x");
+    std::fs::create_dir_all(&rb).unwrap();
+    std::fs::write(rb.join("artwork.jpg"), b"full").unwrap();
+    std::fs::write(rb.join("artwork_s.jpg"), b"small").unwrap();
+    std::fs::write(rb.join("artwork_m.jpg"), b"medium").unwrap();
+    let png = mac.path().join("cover.png");
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::RgbImage::from_pixel(300, 200, image::Rgb([10, 200, 30]))
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&png, buf.into_inner()).unwrap();
+
+    let track = |key: i64, artwork: Option<&Path>| {
+        let audio = mac.path().join(format!("{key}.mp3"));
+        std::fs::write(&audio, vec![key as u8; 3000]).unwrap();
+        SyncTrack {
+            key,
+            audio,
+            title: format!("T{key}"),
+            artist: "A".into(),
+            artwork: artwork.map(Path::to_path_buf),
+            ..Default::default()
+        }
+    };
+    let mut req = SyncRequest {
+        stick: stick.path().to_path_buf(),
+        tracks: vec![
+            track(1, Some(&rb.join("artwork.jpg"))),
+            track(2, Some(&rb.join("artwork.jpg"))),
+            track(3, Some(&png)),
+            track(4, None),
+        ],
+        playlists: vec![SyncPlaylist {
+            key: 10,
+            parent: 0,
+            name: "P".into(),
+            is_folder: false,
+            sort: 0,
+            tracks: vec![1, 2, 3, 4],
+        }],
+        device_name: "TEST".into(),
+        date: "2026-11-21".into(),
+        engine: Some(engine_library::Schema::V3_0_1),
+        settings: None,
+    };
+    let sync = |req: &SyncRequest| {
+        let r = execute(req, &plan(req), backup.path(), &AtomicBool::new(false), |_| {}).unwrap();
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        let db = Database::parse(&std::fs::read(stick.path().join("PIONEER/rekordbox/export.pdb")).unwrap()).unwrap();
+        (r, db)
+    };
+    let art_of = |db: &Database, title: &str| db.tracks.iter().find(|t| t.title == title).unwrap().artwork_id;
+
+    let (r, db) = sync(&req);
+    assert_eq!(r.artwork_written, 2);
+    let (a1, a3) = (art_of(&db, "T1"), art_of(&db, "T3"));
+    assert_eq!(art_of(&db, "T2"), a1, "one picture, one artwork row");
+    assert_eq!(art_of(&db, "T4"), 0);
+    assert!(a1 != 1 && a3 != 1 && a1 != a3);
+    assert_eq!(db.artwork.len(), 2);
+    let row = db.artwork.iter().find(|a| a.id == a1).unwrap();
+    assert_eq!(std::fs::read(stick.path().join(row.path.trim_start_matches('/'))).unwrap(), b"small");
+    let medium = stick.path().join(usb_tools::artwork::path(a1, true).trim_start_matches('/'));
+    assert_eq!(std::fs::read(medium).unwrap(), b"medium");
+    let scaled = stick.path().join(usb_tools::artwork::path(a3, true).trim_start_matches('/'));
+    assert_eq!(image::open(scaled).unwrap().width(), 240);
+    assert_eq!(std::fs::read(&foreign).unwrap(), b"foreign");
+
+    // The Denon library has the same covers, once per picture.
+    let m = rusqlite::Connection::open(stick.path().join("Engine Library/Database2/m.db")).unwrap();
+    let cover = |title: &str| -> (i64, Option<Vec<u8>>) {
+        m.query_row(
+            "SELECT a.id, a.albumArt FROM Track t JOIN AlbumArt a ON a.id = t.albumArtId WHERE t.title = ?1",
+            [title],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    };
+    assert_eq!(cover("T1").1.as_deref(), Some(&b"medium"[..]));
+    assert_eq!(cover("T2").0, cover("T1").0);
+    assert_eq!(cover("T4"), (1, None), "Engine's no-artwork row");
+    let rows: i64 = m.query_row("SELECT count(*) FROM AlbumArt WHERE albumArt IS NOT NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 2);
+    drop(m);
+
+    // Nothing changed: nothing written again.
+    let (r, db) = sync(&req);
+    assert_eq!(r.artwork_written, 0);
+    assert_eq!((art_of(&db, "T1"), art_of(&db, "T3")), (a1, a3));
+
+    // A picture no track uses any more goes; the foreign one stays.
+    req.tracks.retain(|t| t.key != 3);
+    let (_, db) = sync(&req);
+    assert_eq!(db.artwork.len(), 1);
+    assert!(!stick.path().join(usb_tools::artwork::path(a3, false).trim_start_matches('/')).exists());
+    assert_eq!(std::fs::read(&foreign).unwrap(), b"foreign");
+}

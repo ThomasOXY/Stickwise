@@ -6,7 +6,8 @@
 //!    rekordbox export left on the stick are recognised and reused), each
 //!    through a temporary file, flushed, renamed and size-checked;
 //! 3. analysis files are written into new folders the current library does
-//!    not use;
+//!    not use, artwork into `PIONEER/Artwork` (see [`crate::artwork`]) under
+//!    ids no file of someone else's uses;
 //! 4. stale `exportExt.pdb` / `exportLibrary.db` are moved aside;
 //! 5. **`export.pdb` is replaced last, atomically** — until that moment the
 //!    stick still holds its previous, complete library, so pulling it out
@@ -31,6 +32,7 @@ use pioneer_formats::pdb::{
 use pioneer_formats::setting::MySettings;
 use serde::{Deserialize, Serialize};
 
+use crate::artwork;
 use crate::cue_write::replace_file;
 use crate::names::{sanitize, split_ext};
 
@@ -63,6 +65,9 @@ pub struct SyncTrack {
     pub cues: Vec<CuePoint>,
     /// A beat grid the DJ edited, written over the analysed one.
     pub grid: Option<Vec<pioneer_formats::anlz::Beat>>,
+    /// The library's picture for it (rekordbox's `artwork.jpg`); without one
+    /// the picture embedded in the audio file is used.
+    pub artwork: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +141,43 @@ struct ManifestTrack {
     /// Fingerprint of the analysis files last written for it.
     #[serde(default)]
     anlz: Option<u64>,
+    /// The artwork last written for it.
+    #[serde(default)]
+    art: Option<ManifestArt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ManifestArt {
+    /// [`artwork::Source::fingerprint`] of what it was made from.
+    source: u64,
+    /// Fingerprint of the thumbnails, 0 when the source had no picture.
+    hash: u64,
+    /// Artwork id on the stick, 0 for none.
+    id: u32,
+}
+
+/// Hands out artwork ids: one per distinct picture, the last sync's kept
+/// where nothing changed, never one whose files someone else put there.
+struct ArtIds {
+    by_hash: HashMap<u64, u32>,
+    used: HashSet<u32>,
+    /// Ids the last sync wrote.
+    ours: HashSet<u32>,
+    next: u32,
+}
+
+impl ArtIds {
+    fn free(&mut self, stick: &Path) -> u32 {
+        loop {
+            self.next += 1;
+            let id = self.next;
+            if !self.used.contains(&id)
+                && (self.ours.contains(&id) || !resolve(stick, &artwork::path(id, false)).exists())
+            {
+                return id;
+            }
+        }
+    }
 }
 
 const MANIFEST: &str = ".rbx/manifest.json";
@@ -160,7 +202,7 @@ fn fnv(s: &str) -> u64 {
     fnv_bytes(0xcbf2_9ce4_8422_2325, s.as_bytes())
 }
 
-fn fnv_bytes(mut h: u64, bytes: &[u8]) -> u64 {
+pub(crate) fn fnv_bytes(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
@@ -223,7 +265,7 @@ fn anlz_dir_for(device_path: &str) -> String {
     )
 }
 
-fn resolve(stick: &Path, device: &str) -> PathBuf {
+pub(crate) fn resolve(stick: &Path, device: &str) -> PathBuf {
     stick.join(device.trim_start_matches('/'))
 }
 
@@ -366,6 +408,8 @@ pub struct SyncReport {
     pub anlz_written: usize,
     /// Tracks whose analysis files on the stick were already up to date.
     pub anlz_unchanged: usize,
+    /// Pictures written into `PIONEER/Artwork` (new or changed).
+    pub artwork_written: usize,
     pub backup_dir: PathBuf,
     pub moved_aside: Vec<String>,
     pub warnings: Vec<String>,
@@ -525,6 +569,7 @@ fn build_database(
     req: &SyncRequest,
     plan: &SyncPlan,
     anlz_paths: &HashMap<i64, String>,
+    art_ids: &HashMap<i64, u32>,
 ) -> Database {
     let planned: HashMap<i64, &PlannedTrack> = plan.tracks.iter().map(|p| (p.key, p)).collect();
     let mut db = Database::default();
@@ -637,9 +682,16 @@ fn build_database(
             },
             filename,
             file_path: p.device_path.clone(),
+            artwork_id: art_ids.get(&t.key).copied().unwrap_or(0),
             ..Track::new_export(id)
         });
     }
+    let mut art: Vec<u32> = art_ids.values().copied().collect::<HashSet<_>>().into_iter().collect();
+    art.sort_unstable();
+    db.artwork = art
+        .into_iter()
+        .map(|id| pdb::Artwork { id, path: artwork::path(id, false) })
+        .collect();
 
     // Playlists: new ids in tree order; folders keep their place.
     let mut pl_ids: HashMap<i64, u32> = HashMap::new();
@@ -824,6 +876,36 @@ pub fn execute(
     //    Files the last sync wrote and that would come out the same stay
     //    as they are: rewriting thousands of them is most of a re-sync.
     let old = load_manifest(stick);
+    //    Artwork the same way: a track whose picture source did not change
+    //    keeps the files the last sync wrote for it.
+    let mut ids = ArtIds {
+        by_hash: HashMap::new(),
+        used: HashSet::new(),
+        ours: old.tracks.values().filter_map(|m| m.art.as_ref()).map(|a| a.id).filter(|&id| id != 0).collect(),
+        next: 0,
+    };
+    let mut arts: HashMap<i64, ManifestArt> = HashMap::new();
+    let mut art_pending: HashMap<i64, (artwork::Source, u64)> = HashMap::new();
+    for pt in &plan.tracks {
+        let t = by_key[&pt.key];
+        let src = artwork::Source::for_track(t.artwork.as_deref(), &t.audio);
+        let source = src.fingerprint();
+        let files_there = |id: u32| {
+            id == 0 || [false, true].iter().all(|&m| resolve(stick, &artwork::path(id, m)).is_file())
+        };
+        match old.tracks.get(&pt.key).and_then(|m| m.art.as_ref()) {
+            Some(a) if a.source == source && files_there(a.id) => {
+                if a.id != 0 {
+                    ids.by_hash.entry(a.hash).or_insert(a.id);
+                    ids.used.insert(a.id);
+                }
+                arts.insert(pt.key, a.clone());
+            }
+            _ => {
+                art_pending.insert(pt.key, (src, source));
+            }
+        }
+    }
     let mut anlz_paths: HashMap<i64, String> = HashMap::new();
     let mut anlz_hashes: HashMap<i64, u64> = HashMap::new();
     let mut anlz_dirs: Vec<String> = Vec::new();
@@ -842,6 +924,49 @@ pub fn execute(
         p.fraction = w.at("analysis", p.done as f64 / p.total.max(1) as f64);
         p.done += 1;
         progress(&p);
+        if let Some((src, source)) = art_pending.remove(&pt.key) {
+            match src.thumbnails() {
+                None => {
+                    arts.insert(pt.key, ManifestArt { source, hash: 0, id: 0 });
+                }
+                Some(th) => {
+                    let hash = fnv_bytes(fnv_bytes(0xcbf2_9ce4_8422_2325, &th.small), &th.medium);
+                    let id = match ids.by_hash.get(&hash) {
+                        Some(&id) => Some(id),
+                        None => {
+                            let id = ids.free(stick);
+                            // A track without its picture still plays: a write
+                            // error costs the picture, not the sync.
+                            let written = [(false, &th.small), (true, &th.medium)].iter().try_for_each(|(m, bytes)| {
+                                let f = resolve(stick, &artwork::path(id, *m));
+                                std::fs::create_dir_all(f.parent().unwrap())?;
+                                replace_file(&f, bytes)
+                            });
+                            match written {
+                                Ok(()) => {
+                                    ids.by_hash.insert(hash, id);
+                                    ids.used.insert(id);
+                                    report.artwork_written += 1;
+                                    Some(id)
+                                }
+                                Err(e) => {
+                                    report.warnings.push(i18n::t!(
+                                        "usb.artworkNotWritten",
+                                        artist = t.artist,
+                                        title = t.title,
+                                        error = e
+                                    ));
+                                    None
+                                }
+                            }
+                        }
+                    };
+                    if let Some(id) = id {
+                        arts.insert(pt.key, ManifestArt { source, hash, id });
+                    }
+                }
+            }
+        }
         let Some(files) = anlz_source(t, pt, stick).and_then(|src| build_anlz(t, &src, &pt.device_path)) else {
             continue;
         };
@@ -888,7 +1013,9 @@ pub fn execute(
         ..Default::default()
     };
     progress(&p);
-    let db = build_database(req, plan, &anlz_paths);
+    let art_ids: HashMap<i64, u32> =
+        arts.iter().filter(|(_, a)| a.id != 0).map(|(&k, a)| (k, a.id)).collect();
+    let db = build_database(req, plan, &anlz_paths, &art_ids);
     let bytes = pdb::write(
         &db,
         &WriteOptions {
@@ -934,6 +1061,7 @@ pub fn execute(
                 size: pt.size,
                 mtime: mtime(&by_key[&pt.key].audio),
                 anlz: anlz_hashes.get(&pt.key).copied(),
+                art: arts.get(&pt.key).cloned(),
             },
         );
     }
@@ -941,6 +1069,11 @@ pub fn execute(
     let keep: HashSet<&String> = anlz_dirs.iter().collect();
     for d in old.anlz_dirs.iter().filter(|d| !keep.contains(d)) {
         let _ = std::fs::remove_dir_all(resolve(stick, d));
+    }
+    for id in ids.ours.iter().filter(|id| !ids.used.contains(id)) {
+        for m in [false, true] {
+            let _ = std::fs::remove_file(resolve(stick, &artwork::path(*id, m)));
+        }
     }
     let mpath = stick.join(MANIFEST);
     std::fs::create_dir_all(mpath.parent().unwrap()).map_err(io(".rbx"))?;
@@ -977,7 +1110,7 @@ pub fn execute(
             fraction: w.at("engine", 0.0),
             ..Default::default()
         });
-        match crate::engine::install(req, plan, schema, backup_dir) {
+        match crate::engine::install(req, plan, schema, backup_dir, &art_ids) {
             Ok(e) => {
                 // Only the missing-audio warnings; {path} ends the text in every language.
                 let missing = i18n::t!("usb.denonMissingAudio", path = "");
