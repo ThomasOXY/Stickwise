@@ -3,7 +3,7 @@
     "title": "Synchronizovat na flashku",
     "titleRunning": "Synchronizuji {name}",
     "stickNamed": "Flashka {name}",
-    "sub": "Vybrané sety a playlisty budou na flashce přesně tak, jak je máš v knihovně. Hudba se kopíruje jen tam, kde chybí.",
+    "sub": "Zaškrtnuté sety a playlisty se na flashku přidají, co už na ní je, zůstane. Hudba se kopíruje jen tam, kde chybí.",
     "ejected": "Flashka je vysunutá, můžeš ji vytáhnout.",
     "ejectFailed": "Flashku nejde vysunout: {error}",
     "steps": {
@@ -78,7 +78,7 @@
     "planning": "Počítám, co je potřeba zkopírovat…",
     "pickPrompt": "Vyber flashku a aspoň jeden set nebo playlist.",
     "safety": "Bezpečné: nejdřív záloha, databáze se přepíše až nakonec. Vytažení flashky nic nerozbije.",
-    "safetyText": "Knihovna na flashce se vymění celá: playlisty, které nevybereš, z přehrávače zmizí. Hudba na flashce zůstane, nic se nemaže. Stará databáze se nejdřív zazálohuje do ~/Stickwise/backups a nová se zapíše až nakonec, takže vytažení flashky uprostřed nic nerozbije. Historie hraní z přehrávače zůstane jen v záloze.",
+    "safetyText": "Co jsi na flashku dal minule, na ní zůstane, dokud to sám neodebereš křížkem. Playlisty, které tam nahrál jiný program (třeba rekordbox), se ale nahradí tím, co vybereš. Hudba na flashce zůstane, nic se nemaže. Stará databáze se nejdřív zazálohuje do ~/Stickwise/backups a nová se zapíše až nakonec, takže vytažení flashky uprostřed nic nerozbije. Historie hraní z přehrávače zůstane jen v záloze.",
     "safetyExfat": "Flashka je exFAT: CDJ-2000NXS2 a starší ji nepřečtou.",
     "safetyOneLibrary": "OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) zatím nezapisujeme.",
     "timeLeft": "zbývá {time}",
@@ -204,13 +204,26 @@
         "other": "{count} skladeb nepůjde přehrát"
       },
       "allPlayable": "Všechno půjde přehrát"
+    },
+    "onStickTag": "na flashce",
+    "onStickHint": "Už je na flashce. Odebrat ho můžeš křížkem vpravo.",
+    "newTag": "přidá se",
+    "leavingTag": "odebere se",
+    "removeFromStick": "Odebrat z flashky",
+    "removeNamed": "Odebrat {name} z flashky",
+    "keepOnStick": "Nechat na flashce",
+    "keepNamed": "Nechat {name} na flashce",
+    "leavingNote": {
+      "one": "Z flashky zmizí: {names}.",
+      "few": "Z flashky zmizí {count} položky: {names}.",
+      "other": "Z flashky zmizí {count} položek: {names}."
     }
   },
   "en": {
     "title": "Sync to a stick",
     "titleRunning": "Syncing {name}",
     "stickNamed": "Stick {name}",
-    "sub": "The sets and playlists you pick end up on the stick exactly as they are in your library. Music is only copied where it's missing.",
+    "sub": "The sets and playlists you tick are added to the stick; what's on it already stays. Music is only copied where it's missing.",
     "ejected": "The stick is ejected, you can unplug it.",
     "ejectFailed": "Can't eject the stick: {error}",
     "steps": {
@@ -278,7 +291,7 @@
     "planning": "Working out what needs copying…",
     "pickPrompt": "Pick a stick and at least one set or playlist.",
     "safety": "Safe: backup first, the database is replaced only at the end. Pulling out the stick breaks nothing.",
-    "safetyText": "The library on the stick is replaced as a whole: playlists you don't pick disappear from the player. The music on the stick stays, nothing is deleted. The old database is backed up to ~/Stickwise/backups first and the new one is written only at the end, so pulling out the stick midway breaks nothing. The player's play history stays only in the backup.",
+    "safetyText": "What you put on the stick last time stays there until you remove it with the cross. Playlists another app put there (rekordbox, say) are replaced by what you pick, though. The music on the stick stays, nothing is deleted. The old database is backed up to ~/Stickwise/backups first and the new one is written only at the end, so pulling out the stick midway breaks nothing. The player's play history stays only in the backup.",
     "safetyExfat": "The stick is exFAT: CDJ-2000NXS2 and older can't read it.",
     "safetyOneLibrary": "We don't write OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) yet.",
     "timeLeft": "{time} left",
@@ -396,13 +409,25 @@
         "other": "{count} tracks won't play"
       },
       "allPlayable": "Everything will play"
+    },
+    "onStickTag": "on stick",
+    "onStickHint": "Already on the stick. Remove it with the cross on the right.",
+    "newTag": "adding",
+    "leavingTag": "removing",
+    "removeFromStick": "Remove from stick",
+    "removeNamed": "Remove {name} from the stick",
+    "keepOnStick": "Keep on stick",
+    "keepNamed": "Keep {name} on the stick",
+    "leavingNote": {
+      "one": "Leaving the stick: {names}.",
+      "other": "{count} items leave the stick: {names}."
     }
   },
   "de": {
     "title": "Auf den Stick synchronisieren",
     "titleRunning": "{name} wird synchronisiert",
     "stickNamed": "Stick {name}",
-    "sub": "Die gewählten Sets und Playlists landen genau so auf dem Stick, wie sie in deiner Bibliothek sind. Musik wird nur kopiert, wo sie fehlt.",
+    "sub": "Die angehakten Sets und Playlists kommen auf den Stick dazu, was schon drauf ist, bleibt. Musik wird nur kopiert, wo sie fehlt.",
     "ejected": "Der Stick ist ausgeworfen, du kannst ihn abziehen.",
     "ejectFailed": "Der Stick lässt sich nicht auswerfen: {error}",
     "steps": {
@@ -470,7 +495,7 @@
     "planning": "Ich rechne aus, was kopiert werden muss…",
     "pickPrompt": "Wähl einen Stick und mindestens ein Set oder eine Playlist.",
     "safety": "Sicher: zuerst ein Backup, die Datenbank wird erst ganz am Ende ersetzt. Den Stick abzuziehen macht nichts kaputt.",
-    "safetyText": "Die Bibliothek auf dem Stick wird komplett ersetzt: Playlists, die du nicht auswählst, verschwinden vom Player. Die Musik auf dem Stick bleibt, nichts wird gelöscht. Die alte Datenbank wird zuerst nach ~/Stickwise/backups gesichert und die neue erst ganz am Ende geschrieben, daher macht es nichts kaputt, wenn du den Stick mittendrin abziehst. Der Verlauf des Players bleibt nur im Backup.",
+    "safetyText": "Was du letztes Mal auf den Stick gespielt hast, bleibt drauf, bis du es mit dem Kreuz entfernst. Playlists, die ein anderes Programm (etwa rekordbox) draufgespielt hat, werden aber durch deine Auswahl ersetzt. Die Musik auf dem Stick bleibt, nichts wird gelöscht. Die alte Datenbank wird zuerst nach ~/Stickwise/backups gesichert und die neue erst ganz am Ende geschrieben, daher macht es nichts kaputt, wenn du den Stick mittendrin abziehst. Der Verlauf des Players bleibt nur im Backup.",
     "safetyExfat": "Der Stick ist exFAT: CDJ-2000NXS2 und ältere können ihn nicht lesen.",
     "safetyOneLibrary": "OneLibrary (CDJ-3000X, XDJ-AZ, OPUS-QUAD) schreiben wir noch nicht.",
     "timeLeft": "noch {time}",
@@ -588,6 +613,18 @@
         "other": "{count} Tracks lassen sich nicht abspielen"
       },
       "allPlayable": "Alles lässt sich abspielen"
+    },
+    "onStickTag": "auf Stick",
+    "onStickHint": "Schon auf dem Stick. Entfernen kannst du es mit dem Kreuz rechts.",
+    "newTag": "kommt dazu",
+    "leavingTag": "wird entfernt",
+    "removeFromStick": "Vom Stick entfernen",
+    "removeNamed": "{name} vom Stick entfernen",
+    "keepOnStick": "Auf dem Stick lassen",
+    "keepNamed": "{name} auf dem Stick lassen",
+    "leavingNote": {
+      "one": "Verlässt den Stick: {names}.",
+      "other": "{count} Einträge verlassen den Stick: {names}."
     }
   }
 }

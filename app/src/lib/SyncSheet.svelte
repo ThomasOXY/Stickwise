@@ -16,7 +16,9 @@
     LoaderCircle,
     ShieldCheck,
     Sparkles,
+    Undo2,
     Usb,
+    X,
   } from "@lucide/svelte";
   import { api, libApi, type EngineStatus, type Playlist, type SyncPlan } from "./api";
   import { fsName, gb, num, size, time } from "./format";
@@ -65,12 +67,19 @@
   const job = $derived(jobId != null ? app.jobs.find((j) => j.id === jobId) : undefined);
   const stickInfo = $derived(app.sticks.find((s) => s.path === stick));
 
-  // Last selection for this stick, or the sets by default.
+  // What is on the stick already (its last sync) stays there, the way
+  // rekordbox adds to a stick: ticking adds, removing is its own action.
+  // A stick synced for the first time starts with the sets.
+  let onStick = $state<Set<number>>(new Set());
+  /** On the stick, taken off on purpose in this sheet. */
+  let removed = $state<Set<number>>(new Set());
   $effect(() => {
     const s = stick;
     if (!s) return;
     libApi.syncSelection(s).then((ids) => {
       const valid = ids.filter((id) => lists.some((p) => p.id === id));
+      onStick = new Set(valid);
+      removed = new Set();
       picked = new Set(valid.length ? valid : lists.filter((p) => p.isSet).map((p) => p.id));
     });
   });
@@ -110,14 +119,64 @@
     // Sets first, the way the tree shows them.
     return [...out.filter((r) => r.node.isSet), ...out.filter((r) => !r.node.isSet)];
   });
-  const ancestorPicked = (p: Playlist): boolean => {
-    let parent = p.parentId;
-    while (parent) {
-      if (picked.has(parent)) return true;
-      parent = lists.find((x) => x.id === parent)?.parentId ?? 0;
-    }
-    return false;
+  const byId = $derived(new Map(lists.map((p) => [p.id, p])));
+  function ancestors(p: Playlist): number[] {
+    const out: number[] = [];
+    for (let parent = p.parentId; parent; parent = byId.get(parent)?.parentId ?? 0) out.push(parent);
+    return out;
+  }
+  const ancestorPicked = (p: Playlist): boolean => ancestors(p).some((a) => picked.has(a));
+  /** In the set itself or through a folder above it. */
+  const covered = (set: Set<number>, p: Playlist) => set.has(p.id) || ancestors(p).some((a) => set.has(a));
+  /** `id` sits somewhere under the folder `p`. */
+  const isBelow = (id: number, p: Playlist) => {
+    const q = byId.get(id);
+    return !!q && ancestors(q).includes(p.id);
   };
+  const wasOn = (p: Playlist) => covered(onStick, p);
+  const stickBelow = (p: Playlist): boolean => children(p.id).some((c) => onStick.has(c.id) || stickBelow(c));
+
+  /** Take `p` out of the set; a folder above it that was picked as a whole gives way to its other children. */
+  function uncover(set: Set<number>, p: Playlist) {
+    const chain: Playlist[] = [];
+    let n: Playlist | undefined = p;
+    while (n && !set.has(n.id)) {
+      chain.push(n);
+      n = byId.get(n.parentId);
+    }
+    if (n) {
+      set.delete(n.id);
+      let parent = n;
+      for (let i = chain.length - 1; i >= 0; i--) {
+        for (const c of children(parent.id)) if (c.id !== chain[i].id) set.add(c.id);
+        parent = chain[i];
+      }
+    }
+    const drop = (q: Playlist) => {
+      for (const c of children(q.id)) {
+        set.delete(c.id);
+        drop(c);
+      }
+    };
+    drop(p);
+  }
+  /** Put back what is on the stick and was not removed on purpose. */
+  function keep(set: Set<number>) {
+    const restore = (p: Playlist) => {
+      if (covered(set, p) || covered(removed, p)) return;
+      if (![...removed].some((r) => isBelow(r, p))) set.add(p.id);
+      else for (const c of children(p.id)) restore(c);
+    };
+    for (const id of onStick) {
+      const p = byId.get(id);
+      if (p) restore(p);
+    }
+    // A folder picked as a whole covers what is under it.
+    for (const id of set) {
+      const p = byId.get(id);
+      if (p && ancestors(p).some((a) => set.has(a))) set.delete(id);
+    }
+  }
 
   /** Tracks under a folder, for the count on its row. */
   const subtreeTracks = (p: Playlist): number =>
@@ -131,11 +190,41 @@
   const pickedLists = $derived(picked.size - pickedSets);
   let safetyOpen = $state(false);
 
+  /** Ticking adds to the stick; unticking only takes back what this sheet added. */
   function toggle(p: Playlist) {
     const next = new Set(picked);
-    next.has(p.id) ? next.delete(p.id) : next.add(p.id);
+    if (rowState(p) === "on") {
+      if (wasOn(p)) return;
+      uncover(next, p);
+    } else {
+      next.add(p.id);
+      removed = new Set([...removed].filter((r) => r !== p.id && !isBelow(r, p)));
+    }
+    keep(next);
     picked = next;
   }
+  /** Take a playlist or folder off the stick. */
+  function remove(p: Playlist) {
+    const next = new Set(picked);
+    uncover(next, p);
+    removed = new Set([...removed, p.id]);
+    keep(next);
+    picked = next;
+  }
+  function undoRemove(p: Playlist) {
+    const next = new Set(removed);
+    next.delete(p.id);
+    removed = next;
+    const set = new Set(picked);
+    keep(set);
+    picked = set;
+  }
+  /** What disappears from the stick, topmost only. */
+  const goingOff = $derived(
+    rows
+      .map((r) => r.node)
+      .filter((p) => wasOn(p) && rowState(p) === "off" && !ancestors(p).some((a) => byId.get(a) && wasOn(byId.get(a)!) && rowState(byId.get(a)!) === "off")),
+  );
 
   async function start() {
     if (!stick) return;
@@ -267,16 +356,52 @@
           </div>
           <div class="pick">
             {#each rows as { node, depth } (node.id)}
-              {@const inherited = ancestorPicked(node)}
               {@const st = rowState(node)}
-              <label class="row" class:on={st === "on"} class:inherited style:padding-left="{10 + depth * 22}px">
-                <input type="checkbox" checked={st === "on"} disabled={inherited} onchange={() => toggle(node)} />
+              {@const was = wasOn(node)}
+              {@const locked = was && st === "on"}
+              {@const inherited = !was && ancestorPicked(node)}
+              {@const leaving = was && st === "off"}
+              <label
+                class="row"
+                class:on={st === "on"}
+                class:inherited={inherited || locked}
+                class:leaving
+                style:padding-left="{10 + depth * 22}px"
+                title={locked ? t("sync.onStickHint") : undefined}
+              >
+                <input type="checkbox" checked={st === "on"} disabled={inherited || locked} onchange={() => toggle(node)} />
                 <SheetCheck state={st} />
                 {#if node.isFolder}<Folder size={14} />{:else if node.isSet}<Sparkles size={14} class="set" />{:else}<ListMusic size={14} />{/if}
                 <span class="pname">{node.name}</span>
                 {#if node.isSet}<span class="tag">{t("sync.setTag")}</span>{/if}
                 {#if st === "some"}<span class="tag part">{t("sync.partial")}</span>{/if}
+                {#if locked}
+                  <span class="tag stick">{t("sync.onStickTag")}</span>
+                {:else if leaving}
+                  <span class="tag off">{t("sync.leavingTag")}</span>
+                {:else if st === "on" && onStick.size > 0 && !(node.isFolder && stickBelow(node))}
+                  <span class="tag new">{t("sync.newTag")}</span>
+                {/if}
                 <span class="readout n">{subtreeTracks(node)}</span>
+                {#if was && st !== "off"}
+                  <button
+                    class="rm"
+                    title={t("sync.removeFromStick")}
+                    aria-label={t("sync.removeNamed", { name: node.name })}
+                    onclick={(e) => (e.preventDefault(), remove(node))}
+                  >
+                    <X size={14} />
+                  </button>
+                {:else if removed.has(node.id) && !ancestors(node).some((a) => removed.has(a))}
+                  <button
+                    class="rm undo"
+                    title={t("sync.keepOnStick")}
+                    aria-label={t("sync.keepNamed", { name: node.name })}
+                    onclick={(e) => (e.preventDefault(), undoRemove(node))}
+                  >
+                    <Undo2 size={14} />
+                  </button>
+                {/if}
               </label>
             {/each}
           </div>
@@ -380,6 +505,12 @@
             </div>
           {/if}
 
+          {#if goingOff.length}
+            <div class="callout">
+              <CircleAlert size={15} />
+              <span>{t("sync.leavingNote", { count: goingOff.length, names: goingOff.map((p) => p.name).join(", ") })}</span>
+            </div>
+          {/if}
           {#if !fits}
             <div class="callout danger"><CircleX size={15} /><span>{t("sync.lowSpace", { size: size(plan.freeBytes) })}</span></div>
           {/if}
@@ -678,6 +809,47 @@
   .tag.part {
     color: var(--text-2);
     background: var(--surface-3);
+  }
+  .tag.stick {
+    color: var(--success);
+    background: var(--success-soft);
+  }
+  .tag.off {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+  .row.leaving .pname {
+    text-decoration: line-through;
+    color: var(--text-3);
+  }
+  .rm {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin-right: -6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-3);
+    cursor: pointer;
+    opacity: 0;
+  }
+  .row:hover .rm,
+  .rm:focus-visible,
+  .rm.undo {
+    opacity: 1;
+  }
+  .rm:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .rm.undo:hover {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+  .rm :global(svg) {
+    color: inherit;
   }
   .n {
     min-width: 26px;
